@@ -21,7 +21,7 @@
 
 API backend cho hệ thống quản lý bãi xe: tài khoản, phân quyền, danh mục bãi đỗ, đặt chỗ, check-in/check-out, gói gửi xe, thanh toán, sự cố và báo cáo. Dữ liệu nghiệp vụ được truy cập qua Prisma tới PostgreSQL; Swagger là giao diện gửi request đến backend.
 
-Repo có hai nhóm API: `/auth/*` cho auth Nest và `/api/*` cho hợp đồng PBMS. Phiên bản bên dưới lấy từ khai báo trong [package.json](package.json); phiên bản cài đặt cụ thể được khóa trong [package-lock.json](package-lock.json).
+Repo dùng một nhóm API công khai: `/api/*` (hợp đồng PBMS). Đăng nhập tại `POST /api/Auth/login`; hồ sơ tại `GET /api/profile`. Phiên bản bên dưới lấy từ khai báo trong [package.json](package.json); phiên bản cài đặt cụ thể được khóa trong [package-lock.json](package-lock.json).
 
 | 🔐 Identity | 🚘 Parking | 💳 Payments | 📊 Operations |
 |---|---|---|---|
@@ -83,7 +83,6 @@ Repo có hai nhóm API: `/auth/*` cho auth Nest và `/api/*` cho hợp đồng P
 | Package management | npm + `package-lock.json` |
 | Hosting được hướng dẫn | Render Web Service + Render PostgreSQL |
 | Quản trị database | pgAdmin 4 hoặc công cụ PostgreSQL tương đương; không phải dependency của app |
-| AI coding conventions | `AGENTS.md`, Agent Skills, Cursor project rules |
 
 <details>
 <summary><strong>🔎 Công cụ có trong dependencies nhưng không đồng nghĩa đã được triển khai</strong></summary>
@@ -119,7 +118,7 @@ Các endpoint được đánh dấu `@Public()` có thể truy cập không cầ
 
 | Thư mục | Phạm vi |
 |---|---|
-| [`src/auth`](src/auth) | Auth Nest/PBMS, token, OTP, mail, guards và decorators |
+| [`src/auth`](src/auth) | Auth PBMS (`/api/Auth`), token, OTP, mail, guards và decorators |
 | [`src/users`](src/users) · [`src/roles`](src/roles) | Người dùng, hồ sơ và vai trò |
 | [`src/catalog`](src/catalog) | Loại xe, tầng, cổng, chỗ đỗ, bảng giá, gói gửi xe |
 | [`src/reservations`](src/reservations) | Đặt chỗ và xử lý trạng thái theo lịch |
@@ -160,8 +159,8 @@ Nếu database đã có bảng/dữ liệu, cần kiểm tra lịch sử migrati
 | `http://localhost:3000/` | Chuyển đến Swagger |
 | `http://localhost:3000/api/docs` | Swagger UI |
 | `http://localhost:3000/health` | HTTP liveness, không kiểm tra database readiness |
-| `http://localhost:3000/auth/*` | Auth Nest |
-| `http://localhost:3000/api/*` | API PBMS; xem danh sách path trong tài liệu |
+| `http://localhost:3000/api/Auth/*` | Auth PBMS (login, OTP, refresh, logout) |
+| `http://localhost:3000/api/*` | API nghiệp vụ; xem danh sách path trong tài liệu |
 
 <details>
 <summary><strong>🔑 Các nhóm ENV cần chuẩn bị</strong></summary>
@@ -214,7 +213,7 @@ Render chạy backend và Swagger trong cùng một Web Service. PostgreSQL là 
 | Health Check Path | `/health` |
 | Database | Internal URL nếu backend và DB Render cùng region |
 
-Chi tiết trong [hướng dẫn deployment](docs/huong-dan-env-va-deploy.md) và [setup health check](docs/render-health-check.md). Không chạy `migrate dev`, reset hoặc seed tự động trong startup production.
+Chi tiết trong [hướng dẫn deployment](docs/huong-dan-env-va-deploy.md), [setup health check](docs/render-health-check.md) và [uptime Render Free](docs/render-uptime.md). Không chạy `migrate dev`, reset hoặc seed tự động trong startup production.
 
 <details>
 <summary><strong>📌 Phạm vi vận hành hiện tại</strong></summary>
@@ -234,20 +233,10 @@ Chi tiết trong [hướng dẫn deployment](docs/huong-dan-env-va-deploy.md) v�
 |---|---|
 | [ENV & deployment](docs/huong-dan-env-va-deploy.md) | Lấy credential, host API/DB và kiểm chứng dữ liệu thật |
 | [Render health check](docs/render-health-check.md) | Root redirect, Swagger, health và dashboard settings |
+| [Render uptime (Free)](docs/render-uptime.md) | Sleep khi idle, cold start, ping `/health` từ cron bên ngoài |
 | [PBMS API paths](docs/openapi-pbms-paths.md) | Hợp đồng route PBMS |
 | [Prisma review](docs/prisma-draft-review.md) | Bối cảnh thiết kế schema |
-| [Third-party follow-up](docs/third-party-follow-up.md) | Kế hoạch tích hợp và chuyển đổi từ C# |
-| [Agent instructions](AGENTS.md) | Quy ước phát triển trong repo |
-
-<details>
-<summary><strong>🤖 Agent Skills & Cursor rules</strong></summary>
-
-- [`prm393-backend`](.agents/skills/prm393-backend/SKILL.md): hướng dẫn riêng cho dự án.
-- [`nestjs-best-practices`](.agents/skills/nestjs-best-practices/SKILL.md): các mẫu kiến trúc và thực hành NestJS.
-- [`security-best-practices`](.agents/skills/security-best-practices/SKILL.md): hướng dẫn khi có yêu cầu bảo mật.
-- [`.cursor/rules`](.cursor/rules): quy tắc theo phạm vi project, API, Prisma và auth.
-
-</details>
+| [Third-party follow-up](docs/third-party-follow-up.md) | Kế hoạch tích hợp và chuyển đổi từ hệ thống cũ |
 
 ---
 
