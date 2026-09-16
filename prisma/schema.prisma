@@ -1,0 +1,369 @@
+datasource db {
+  provider = "postgresql"
+  url      = env("DATABASE_URL")
+}
+
+generator client {
+  provider = "prisma-client-js"
+}
+
+// Nest `/auth/*` dual-surface. PBMS dùng bảng Role + roleName string.
+enum UserRole {
+  USER
+  ADMIN
+  MODERATOR
+}
+
+// PBMS Status fields are varchar strings, not SQL enums.
+// Allowed values are documented in comments; stored as String so inserts are not rejected.
+
+model User {
+  id              String   @id @default(uuid()) @db.Uuid
+  email           String   @unique @db.VarChar(255)
+  passwordHash    String   @map("password_hash") @db.VarChar(255)
+  firstName       String?  @map("first_name") @db.VarChar(100)
+  lastName        String?  @map("last_name") @db.VarChar(100)
+  /// Nest `/auth/*` only. PBMS JSON uses pbmsRole.roleName.
+  role            UserRole @default(USER)
+  isActive        Boolean  @default(true) @map("is_active")
+  isEmailVerified Boolean  @default(false) @map("is_email_verified")
+  createdAt       DateTime @default(now()) @map("created_at") @db.Timestamptz(6)
+  updatedAt       DateTime @updatedAt @map("updated_at") @db.Timestamptz(6)
+
+  /// PBMS User.userName (unique). Optional so existing Nest users stay valid.
+  userName    String? @unique @map("user_name") @db.VarChar(50)
+  /// PBMS User.fullName. Additive; firstName/lastName kept for Nest.
+  fullName    String? @map("full_name") @db.VarChar(100)
+  /// PBMS User.phoneNumber. Optional unique here.
+  phoneNumber String? @unique @map("phone_number") @db.VarChar(15)
+  /// PBMS User.status varchar(20) default Active (Active, Inactive, Banned).
+  status      String? @default("Active") @db.VarChar(20)
+  /// PBMS User.roleId. Optional for Nest-only rows until a Role seed exists.
+  pbmsRoleId  String? @map("pbms_role_id") @db.Uuid
+
+  pbmsRole Role? @relation(fields: [pbmsRoleId], references: [id], onDelete: Restrict)
+
+  refreshTokens         RefreshToken[]
+  assignedParkingSlots  ParkingSlot[]
+  monthlySubscriptions  MonthlySubscription[]
+  parkingSessions       ParkingSession[]       @relation("SessionDriver")
+  payments              Payment[]
+  reservations          Reservation[]
+  reportedIncidents     IncidentReport[]       @relation("IncidentReporter")
+  handledIncidents      IncidentReport[]       @relation("IncidentHandler")
+  handledVehicleChanges VehicleChangeRequest[] @relation("VehicleChangeHandler")
+
+  @@index([role, isActive], name: "idx_users_role_is_active")
+  @@index([pbmsRoleId], name: "idx_users_pbms_role_id")
+  @@index([status], name: "idx_users_status")
+  @@map("users")
+}
+
+model RefreshToken {
+  id         String   @id @default(uuid()) @db.Uuid
+  userId     String   @map("user_id") @db.Uuid
+  /// Nest: bcrypt hash of the refresh JWT. Không lưu plaintext refresh token.
+  tokenHash  String   @map("token_hash") @db.VarChar(255)
+  deviceInfo String?  @map("device_info") @db.VarChar(255)
+  ipAddress  String?  @map("ip_address") @db.VarChar(45)
+  isRevoked  Boolean  @default(false) @map("is_revoked")
+  /// Nest session expiry.
+  expiresAt  DateTime @map("expires_at") @db.Timestamptz(6)
+  createdAt  DateTime @default(now()) @map("created_at") @db.Timestamptz(6)
+  updatedAt  DateTime @updatedAt @map("updated_at") @db.Timestamptz(6)
+
+  user User @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@index([userId], name: "idx_refresh_tokens_user_id")
+  @@index([tokenHash], name: "idx_refresh_tokens_token_hash")
+  @@index([userId, isRevoked], name: "idx_refresh_tokens_user_revoked")
+  @@index([expiresAt], name: "idx_refresh_tokens_expires_at")
+  @@map("refresh_tokens")
+}
+
+model Role {
+  id          String  @id @default(uuid()) @db.Uuid
+  roleName    String  @unique @map("role_name") @db.VarChar(50)
+  description String? @db.VarChar(255)
+
+  users User[]
+
+  @@map("roles")
+}
+
+model VehicleType {
+  id         String  @id @default(uuid()) @db.Uuid
+  typeName   String  @unique @map("type_name") @db.VarChar(50)
+  dimensions String? @db.VarChar(50)
+
+  floors               Floor[]
+  parkingSlots         ParkingSlot[]
+  pricingPolicies      PricingPolicy[]
+  subscriptionPackages SubscriptionPackage[]
+  monthlySubscriptions MonthlySubscription[]
+  reservations         Reservation[]
+  parkingSessions      ParkingSession[]
+
+  @@map("vehicle_types")
+}
+
+model Floor {
+  id                     String  @id @default(uuid()) @db.Uuid
+  floorName              String  @unique @map("floor_name") @db.VarChar(50)
+  dedicatedVehicleTypeId String? @map("dedicated_vehicle_type_id") @db.Uuid
+  totalCapacity          Int     @map("total_capacity")
+  isResident             Boolean @default(false) @map("is_resident")
+
+  dedicatedVehicleType VehicleType?  @relation(fields: [dedicatedVehicleTypeId], references: [id], onDelete: SetNull)
+  gates                Gate[]
+  parkingSlots         ParkingSlot[]
+
+  @@index([dedicatedVehicleTypeId], name: "idx_floors_vehicle_type_id")
+  @@map("floors")
+}
+
+model Gate {
+  id       String @id @default(uuid()) @db.Uuid
+  gateName String @map("gate_name") @db.VarChar(50)
+  /// varchar(10). Typical values: Entry, Exit.
+  gateType String @map("gate_type") @db.VarChar(10)
+  floorId  String @map("floor_id") @db.Uuid
+
+  floor         Floor            @relation(fields: [floorId], references: [id], onDelete: Restrict)
+  entrySessions ParkingSession[] @relation("SessionEntryGate")
+  exitSessions  ParkingSession[] @relation("SessionExitGate")
+
+  @@index([floorId], name: "idx_gates_floor_id")
+  @@map("gates")
+}
+
+model ParkingSlot {
+  id             String  @id @default(uuid()) @db.Uuid
+  floorId        String  @map("floor_id") @db.Uuid
+  slotCode       String  @unique @map("slot_code") @db.VarChar(15)
+  vehicleTypeId  String  @map("vehicle_type_id") @db.Uuid
+  /// ParkingSlotStatus: Available, Occupied, Assigned, Maintenance, Locked. Default Available.
+  status         String  @default("Available") @db.VarChar(20)
+  assignedUserId String? @map("assigned_user_id") @db.Uuid
+
+  floor                   Floor                 @relation(fields: [floorId], references: [id], onDelete: Restrict)
+  vehicleType             VehicleType           @relation(fields: [vehicleTypeId], references: [id], onDelete: Restrict)
+  assignedUser            User?                 @relation(fields: [assignedUserId], references: [id], onDelete: SetNull)
+  monthlySubscriptions    MonthlySubscription[]
+  assignedParkingSessions ParkingSession[]      @relation("SessionAssignedSlot")
+  actualParkingSessions   ParkingSession[]      @relation("SessionActualSlot")
+
+  @@index([floorId], name: "idx_parking_slots_floor_id")
+  @@index([vehicleTypeId], name: "idx_parking_slots_vehicle_type_id")
+  @@index([assignedUserId], name: "idx_parking_slots_assigned_user_id")
+  @@index([status], name: "idx_parking_slots_status")
+  @@map("parking_slots")
+}
+
+model PricingPolicy {
+  id             String   @id @default(uuid()) @db.Uuid
+  vehicleTypeId  String   @map("vehicle_type_id") @db.Uuid
+  basePrice      Decimal  @map("base_price") @db.Decimal(15, 2)
+  baseHours      Int      @map("base_hours")
+  extraHourPrice Decimal  @map("extra_hour_price") @db.Decimal(15, 2)
+  nightSurcharge Decimal  @default(0) @map("night_surcharge") @db.Decimal(15, 2)
+  effectiveDate  DateTime @map("effective_date") @db.Timestamptz(6)
+  /// PricingPolicyStatus: Active, Inactive. Default Active. varchar(10).
+  status         String   @default("Active") @db.VarChar(10)
+
+  vehicleType VehicleType @relation(fields: [vehicleTypeId], references: [id], onDelete: Restrict)
+
+  @@index([vehicleTypeId], name: "idx_pricing_policies_vehicle_type_id")
+  @@map("pricing_policies")
+}
+
+model SubscriptionPackage {
+  id               String  @id @default(uuid()) @db.Uuid
+  packageName      String  @map("package_name") @db.VarChar(100)
+  vehicleTypeId    String  @map("vehicle_type_id") @db.Uuid
+  durationMonths   Int     @map("duration_months")
+  price            Decimal @db.Decimal(15, 2)
+  requireFixedSlot Boolean @default(false) @map("require_fixed_slot")
+  description      String? @db.VarChar(500)
+  /// PackageStatus: Active, Inactive, Suspended. Default Active. varchar(10).
+  status           String  @default("Active") @db.VarChar(10)
+
+  vehicleType          VehicleType           @relation(fields: [vehicleTypeId], references: [id], onDelete: Restrict)
+  monthlySubscriptions MonthlySubscription[]
+
+  @@index([vehicleTypeId], name: "idx_subscription_packages_vehicle_type_id")
+  @@map("subscription_packages")
+}
+
+model MonthlySubscription {
+  id            String   @id @default(uuid()) @db.Uuid
+  userId        String   @map("user_id") @db.Uuid
+  vehicleTypeId String   @map("vehicle_type_id") @db.Uuid
+  licensePlate  String   @map("license_plate") @db.VarChar(15)
+  packageId     String   @map("package_id") @db.Uuid
+  startDate     DateTime @map("start_date") @db.Timestamptz(6)
+  endDate       DateTime @map("end_date") @db.Timestamptz(6)
+  price         Decimal  @db.Decimal(15, 2)
+  fixedSlotId   String?  @map("fixed_slot_id") @db.Uuid
+  /// MonthlySubscriptionStatus: PendingPayment, Active, Cancelled, Expired. Default Active. varchar(30).
+  status        String   @default("Active") @db.VarChar(30)
+
+  user                  User                   @relation(fields: [userId], references: [id], onDelete: Restrict)
+  vehicleType           VehicleType            @relation(fields: [vehicleTypeId], references: [id], onDelete: Restrict)
+  package               SubscriptionPackage    @relation(fields: [packageId], references: [id], onDelete: Restrict)
+  fixedSlot             ParkingSlot?           @relation(fields: [fixedSlotId], references: [id], onDelete: SetNull)
+  payments              Payment[]
+  subscriptionRenewals  SubscriptionRenewal[]
+  vehicleChangeRequests VehicleChangeRequest[]
+
+  @@index([userId], name: "idx_monthly_subscriptions_user_id")
+  @@index([licensePlate], name: "idx_monthly_subscriptions_license_plate")
+  @@index([status], name: "idx_monthly_subscriptions_status")
+  @@map("monthly_subscriptions")
+}
+
+model SubscriptionRenewal {
+  id             String    @id @default(uuid()) @db.Uuid
+  subscriptionId String    @map("subscription_id") @db.Uuid
+  oldEndDate     DateTime  @map("old_end_date") @db.Timestamptz(6)
+  newEndDate     DateTime  @map("new_end_date") @db.Timestamptz(6)
+  amount         Decimal   @db.Decimal(15, 2)
+  renewalDate    DateTime? @default(now()) @map("renewal_date") @db.Timestamptz(6)
+
+  subscription MonthlySubscription @relation(fields: [subscriptionId], references: [id], onDelete: Restrict)
+
+  @@index([subscriptionId], name: "idx_subscription_renewals_subscription_id")
+  @@map("subscription_renewals")
+}
+
+model VehicleChangeRequest {
+  id               String    @id @default(uuid()) @db.Uuid
+  subscriptionId   String    @map("subscription_id") @db.Uuid
+  oldLicensePlate  String    @map("old_license_plate") @db.VarChar(15)
+  newLicensePlate  String    @map("new_license_plate") @db.VarChar(15)
+  reason           String?   @db.VarChar(500)
+  rejectionReason  String?   @map("rejection_reason") @db.VarChar(500)
+  /// VehicleChangeStatusEnum: Pending, Approved, Rejected. Default Pending. varchar(15).
+  status           String    @default("Pending") @db.VarChar(15)
+  createdAt        DateTime? @default(now()) @map("created_at") @db.Timestamptz(6)
+  processedAt      DateTime? @map("processed_at") @db.Timestamptz(6)
+  handledByStaffId String?   @map("handled_by_staff_id") @db.Uuid
+
+  subscription   MonthlySubscription @relation(fields: [subscriptionId], references: [id], onDelete: Restrict)
+  handledByStaff User?               @relation("VehicleChangeHandler", fields: [handledByStaffId], references: [id], onDelete: SetNull)
+
+  @@index([subscriptionId], name: "idx_vehicle_change_requests_subscription_id")
+  @@index([handledByStaffId], name: "idx_vehicle_change_requests_handler_id")
+  @@map("vehicle_change_requests")
+}
+
+model Reservation {
+  id                String    @id @default(uuid()) @db.Uuid
+  userId            String    @map("user_id") @db.Uuid
+  vehicleTypeId     String    @map("vehicle_type_id") @db.Uuid
+  expectedEntryTime DateTime  @map("expected_entry_time") @db.Timestamptz(6)
+  /// ReservationStatus: Pending, Confirmed, Modified, CheckedIn, Completed, Cancelled, NoShow. Default Pending. varchar(15).
+  status            String    @default("Pending") @db.VarChar(15)
+  createdAt         DateTime? @default(now()) @map("created_at") @db.Timestamptz(6)
+
+  user            User             @relation(fields: [userId], references: [id], onDelete: Restrict)
+  vehicleType     VehicleType      @relation(fields: [vehicleTypeId], references: [id], onDelete: Restrict)
+  parkingSessions ParkingSession[]
+  payments        Payment[]
+
+  @@index([userId], name: "idx_reservations_user_id")
+  @@index([status], name: "idx_reservations_status")
+  @@index([expectedEntryTime], name: "idx_reservations_expected_entry_time")
+  @@map("reservations")
+}
+
+model ParkingSession {
+  id                  String    @id @default(uuid()) @db.Uuid
+  reservationId       String?   @map("reservation_id") @db.Uuid
+  driverUserId        String?   @map("driver_user_id") @db.Uuid
+  licensePlateIn      String    @map("license_plate_in") @db.VarChar(15)
+  licensePlateOut     String?   @map("license_plate_out") @db.VarChar(15)
+  entryImageUrl       String?   @map("entry_image_url")
+  driverEntryImageUrl String?   @map("driver_entry_image_url")
+  exitImageUrl        String?   @map("exit_image_url")
+  driverExitImageUrl  String?   @map("driver_exit_image_url")
+  vehicleTypeId       String    @map("vehicle_type_id") @db.Uuid
+  entryTime           DateTime  @map("entry_time") @db.Timestamptz(6)
+  exitTime            DateTime? @map("exit_time") @db.Timestamptz(6)
+  entryGateId         String    @map("entry_gate_id") @db.Uuid
+  exitGateId          String?   @map("exit_gate_id") @db.Uuid
+  assignedSlotId      String?   @map("assigned_slot_id") @db.Uuid
+  actualSlotId        String?   @map("actual_slot_id") @db.Uuid
+  /// SessionStatus: Active, Completed, Exception. Default Active. varchar(15).
+  status              String    @default("Active") @db.VarChar(15)
+
+  reservation     Reservation?     @relation(fields: [reservationId], references: [id], onDelete: SetNull)
+  driverUser      User?            @relation("SessionDriver", fields: [driverUserId], references: [id], onDelete: SetNull)
+  vehicleType     VehicleType      @relation(fields: [vehicleTypeId], references: [id], onDelete: Restrict)
+  entryGate       Gate             @relation("SessionEntryGate", fields: [entryGateId], references: [id], onDelete: Restrict)
+  exitGate        Gate?            @relation("SessionExitGate", fields: [exitGateId], references: [id], onDelete: SetNull)
+  assignedSlot    ParkingSlot?     @relation("SessionAssignedSlot", fields: [assignedSlotId], references: [id], onDelete: SetNull)
+  actualSlot      ParkingSlot?     @relation("SessionActualSlot", fields: [actualSlotId], references: [id], onDelete: SetNull)
+  incidentReports IncidentReport[]
+  payments        Payment[]
+
+  @@index([driverUserId], name: "idx_parking_sessions_driver_user_id")
+  @@index([licensePlateIn], name: "idx_parking_sessions_license_plate_in")
+  @@index([status], name: "idx_parking_sessions_status")
+  @@index([reservationId], name: "idx_parking_sessions_reservation_id")
+  @@map("parking_sessions")
+}
+
+model Payment {
+  id                   String   @id @default(uuid()) @db.Uuid
+  userId               String?  @map("user_id") @db.Uuid
+  sessionId            String?  @map("session_id") @db.Uuid
+  reservationId        String?  @map("reservation_id") @db.Uuid
+  subscriptionId       String?  @map("subscription_id") @db.Uuid
+  amount               Decimal  @db.Decimal(15, 2)
+  /// PaymentMethod: PayOS, Cash. required varchar(20).
+  paymentMethod        String   @map("payment_method") @db.VarChar(20)
+  /// PaymentType: Deposit, CheckoutFee, SubscriptionFee, SubscriptionRenewal. varchar(30) nullable.
+  paymentType          String?  @map("payment_type") @db.VarChar(30)
+  paymentTime          DateTime @map("payment_time") @db.Timestamptz(6)
+  /// PaymentStatus: Pending, Success, Failed. Default Pending. varchar(10).
+  paymentStatus        String   @default("Pending") @map("payment_status") @db.VarChar(10)
+  transactionReference String?  @map("transaction_reference") @db.VarChar(100)
+
+  user         User?                @relation(fields: [userId], references: [id], onDelete: SetNull)
+  session      ParkingSession?      @relation(fields: [sessionId], references: [id], onDelete: SetNull)
+  reservation  Reservation?         @relation(fields: [reservationId], references: [id], onDelete: SetNull)
+  subscription MonthlySubscription? @relation(fields: [subscriptionId], references: [id], onDelete: SetNull)
+
+  @@index([userId], name: "idx_payments_user_id")
+  @@index([sessionId], name: "idx_payments_session_id")
+  @@index([reservationId], name: "idx_payments_reservation_id")
+  @@index([subscriptionId], name: "idx_payments_subscription_id")
+  @@index([transactionReference], name: "idx_payments_transaction_reference")
+  @@index([paymentStatus], name: "idx_payments_payment_status")
+  @@map("payments")
+}
+
+model IncidentReport {
+  id               String    @id @default(uuid()) @db.Uuid
+  sessionId        String?   @map("session_id") @db.Uuid
+  reportedByUserId String    @map("reported_by_user_id") @db.Uuid
+  issueType        String    @map("issue_type") @db.VarChar(255)
+  description      String
+  proofImageUrl    String?   @map("proof_image_url")
+  /// IncidentStatus: Open, InProgress, Resolved, Cancelled. Default Open. varchar(15).
+  status           String    @default("Open") @db.VarChar(15)
+  handledByStaffId String?   @map("handled_by_staff_id") @db.Uuid
+  resolvedAt       DateTime? @map("resolved_at") @db.Timestamptz(6)
+  resolutionNotes  String?   @map("resolution_notes")
+
+  session        ParkingSession? @relation(fields: [sessionId], references: [id], onDelete: SetNull)
+  reportedByUser User            @relation("IncidentReporter", fields: [reportedByUserId], references: [id], onDelete: Restrict)
+  handledByStaff User?           @relation("IncidentHandler", fields: [handledByStaffId], references: [id], onDelete: SetNull)
+
+  @@index([reportedByUserId], name: "idx_incident_reports_reporter_id")
+  @@index([handledByStaffId], name: "idx_incident_reports_handler_id")
+  @@index([sessionId], name: "idx_incident_reports_session_id")
+  @@index([status], name: "idx_incident_reports_status")
+  @@map("incident_reports")
+}

@@ -1,0 +1,11 @@
+---
+description: JWT authentication, refresh sessions, role and resource authorization
+globs: "src/auth/**/*.ts,src/**/*.controller.ts,src/app.module.ts"
+alwaysApply: false
+---
+
+- AtGuard is global. Use `@Public()` only for intentionally exempt endpoints; refresh still requires RtGuard.
+- RolesGuard is not global. Apply it with role metadata when restricting a route, and check resource ownership independently.
+- Reuse current-user decorators, JWT strategies and HashingService. Never trust client-supplied role or owner identity for authorization.
+- Preserve inactive-account, expiry, revocation and session checks. Changes to token rotation need atomic consumption and concurrency/replay coverage.
+- Return explicit public fields. Never expose passwordHash, tokenHash or secrets. Keep new environment values as placeholders in `.env.example`.
