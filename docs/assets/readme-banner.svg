@@ -1,0 +1,29 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="1200" height="360" viewBox="0 0 1200 360" role="img" aria-labelledby="title desc">
+  <title id="title">PRM393 — Parking Management Backend</title>
+  <desc id="desc">NestJS REST API with Prisma, PostgreSQL and connected parking services.</desc>
+  <defs>
+    <linearGradient id="bg" x2="1" y2="1"><stop stop-color="#0b1020"/><stop offset="1" stop-color="#152b46"/></linearGradient>
+    <linearGradient id="accent"><stop stop-color="#22d3ee"/><stop offset="1" stop-color="#a78bfa"/></linearGradient>
+    <pattern id="grid" width="40" height="40" patternUnits="userSpaceOnUse"><path d="M40 0H0V40" fill="none" stroke="#7dd3fc" stroke-opacity=".07"/></pattern>
+  </defs>
+  <rect width="1200" height="360" rx="24" fill="url(#bg)"/>
+  <rect width="1200" height="360" rx="24" fill="url(#grid)"/>
+  <path d="M0 340H1200" stroke="url(#accent)" stroke-width="4"/>
+  <g font-family="Segoe UI,Arial,sans-serif">
+    <text x="64" y="67" fill="#67e8f9" font-size="14" letter-spacing="4">FPT UNIVERSITY  /  PRM393</text>
+    <text x="60" y="150" fill="#f8fafc" font-size="70" font-weight="800">PARKING</text>
+    <text x="64" y="201" fill="#c4b5fd" font-size="34" font-weight="600" letter-spacing="5">MANAGEMENT BACKEND</text>
+    <text x="65" y="247" fill="#94a3b8" font-size="18">REST APIs. Persistent data. Connected services.</text>
+    <g font-size="13" font-weight="600" fill="#e2e8f0">
+      <rect x="64" y="277" width="102" height="30" rx="15" fill="#253049"/><text x="84" y="297">NESTJS 12</text>
+      <rect x="178" y="277" width="116" height="30" rx="15" fill="#253049"/><text x="196" y="297">TYPESCRIPT</text>
+      <rect x="306" y="277" width="129" height="30" rx="15" fill="#253049"/><text x="323" y="297">POSTGRESQL</text>
+    </g>
+    <g transform="translate(902 86)">
+      <rect width="204" height="204" rx="36" fill="#0f172a" stroke="#334155" stroke-width="2"/>
+      <rect x="22" y="22" width="160" height="160" rx="25" fill="none" stroke="url(#accent)" stroke-width="2"/>
+      <text x="56" y="145" fill="#67e8f9" font-size="126" font-weight="800">P</text>
+      <circle cx="181" cy="24" r="7" fill="#34d399"/>
+    </g>
+  </g>
+</svg>
