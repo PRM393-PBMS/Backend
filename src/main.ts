@@ -39,7 +39,7 @@ async function bootstrap() {
   const config = new DocumentBuilder()
     .setTitle('PRM393 Backend - PBMS REST API')
     .setDescription(
-      'Tài liệu API backend Node. Hợp đồng `/api/*` theo envelope chuẩn và path trong docs/openapi-pbms-paths.md. Dual surface `/auth/*` + `/api/*`.',
+      'Tài liệu API backend Node. Hợp đồng `/api/*` theo envelope chuẩn và path trong docs/openapi-pbms-paths.md. Đăng nhập tại `/api/Auth`. Hồ sơ tại `/api/profile`.',
     )
     .setVersion('1.0.0')
     .addBearerAuth(
@@ -52,6 +52,10 @@ async function bootstrap() {
         in: 'header',
       },
       'JWT-auth',
+    )
+    .addServer(
+      process.env.PUBLIC_API_URL?.trim() || '/',
+      'API origin (cùng host với trang docs nếu để trống)',
     )
     .build();
 

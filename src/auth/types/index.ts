@@ -3,7 +3,7 @@ import { Role } from '../enums/role.enum';
 export interface JwtPayload {
   readonly sub: string;
   readonly email: string;
-  /** Nest `/auth/*`: USER|ADMIN|MODERATOR. PBMS `/api/*`: Role.roleName (User, Manager, …). */
+  /** Enum Nest (`USER`/`ADMIN`/`MODERATOR`) hoặc `Role.roleName` PBMS (User, Manager, …). */
   readonly role: Role | string;
   readonly nestRole?: Role;
   readonly UserId?: string;

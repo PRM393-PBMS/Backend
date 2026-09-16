@@ -36,7 +36,7 @@ Entity PBMS khai báo `string Status` (varchar + default). Enum nằm ở `Commo
 
 `Gate.GateType` là varchar(10), **không** có enum EF.
 
-`UserRole` Prisma (`USER` / `ADMIN` / `MODERATOR`) **giữ** cho Nest `/auth/*`. PBMS dùng bảng `Role.roleName`.
+`UserRole` Prisma (`USER` / `ADMIN` / `MODERATOR`) **giữ** trên model User. PBMS dùng bảng `Role.roleName`.
 
 ---
 
@@ -56,9 +56,9 @@ Giữ nguyên field Nest: `id`, `email`, `passwordHash`, `firstName`, `lastName`
 | Bảng `Role` mới | Additive | |
 | Quan hệ parking/payment/incident | Additive | |
 
-**Không xóa / không rename** field Nest. `/auth/register` hiện tại vẫn ghi `email` + `firstName` + `lastName` + `role` enum.
+**Không xóa / không rename** field Nest. Đăng ký PBMS OTP ghi `userName` / `fullName` / `email` / `phoneNumber` / `pbmsRoleId`.
 
-Migration `20260917032600_pbms_domain` đã áp dụng trên Postgres đang trỏ bởi local `.env` (External URL). Client Prisma generate lại sau migrate. `/auth/register` Nest vẫn không ghi `userName`/`pbmsRoleId`.
+Migration `20260917032600_pbms_domain` đã áp dụng trên Postgres đang trỏ bởi local `.env` (External URL). Client Prisma generate lại sau migrate. Đăng ký PBMS OTP gán `userName`/`pbmsRoleId`.
 
 RefreshToken Nest **giữ** `tokenHash`, `deviceInfo`, `ipAddress`, `expiresAt`, `updatedAt`, `onDelete: Cascade`. PBMS không có `ExpiresAt` / device / IP; lưu plaintext unique `RefreshTokenKey` varchar(500); FK `ClientSetNull`. **Không** thêm cột plaintext.
 
@@ -261,12 +261,12 @@ Không dump SQL Server. Schema trống; không bịa rule mới.
 1. **`isActive` vs `status`:** PBMS `AuthService` dùng `Status == Active` / `== Banned`. Trên Postgres: `status` là nguồn PBMS. Đồng bộ Nest: `Active` → `isActive=true`; `Inactive` hoặc `Banned` → `isActive=false`. Login `/api/Auth`: Banned → message khóa 403; khác Active → message vô hiệu hóa 403 (đúng PBMS).
 2. **Email:** `/api/Auth` bắt buộc email (PBMS service). Cột Nest `email` required. Không còn câu hỏi dump null.
 3. **Phone:** `/api/Auth/send-register-otp` bắt buộc phone + regex PBMS. Unique Postgres cho phép nhiều `NULL` (user Nest). Không lưu `""`.
-4. **`pbmsRoleId`:** User Nest `/auth/register` để null. User PBMS OTP gán Role tên `"User"` (PBMS). Seed role: `User`, `Customer`, `Staff`, `Manager`, `Admin` (đúng chuỗi `[Authorize]` / `GetRoleByNameAsync`).
+4. **`pbmsRoleId`:** User PBMS OTP gán Role tên `"User"` (PBMS). Seed role: `User`, `Customer`, `Staff`, `Manager`, `Admin` (đúng chuỗi `[Authorize]` / `GetRoleByNameAsync`).
 5. **Timezone:** ghi `timestamptz` UTC. Job NoShow sau này tính UTC.
 6. **`Gate.GateType`:** varchar(10), không enum — đúng EF.
 7. **`TransactionReference`:** index, không unique — đúng PBMS.
 8. **Độ dài status:** giữ maxlength EF; String nhận `.ToString()` enum PBMS.
-9. **Role JWT `/api`:** claim `role` = `Role.roleName` (User/Manager/…). Nest `/auth` giữ enum `USER`/`ADMIN`/`MODERATOR`. HTTP lệch khoảng trắng trong attribute: so khớp role **không phân biệt hoa thường**; seed dùng `User`, `Customer`, `Staff`, `Manager`, `Admin`.
+9. **Role JWT `/api`:** claim `role` = `Role.roleName` (User/Manager/…). Enum Prisma `USER`/`ADMIN`/`MODERATOR` vẫn trên cột `users.role`. HTTP lệch khoảng trắng trong attribute: so khớp role **không phân biệt hoa thường**; seed dùng `User`, `Customer`, `Staff`, `Manager`, `Admin`.
 10. **Xóa user:** Nest RT `onDelete: Cascade` (giữ). FK nghiệp vụ Restrict/SetNull. `DELETE /api/User/{id}` (pha sau) follow PBMS `UserService.Delete` khi implement, không đổi schema lúc này.
 
 ---
@@ -274,5 +274,5 @@ Không dump SQL Server. Schema trống; không bịa rule mới.
 ## Việc đã / chưa làm
 
 - **Đã migrate** Postgres: `20260917032600_pbms_domain` (schema trống + seed role User/Customer/Staff/Manager/Admin). Không SQL Server dump. Local CLI dùng External URL; Internal URL chỉ trên Render web service.
-- Pha 1: envelope `PbmsResponseDto` + `/api/Auth/*` (login, OTP register/reset, refresh, logout). `/auth/*` Nest giữ nguyên.
+- Pha 1: envelope `PbmsResponseDto` + `/api/Auth/*` (login, OTP register/reset, refresh, logout). Surface Nest `/auth/*` đã gỡ khỏi HTTP công khai.
 - Module bãi đỗ / PayOS / OCR: chưa.

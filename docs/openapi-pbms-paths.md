@@ -4,7 +4,7 @@ Danh sách **mọi** HTTP action của surface PBMS trên backend Node.
 Path giữ **đúng casing** đã freeze (ví dụ `/api/Auth`, `/api/reservations`).
 
 **Trạng thái: FROZEN** — đây là surface Nest phải expose cho client PBMS.  
-Nest `/auth/*` (không prefix) **không** thuộc freeze này.
+HTTP công khai chỉ còn `/api/*`. Không còn route Nest `/auth/*`.
 
 Quy ước cột:
 

@@ -17,8 +17,9 @@ Ví dụ địa chỉ minh họa, phải thay bằng địa chỉ được cấp
 
 - Backend: `https://prm393-api.onrender.com`
 - Swagger: `https://prm393-api.onrender.com/api/docs`
-- Đăng ký hiện có: `POST https://prm393-api.onrender.com/auth/register`
-- Hồ sơ hiện có: `GET https://prm393-api.onrender.com/auth/me`
+- Đăng ký: `POST https://prm393-api.onrender.com/api/Auth/send-register-otp` rồi `POST .../api/Auth/verify-register-otp`
+- Đăng nhập: `POST https://prm393-api.onrender.com/api/Auth/login`
+- Hồ sơ: `GET https://prm393-api.onrender.com/api/profile`
 
 Swagger gửi request thật đến API. Dữ liệu chỉ là mock nếu code API tự trả dữ liệu giả. `AuthService` hiện gọi Prisma để tạo/tìm user và lưu refresh session trong PostgreSQL.
 
@@ -29,7 +30,7 @@ Swagger gửi request thật đến API. Dữ liệu chỉ là mock nếu code A
 | Hạng mục | Hiện trạng lúc viết tài liệu |
 |---|---|
 | Backend | NestJS 12, Prisma 6.4.1, PostgreSQL |
-| Route hoạt động trong source | Auth `/auth/*`; Swagger `/api/docs` |
+| Route hoạt động trong source | Auth `/api/Auth/*`; hồ sơ `/api/profile`; Swagger `/api/docs` |
 | Các route PBMS `/api/*` | Là mục tiêu trong tài liệu; chưa có controller được đăng ký cho các module này |
 | Prisma schema | Đã mở rộng các model nghiệp vụ; có model không đồng nghĩa đã có API |
 | Migration | Chưa có thư mục migration đã lưu; cần tạo và review trước deploy |
@@ -231,7 +232,7 @@ Quy trình này giữ devDependencies vì repo hiện để Prisma Client và CL
 
 Các credential PayOS/mail/OCR có thể chuẩn bị theo mục 5, nhưng chỉ cần hoạt động khi module tương ứng đã implement. Tên biến phải khớp code; không có cơ chế tự tích hợp dịch vụ chỉ nhờ biến ENV.
 
-Render yêu cầu web server lắng nghe trên `0.0.0.0` và port được cấp; khi cần sửa cấu hình bind, dùng `app.listen(port, '0.0.0.0')`. Repo đã đọc `PORT`. Chọn Health Check Path `/api/docs` cho kiểm tra HTTP ban đầu; `/` hiện chịu global JWT guard nên có thể trả 401. Sau này thêm endpoint health public có kiểm tra readiness/database để theo dõi đúng sức khỏe hệ thống. [Web services](https://render.com/docs/web-services)
+Render yêu cầu web server lắng nghe trên `0.0.0.0` và port được cấp; khi cần sửa cấu hình bind, dùng `app.listen(port, '0.0.0.0')`. Repo đã đọc `PORT`. Đặt Health Check Path `/health` (`GET` công khai, JSON `{"status":"ok"}`, không cần JWT, không truy vấn database). `GET /` công khai, redirect sang `/api/docs`. Gói Free vẫn ngủ khi idle; không dùng health check nội bộ Render để “giữ 24/7”. Xem `docs/render-uptime.md`. [Web services](https://render.com/docs/web-services)
 
 ### Sau deploy
 
@@ -243,11 +244,11 @@ Không cần `npm run deploy` cho quy trình Render này; Render chạy các com
 
 Thực hiện bằng tài khoản/email bạn thực sự muốn đăng ký, không dùng dữ liệu example mặc định của Swagger.
 
-1. Mở **Swagger production** `/api/docs`, chọn `POST /auth/register` → Try it out.
-2. Điền đúng bốn trường `email`, `password`, `firstName`, `lastName`. Password hiện yêu cầu 8–64 ký tự, có hoa/thường/số/ký tự đặc biệt; không gửi thêm role hoặc trường không thuộc DTO.
-3. Execute, kiểm tra response và ghi nhận `user.id`. Response token được phát từ backend thật; không chia sẻ token.
-4. Dùng nút **Authorize**, dán raw `accessToken` vào scheme `JWT-auth`, không gõ thêm `Bearer` nếu Swagger tự thêm.
-5. Gọi `GET /auth/me`. Email/id phải trùng tài khoản vừa tạo.
+1. Mở **Swagger production** `/api/docs`, chọn `POST /api/Auth/send-register-otp` → Try it out, rồi `POST /api/Auth/verify-register-otp`.
+2. Điền các trường theo DTO PBMS (`userName`, `fullName`, `email`, `phoneNumber`, `password`, OTP). Password theo yêu cầu DTO; không gửi thêm role hoặc trường không thuộc DTO.
+3. Execute, kiểm tra envelope `{ statusCode, message, isSuccess, result }` và ghi nhận `userId` khi đăng ký thành công. Response token được phát từ backend thật; không chia sẻ token.
+4. Dùng nút **Authorize**, dán raw `accessToken` (trong `result`) vào scheme `JWT-auth`, không gõ thêm `Bearer` nếu Swagger tự thêm.
+5. Gọi `GET /api/profile`. Email/id phải trùng tài khoản vừa tạo.
 6. Từ công cụ quản trị như pgAdmin/DBeaver kết nối External URL đúng DB production, chạy truy vấn chỉ đọc sau và thay email bằng email vừa dùng:
 
 ```sql
@@ -257,7 +258,7 @@ WHERE email = 'EMAIL_BAN_VUA_DANG_KY';
 ```
 
 7. Kiểm tra id bằng response API. Không cần SELECT password_hash/token_hash để xác nhận persistence.
-8. Restart backend từ dashboard, sau đó `POST /auth/login` bằng tài khoản cũ, lấy token mới và gọi `/auth/me`. User phải còn, không đăng ký lại.
+8. Restart backend từ dashboard, sau đó `POST /api/Auth/login` bằng tài khoản cũ, lấy token mới và gọi `GET /api/profile`. User phải còn, không đăng ký lại.
 9. Kiểm tra deployment không chạy seed/reset và URL database không thay đổi sau mỗi deploy.
 
 Kết quả đạt: thao tác người dùng ghi vào PostgreSQL hosted, SQL đọc được cùng bản ghi, và dữ liệu tồn tại sau restart. Đối với bãi xe, chỗ đỗ, đặt chỗ và thanh toán, lặp lại cách kiểm tra khi endpoint nghiệp vụ đã có; không coi các model Prisma là endpoint đã triển khai.
@@ -275,10 +276,10 @@ Bật/kiểm tra chính sách backup của gói database, ghi rõ thời gian gi
 | Prisma P2021 / bảng không tồn tại | Migration đã commit, đã chạy đúng DB, đúng schema chưa |
 | Build thiếu `@prisma/client` hoặc kiểu Prisma | Cài devDependencies theo repo hiện tại và chạy generate trước build |
 | Swagger 200 nhưng API 500 | Kiểm tra query DB/migration/log; Swagger không kiểm tra DB thay bạn |
-| `/auth/me` 401 | Access token đúng môi trường, còn hạn, đã Authorize chưa |
-| Register 400 | DTO đủ bốn trường, password đúng yêu cầu, không có trường dư |
-| Register 409 | Email đã tồn tại thật; đăng nhập thay vì chèn lại |
-| Route `/api/Auth/login` 404 | Dùng `/auth/login` hiện có; controller PBMS chưa được implement |
+| `/api/profile` 401 | Access token đúng môi trường, còn hạn, đã Authorize chưa |
+| Register 400 | DTO OTP đủ trường, password đúng yêu cầu, không có trường dư |
+| Register 409 / conflict trong envelope | Email đã tồn tại thật; đăng nhập thay vì chèn lại |
+| Route `/auth/login` 404 | Surface Nest `/auth/*` đã gỡ; dùng `/api/Auth/login` |
 | Web frontend bị CORS | Code chưa nối CORS_ORIGIN, origin không khớp; không phải lỗi password DB |
 | SMTP timeout trên Free | Giới hạn outbound SMTP, không phải chỉ do App Password |
 | Dữ liệu mất sau redeploy | DB URL trỏ nhầm DB, DB hết hạn/reset, hoặc dữ liệu chỉ nằm trong memory |

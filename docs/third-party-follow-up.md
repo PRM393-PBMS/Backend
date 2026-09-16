@@ -13,8 +13,8 @@ Path `/api/*` đã đóng băng: [`openapi-pbms-paths.md`](./openapi-pbms-paths.
 | # | Quyết định |
 |---|------------|
 | Phạm vi | Clone **toàn bộ** chức năng PBMS. Input/output phía client giống PBMS. |
-| Path | Surface PBMS **bắt buộc** trùng path PBMS, kể cả casing: `/api/Auth/login`, `/api/ParkingOperation/check-in`, `/api/payments/payos-webhook`, … Nest hiện **không** có global prefix `/api` — sẽ thêm controller/route tương thích, **không** bắt `/auth/*` hiện tại đổi path. |
-| Dual surface | Giữ Nest `/auth/*` **và** thêm `/api/*` theo hợp đồng freeze. Stack chỉ Node/Nest. |
+| Path | Surface PBMS **bắt buộc** trùng path PBMS, kể cả casing: `/api/Auth/login`, `/api/ParkingOperation/check-in`, `/api/payments/payos-webhook`, … Nest **không** dùng global prefix `/api`; từng controller khai báo path đầy đủ. |
+| Dual surface | **Đã gỡ** Nest `/auth/*`. Chỉ còn `/api/*` theo hợp đồng freeze. Stack chỉ Node/Nest. |
 | Header | `Authorization: Bearer <access token>`. |
 | JWT | Nội bộ theo Nest (an toàn hơn PBMS). Token dùng trên `/api/*` vẫn phải mang claim PBMS cần đọc. **Không** copy secret JWT hardcoded từ PBMS vào repo. Chi tiết mục dưới. |
 | Vendor | **Theo repo PBMS** (PayOS, Gmail SMTP, PlateRecognizer, file local, PDF, job nền, QR). |
@@ -35,22 +35,22 @@ Path `/api/*` đã đóng băng: [`openapi-pbms-paths.md`](./openapi-pbms-paths.
   - Bắt buộc: `UserId` (`ReservationController`, `ClaimsPrincipalExtensions.GetUserId`).
   - Cần cho role/I/O: `role` (tên role string như PBMS), `Email`, `UserName`, `RoleId`.
   - Được **thêm** `sub` / `email` / `role` (enum Nest) để guard Nest tái sử dụng được nếu cùng token.
-- Token **cho `/auth/*` Nest** có thể giữ payload hiện tại `{ sub, email, role }` — client Nest không giả định claim `UserId`.
+- Token **cho `/api/*`** mang claim PBMS (`UserId`, `role` = `Role.roleName`, …) cùng `sub` / `email` để guard Nest tái sử dụng.
 
 Client `/api/Auth/login` **vẫn** nhận JSON envelope PBMS (`statusCode`, `message`, `isSuccess`, `result.user` + `accessToken` + `refreshToken`). Khác biệt chỉ nằm **trong** JWT (issuer/secret/thời hạn/hash RT), không nằm ở field JSON login.
 
 ---
 
-## Hai bề mặt HTTP
+## Bề mặt HTTP công khai
 
-| | Nest gốc | PBMS tương thích PBMS |
-|---|----------|---------------------|
-| Path | `/auth/register`, `/auth/login`, `/auth/refresh`, `/auth/me`, … (không prefix `/api`) | `/api/Auth/...`, `/api/reservations`, `/api/ParkingOperation/...`, `/api/payments/payos-webhook`, … **đúng casing PBMS** |
-| Body / status | DTO Nest hiện tại (`email`, `firstName`, `lastName`, `AuthResponseDto`) | Envelope `ResponseDTO` + field PBMS (`userName`, `fullName`, `refreshTokenKey`, …) |
-| Token | Payload Nest | Payload có `UserId` (+ claim PBMS khác) |
-| Swagger | `/api/docs` (giữ) | Cùng app; nhóm tag PBMS |
+| | PBMS |
+|---|------|
+| Path | `/api/Auth/...`, `/api/reservations`, `/api/ParkingOperation/...`, `/api/payments/payos-webhook`, `/api/profile`, … **đúng casing PBMS** |
+| Body / status | Envelope `ResponseDTO` + field PBMS (`userName`, `fullName`, `refreshTokenKey`, …) |
+| Token | Payload có `UserId` (+ claim PBMS khác) |
+| Swagger | `/api/docs`; tag đăng nhập là **PBMS Auth** |
 
-`GET /` Hello World không phải hợp đồng PBMS.
+`GET /` chuyển tới Swagger, không phải hợp đồng PBMS.
 
 ---
 
@@ -178,5 +178,5 @@ Không còn chờ dump SQL Server. OTP cần `MAIL_SENDER_EMAIL` + `MAIL_PASSWOR
 
 ## Việc tiếp theo
 
-1. Dual surface `/auth/*` + `/api/*` theo hợp đồng freeze.  
+1. Surface HTTP công khai chỉ `/api/*` theo hợp đồng freeze.  
 2. Module bãi đỗ / reservation / PayOS / OCR / báo cáo đã gắn path `/api/...`.

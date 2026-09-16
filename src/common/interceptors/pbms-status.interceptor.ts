@@ -10,7 +10,7 @@ import { PbmsResponseDto } from '../dto/pbms-response.dto';
 
 /**
  * Gán HTTP status = envelope.statusCode.
- * Chỉ dùng trên controller PBMS `/api/*`, không bọc lại `/auth/*`.
+ * Chỉ dùng trên controller PBMS `/api/*`.
  */
 @Injectable()
 export class PbmsStatusInterceptor implements NestInterceptor {

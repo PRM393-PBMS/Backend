@@ -1,7 +1,6 @@
 import { Module } from '@nestjs/common';
 import { JwtModule } from '@nestjs/jwt';
 import { PassportModule } from '@nestjs/passport';
-import { AuthController } from './auth.controller';
 import { AuthService } from './auth.service';
 import { PbmsAuthController } from './pbms/pbms-auth.controller';
 import { PbmsAuthService } from './pbms/pbms-auth.service';
@@ -20,7 +19,7 @@ import { PbmsRolesGuard } from './common/guards/pbms-roles.guard';
     PassportModule.register({ defaultStrategy: 'jwt' }),
     JwtModule.register({}),
   ],
-  controllers: [AuthController, PbmsAuthController],
+  controllers: [PbmsAuthController],
   providers: [
     AuthService,
     PbmsAuthService,

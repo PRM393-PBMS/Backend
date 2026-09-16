@@ -19,4 +19,6 @@ Health này kiểm tra tiến trình HTTP còn phục vụ được request (liv
 
 Thay đổi file trong repo chưa tự sửa Settings trên Render của service đã tạo thủ công. Cần thực hiện bước 3–4 trên dashboard; không cần tạo lại database hay thay DATABASE_URL.
 
+Health check của Render chỉ chạy khi instance đang up. Gói Free vẫn spin-down khi idle; keep-alive phải là cron **bên ngoài**. Chi tiết: `docs/render-uptime.md`.
+
 Tài liệu nền tảng: https://render.com/docs/health-checks

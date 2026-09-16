@@ -1,0 +1,84 @@
+import { INestApplication, ValidationPipe } from '@nestjs/common';
+import { Test, TestingModule } from '@nestjs/testing';
+import { DocumentBuilder, SwaggerModule } from '@nestjs/swagger';
+import request from 'supertest';
+import { App } from 'supertest/types';
+import { PbmsResponseDto } from '../../common/dto/pbms-response.dto';
+import { PbmsAuthController } from './pbms-auth.controller';
+import { PbmsAuthService } from './pbms-auth.service';
+
+describe('PbmsAuthController', () => {
+  let app: INestApplication<App>;
+  const pbmsAuthService = {
+    login: jest.fn(),
+    sendRegisterOtp: jest.fn(),
+    verifyRegisterOtp: jest.fn(),
+    requestResetPasswordOtp: jest.fn(),
+    verifyResetPasswordOtp: jest.fn(),
+    refreshToken: jest.fn(),
+    logout: jest.fn(),
+  };
+
+  beforeEach(async () => {
+    const moduleFixture: TestingModule = await Test.createTestingModule({
+      controllers: [PbmsAuthController],
+      providers: [{ provide: PbmsAuthService, useValue: pbmsAuthService }],
+    }).compile();
+
+    app = moduleFixture.createNestApplication();
+    app.useGlobalPipes(
+      new ValidationPipe({
+        whitelist: true,
+        forbidNonWhitelisted: true,
+        transform: true,
+      }),
+    );
+    await app.init();
+    jest.clearAllMocks();
+  });
+
+  afterEach(async () => {
+    await app.close();
+  });
+
+  it('Swagger chỉ có tag PBMS Auth, không có Authentication hay /auth/*', () => {
+    const document = SwaggerModule.createDocument(app, new DocumentBuilder().build());
+    expect(document.paths['/auth/login']).toBeUndefined();
+    expect(document.paths['/auth/register']).toBeUndefined();
+    expect(document.paths['/auth/me']).toBeUndefined();
+    expect(document.paths['/api/Auth/login']?.post).toBeDefined();
+    expect(document.paths['/api/Auth/login']?.post?.tags).toEqual(['PBMS Auth']);
+    const tagNames = Object.values(document.paths ?? {}).flatMap((pathItem) =>
+      Object.values(pathItem ?? {}).flatMap((op) =>
+        op && typeof op === 'object' && 'tags' in op ? (op.tags ?? []) : [],
+      ),
+    );
+    expect(tagNames).not.toContain('Authentication');
+    expect(tagNames).toContain('PBMS Auth');
+  });
+
+  it('POST /api/Auth/login trả envelope {statusCode,message,isSuccess,result}', async () => {
+    pbmsAuthService.login.mockResolvedValue(
+      new PbmsResponseDto('Đăng nhập thành công', 200, true, {
+        accessToken: 'at',
+        refreshToken: 'rt',
+      }),
+    );
+
+    const response = await request(app.getHttpServer())
+      .post('/api/Auth/login')
+      .send({ email: 'a@example.com', password: 'secret12' })
+      .expect(200);
+
+    expect(response.body).toMatchObject({
+      statusCode: 200,
+      message: 'Đăng nhập thành công',
+      isSuccess: true,
+      result: { accessToken: 'at', refreshToken: 'rt' },
+    });
+  });
+
+  it('POST /auth/login không còn trên public API', async () => {
+    await request(app.getHttpServer()).post('/auth/login').send({}).expect(404);
+  });
+});
