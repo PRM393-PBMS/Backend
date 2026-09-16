@@ -253,9 +253,8 @@ Chi tiết trong [hướng dẫn deployment](docs/huong-dan-env-va-deploy.md) v�
 
 <div align="center">
 
-**PRM393 · FPT University · Backend Engineering**
+**PRM393 · FPT University · Backend Engineering · fogit **
 
-Banner SVG được lưu ngay trong repo; các khối mở rộng giúp đọc nhanh trên GitHub.
 
 Licensed under the [MIT License](LICENSE).
 
