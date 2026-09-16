@@ -1,0 +1,11 @@
+---
+description: Prisma PostgreSQL schema, queries and migration workflow
+globs: "prisma/**/*,src/**/*.service.ts"
+alwaysApply: false
+---
+
+- Read `prisma/schema.prisma` and reuse `src/prisma/prisma.service.ts`. Keep Prisma CLI/client versions aligned with package.json.
+- Preserve UUID, mapped table/column names, timestamps and relation conventions. Use bounded queries and transactions for dependent writes.
+- Keep credentials, password hashes and token hashes out of API responses and logs. Map known database conflicts to appropriate HTTP errors.
+- For schema changes, format/validate the schema and generate the client with installed Prisma tooling. Review the migration and its data impact.
+- Run migrations only against the intended authorized database. Do not use reset or destructive db push as a routine check. State database prerequisites when verification cannot run.

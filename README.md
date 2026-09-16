@@ -27,6 +27,8 @@
 
 ## Project setup
 
+Hướng dẫn tiếng Việt: [Điền ENV, host backend/Swagger/PostgreSQL và kiểm chứng dữ liệu thật](docs/huong-dan-env-va-deploy.md).
+
 ```bash
 $ npm install
 ```

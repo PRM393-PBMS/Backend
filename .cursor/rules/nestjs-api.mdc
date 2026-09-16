@@ -1,0 +1,12 @@
+---
+description: NestJS modules, REST contracts, validation, Swagger and tests
+globs: "src/**/*.ts,test/**/*.ts"
+alwaysApply: false
+---
+
+- Follow feature modules and constructor dependency injection. Controllers handle HTTP; services implement business behavior.
+- Use validated class DTOs compatible with the global whitelist/forbidNonWhitelisted/transform ValidationPipe. Preserve runtime DTO imports for decorators.
+- Keep response DTOs and Swagger metadata accurate, including the named `JWT-auth` bearer scheme. Swagger lives at `/api/docs`; this is not a global route prefix.
+- Preserve API contracts unless the requested change requires an update. Use Nest exceptions for expected failures.
+- Use injected PrismaService and explicit safe response fields.
+- Verify TypeScript changes with lint, build and relevant Jest tests. HTTP tests should reproduce production pipes and guards; unit tests should mock database dependencies.
