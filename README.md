@@ -81,7 +81,7 @@ Repo dùng một nhóm API công khai: `/api/*` (hợp đồng PBMS). Đăng nh�
 | Build / development | Nest CLI & Schematics `^12.0.0`, ts-node, ts-loader, tsconfig-paths, source-map-support |
 | Type definitions | Node, Express, Jest, bcrypt, Multer, Nodemailer, Passport JWT, PDFKit, QRCode, Supertest |
 | Package management | npm + `package-lock.json` |
-| Hosting được hướng dẫn | Render Web Service + Render PostgreSQL |
+| Hosting được hướng dẫn | Render Web Service + Supabase PostgreSQL |
 | Quản trị database | pgAdmin 4 hoặc công cụ PostgreSQL tương đương; không phải dependency của app |
 
 <details>
@@ -139,7 +139,7 @@ Cần Node.js phù hợp (hướng dẫn repo dùng Node 22), npm và một Post
 npm ci --include=dev
 ```
 
-Tạo `.env` từ [.env.example](.env.example), chỉ khi chưa có file `.env`. Điền URL database và hai JWT secret riêng; xem [hướng dẫn lấy cấu hình](docs/huong-dan-env-va-deploy.md). Dùng External Database URL nếu kết nối Render từ máy cá nhân.
+Tạo `.env` từ [.env.example](.env.example), chỉ khi chưa có file `.env`. Điền Supabase **Session Pooler URL** có `sslmode=require` và hai JWT secret riêng; xem [hướng dẫn lấy cấu hình](docs/huong-dan-env-va-deploy.md). Không commit URL database hoặc password.
 
 ```bash
 npx --no-install prisma generate
@@ -171,7 +171,7 @@ Nếu database đã có bảng/dữ liệu, cần kiểm tra lịch sử migrati
 | JWT | `JWT_ACCESS_SECRET`, `JWT_REFRESH_SECRET` |
 | Server | `NODE_ENV`, `PORT`, `CORS_ORIGIN` |
 | PayOS | `PAYOS_CLIENT_ID`, `PAYOS_API_KEY`, `PAYOS_CHECKSUM_KEY`, `PAYOS_RETURN_URL`, `PAYOS_CANCEL_URL` |
-| SMTP | `MAIL_HOST`, `MAIL_PORT`, `MAIL_SENDER_NAME`, `MAIL_SENDER_EMAIL`, `MAIL_PASSWORD` |
+| SMTP | `MAIL_HOST`, `MAIL_PORT`, `MAIL_SENDER_NAME`, `MAIL_BRAND_COLOR`, `MAIL_SENDER_EMAIL`, `MAIL_REPLY_TO`, `MAIL_PASSWORD` |
 | OCR | `PLATE_RECOGNIZER_API_KEY`, `PLATE_RECOGNIZER_ENDPOINT`, `PLATE_RECOGNIZER_REGIONS`, `PLATE_RECOGNIZER_MINIMUM_CONFIDENCE` |
 | Files | `UPLOAD_DIR` |
 
@@ -203,7 +203,7 @@ Script `test:e2e` riêng cũng có trong `package.json`; nó dùng `test/jest-e2
 
 ## ☁️ Deployment
 
-Render chạy backend và Swagger trong cùng một Web Service. PostgreSQL là tài nguyên riêng, được kết nối qua `DATABASE_URL`.
+Render chạy backend và Swagger trong cùng một Web Service. Supabase PostgreSQL là tài nguyên riêng, được kết nối qua `DATABASE_URL` bằng Session Pooler.
 
 | Cấu hình Web Service | Giá trị |
 |---|---|
@@ -211,14 +211,15 @@ Render chạy backend và Swagger trong cùng một Web Service. PostgreSQL là 
 | Pre-deploy, khi gói hỗ trợ và migration đã review | `npx --no-install prisma migrate deploy` |
 | Start | `npm run start:prod` |
 | Health Check Path | `/health` |
-| Database | Internal URL nếu backend và DB Render cùng region |
+| Database | Supabase Session Pooler URL, có `schema=public&sslmode=require` |
 
-Chi tiết trong [hướng dẫn deployment](docs/huong-dan-env-va-deploy.md), [setup health check](docs/render-health-check.md) và [uptime Render Free](docs/render-uptime.md). Không chạy `migrate dev`, reset hoặc seed tự động trong startup production.
+Chi tiết trong [hướng dẫn deployment](docs/huong-dan-env-va-deploy.md), [setup health check](docs/render-health-check.md) và [UptimeRobot cho Render](docs/render-uptime.md). Không chạy `migrate dev`, reset hoặc seed tự động trong startup production.
 
 <details>
 <summary><strong>📌 Phạm vi vận hành hiện tại</strong></summary>
 
 - OTP đang lưu trong memory của process, mất khi restart và chưa chia sẻ giữa nhiều instance.
+- OTP đăng ký và reset mật khẩu được gửi bằng email HTML riêng của dự án; cấu hình qua các biến `MAIL_*` và kiểm tra inbox thật sau deploy.
 - Upload dùng filesystem; cần persistent storage nếu muốn giữ file sau redeploy.
 - Cron chạy trong process ứng dụng; cần đánh giá điều phối khi chạy nhiều instance.
 - Health 200 chỉ xác nhận HTTP liveness. Kiểm tra database bằng API và đối chiếu bản ghi thực.
@@ -233,7 +234,7 @@ Chi tiết trong [hướng dẫn deployment](docs/huong-dan-env-va-deploy.md), [
 |---|---|
 | [ENV & deployment](docs/huong-dan-env-va-deploy.md) | Lấy credential, host API/DB và kiểm chứng dữ liệu thật |
 | [Render health check](docs/render-health-check.md) | Root redirect, Swagger, health và dashboard settings |
-| [Render uptime (Free)](docs/render-uptime.md) | Sleep khi idle, cold start, ping `/health` từ cron bên ngoài |
+| [Render uptime & UptimeRobot](docs/render-uptime.md) | Sleep khi idle, cold start và monitor `/health` từ UptimeRobot |
 | [PBMS API paths](docs/openapi-pbms-paths.md) | Hợp đồng route PBMS |
 | [Prisma review](docs/prisma-draft-review.md) | Bối cảnh thiết kế schema |
 | [Third-party follow-up](docs/third-party-follow-up.md) | Kế hoạch tích hợp và chuyển đổi từ hệ thống cũ |

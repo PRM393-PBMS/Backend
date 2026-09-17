@@ -18,7 +18,7 @@ Path `/api/*` đã đóng băng: [`openapi-pbms-paths.md`](./openapi-pbms-paths.
 | Header | `Authorization: Bearer <access token>`. |
 | JWT | Nội bộ theo Nest (an toàn hơn PBMS). Token dùng trên `/api/*` vẫn phải mang claim PBMS cần đọc. **Không** copy secret JWT hardcoded từ PBMS vào repo. Chi tiết mục dưới. |
 | Vendor | **Theo repo PBMS** (PayOS, Gmail SMTP, PlateRecognizer, file local, PDF, job nền, QR). |
-| Dữ liệu | **Không** dump SQL Server. Schema Postgres trống + seed role. Local CLI dùng **External** `DATABASE_URL` trong `.env`. **Internal** URL chỉ trên Render web service. |
+| Dữ liệu | **Không** dump SQL Server. Schema Postgres trống + seed role. Local và Render dùng Supabase **Session Pooler** `DATABASE_URL` với `sslmode=require`. |
 | Env còn lại | Theo PBMS: CORS `http://localhost:5173`, PDF binary export, job NoShow + overdue reservations, static files, webhook PayOS path. |
 
 ---
@@ -101,7 +101,7 @@ Secret trong `SWP391_BackEnd/PBMS/appsettings.json` **đã nằm trên GitHub**.
 
 | Hạng mục | Bạn gửi gì | Ghi chú |
 |----------|------------|---------|
-| PostgreSQL | Local `.env`: **External** URL. Render web service: **Internal** URL. | Không commit URL. Không dùng Internal từ laptop. |
+| PostgreSQL | Supabase Session Pooler URL cho local và Render. | Không commit URL/password; copy connection string từ Supabase Dashboard → Connect. |
 | Dump SQL Server | **Không yêu cầu** | Schema trống trên Postgres; không dump data PBMS. |
 | PayOS | ClientId, ApiKey, ChecksumKey, ReturnUrl, CancelUrl | Return/Cancel PBMS đang trỏ `http://localhost:5173/payment-success` và `payment-cancel` — xác nhận có giữ cho PRM không. |
 | SMTP | Host, Port, SenderName, SenderEmail, Password (app password) | PBMS dùng `smtp.gmail.com:587`. |

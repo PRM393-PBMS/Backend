@@ -58,7 +58,7 @@ Giữ nguyên field Nest: `id`, `email`, `passwordHash`, `firstName`, `lastName`
 
 **Không xóa / không rename** field Nest. Đăng ký PBMS OTP ghi `userName` / `fullName` / `email` / `phoneNumber` / `pbmsRoleId`.
 
-Migration `20260917032600_pbms_domain` đã áp dụng trên Postgres đang trỏ bởi local `.env` (External URL). Client Prisma generate lại sau migrate. Đăng ký PBMS OTP gán `userName`/`pbmsRoleId`.
+Migration `20260917032600_pbms_domain` được áp dụng vào PostgreSQL trỏ bởi `DATABASE_URL`. Với Supabase, local và Render dùng Session Pooler URL có `sslmode=require`. Client Prisma generate lại sau migrate. Đăng ký PBMS OTP gán `userName`/`pbmsRoleId`.
 
 RefreshToken Nest **giữ** `tokenHash`, `deviceInfo`, `ipAddress`, `expiresAt`, `updatedAt`, `onDelete: Cascade`. PBMS không có `ExpiresAt` / device / IP; lưu plaintext unique `RefreshTokenKey` varchar(500); FK `ClientSetNull`. **Không** thêm cột plaintext.
 
@@ -273,6 +273,6 @@ Không dump SQL Server. Schema trống; không bịa rule mới.
 
 ## Việc đã / chưa làm
 
-- **Đã migrate** Postgres: `20260917032600_pbms_domain` (schema trống + seed role User/Customer/Staff/Manager/Admin). Không SQL Server dump. Local CLI dùng External URL; Internal URL chỉ trên Render web service.
+- **Đã migrate** Postgres: `20260917032600_pbms_domain` (schema trống + seed role User/Customer/Staff/Manager/Admin). Không SQL Server dump. Local CLI và Render dùng Supabase Session Pooler URL với `sslmode=require`.
 - Pha 1: envelope `PbmsResponseDto` + `/api/Auth/*` (login, OTP register/reset, refresh, logout). Surface Nest `/auth/*` đã gỡ khỏi HTTP công khai.
 - Module bãi đỗ / PayOS / OCR: chưa.

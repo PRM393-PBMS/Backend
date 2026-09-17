@@ -1,4 +1,4 @@
-# Hướng dẫn điền ENV và host backend, Swagger, PostgreSQL thật
+# Hướng dẫn điền ENV và host Render backend, Supabase PostgreSQL
 
 Đối chiếu repo và tài liệu nhà cung cấp ngày 17/09/2026. Tài liệu này hướng dẫn thao tác; chưa tạo tài khoản cloud, mua dịch vụ, chạy migration hoặc triển khai ứng dụng.
 
@@ -9,7 +9,7 @@ Bạn sẽ có backend HTTPS, Swagger trên chính backend đó, và PostgreSQL 
 ```mermaid
 flowchart LR
   A[Mobile / Frontend / Swagger] -->|HTTPS + JWT| B[NestJS trên Render]
-  B -->|Prisma + DATABASE_URL| C[PostgreSQL trên Render]
+  B -->|Prisma + DATABASE_URL| C[PostgreSQL trên Supabase]
   B --> D[PayOS / SMTP / Plate Recognizer khi đã tích hợp]
 ```
 
@@ -33,9 +33,9 @@ Swagger gửi request thật đến API. Dữ liệu chỉ là mock nếu code A
 | Route hoạt động trong source | Auth `/api/Auth/*`; hồ sơ `/api/profile`; Swagger `/api/docs` |
 | Các route PBMS `/api/*` | Là mục tiêu trong tài liệu; chưa có controller được đăng ký cho các module này |
 | Prisma schema | Đã mở rộng các model nghiệp vụ; có model không đồng nghĩa đã có API |
-| Migration | Chưa có thư mục migration đã lưu; cần tạo và review trước deploy |
-| ENV đang được đọc | `DATABASE_URL`, `JWT_ACCESS_SECRET`, `JWT_REFRESH_SECRET`, `NODE_ENV`, `PORT` |
-| CORS, PayOS, SMTP, Plate Recognizer, upload | Có biến mẫu/kế hoạch nhưng chưa có tích hợp trong source hiện tại |
+| Migration | Có migration `20260917032600_pbms_domain`; review trước khi chạy trên database mới |
+| ENV đang được đọc | `DATABASE_URL`, JWT, CORS, SMTP `MAIL_*`, upload và các biến tích hợp đã có trong `.env.example` |
+| SMTP | Nodemailer gửi OTP đăng ký/reset bằng template HTML riêng của dự án |
 | Prisma Client | Đang ở devDependencies; phải giữ nó trong môi trường runtime hoặc chuyển đúng sang dependencies |
 | JWT secret | Code vẫn có fallback hardcoded; cần bỏ fallback và kiểm tra biến bắt buộc trước khi vận hành production thực tế |
 
@@ -43,23 +43,21 @@ Vì vậy, có thể chuẩn bị hạ tầng và kiểm chứng auth với data
 
 ## 3. Lựa chọn hosting
 
-Hướng dẫn chính: **Render Web Service + Render PostgreSQL cùng region**. Chọn gói trả phí phù hợp nếu cần lưu dữ liệu lâu dài và gửi Gmail SMTP. Xem chi phí thực tế trong dashboard trước khi tạo; tài liệu này không chốt giá hay tự đăng ký gói.
+Hướng dẫn chính: **Render Web Service + Supabase PostgreSQL**. Chọn gói Render phù hợp nếu cần gửi Gmail SMTP; Render Free chặn các port SMTP. Xem chi phí thực tế trong dashboard trước khi tạo; tài liệu này không chốt giá hay tự đăng ký gói.
 
-Render Free có giới hạn liên quan trực tiếp: Postgres hết hạn sau 30 ngày; web service có thể ngủ khi không hoạt động, không có persistent disk và chặn outbound SMTP trên các port 25/465/587. Vì vậy không dùng cấu hình Free như giải pháp lâu dài cho dữ liệu thật và OTP Gmail. [Giới hạn chính thức](https://render.com/docs/free)
+Render Free có thể ngủ khi không hoạt động, không có persistent disk và chặn outbound SMTP trên các port 25/465/587. UptimeRobot hiện monitor endpoint `/health` từ bên ngoài để giảm cold start, nhưng không phải SLA. Vì vậy không dùng cấu hình Free như giải pháp lâu dài cho dữ liệu thật và OTP Gmail. [Giới hạn chính thức](https://render.com/docs/free)
 
 Chuẩn bị tài khoản GitHub, Render, quyền truy cập repository, và tài khoản các nhà cung cấp nếu cần chức năng tích hợp. Chỉ đưa credential vào `.env` local hoặc Environment của hosting; không commit vào GitHub và không đưa vào frontend/mobile.
 
-## 4. Tạo PostgreSQL hosted và lấy DATABASE_URL
+## 4. Lấy Supabase DATABASE_URL
 
-1. Vào [Render Dashboard](https://dashboard.render.com/), chọn **New → Postgres**.
-2. Đặt tên tài nguyên, ví dụ `prm393-postgres-prod`; tên database có thể là `prm393_db`.
-3. Chọn region sẽ dùng cho backend, ưu tiên gần người dùng. Chọn gói lưu trữ phù hợp.
-4. Tạo database, đợi trạng thái Available, mở **Connect**.
-5. Copy **Internal Database URL** để dùng cho backend Render cùng tài khoản/region.
-6. Copy **External Database URL** để dùng từ máy cá nhân: công cụ quản trị, migration có chủ đích, kiểm tra dữ liệu.
-7. Giữ các tùy chọn SSL của nhà cung cấp. Với external URL, dùng TLS; có thể thêm `sslmode=require` nếu chưa có. Nếu URL đã có `?`, thêm tham số bằng `&`.
+1. Mở Supabase project → **Connect**.
+2. Chọn **Session Pooler** và copy connection string; đây là endpoint IPv4 phù hợp cho Render Web Service.
+3. Thay `[YOUR-PASSWORD]` bằng database password đã URL-encode; ký tự `@` phải là `%40`.
+4. Bổ sung `schema=public&sslmode=require` nếu chuỗi chưa có các tham số này.
+5. Dùng đúng chuỗi đó cho `.env` local và biến `DATABASE_URL` trên Render. Trên dashboard Render không bọc chuỗi bằng dấu nháy.
 
-Không đoán hostname/password. Internal URL không phải địa chỉ dùng được từ laptop. Hạn chế external access về IP cần thiết trong phần Networking. [Tạo và kết nối Render Postgres](https://render.com/docs/postgresql-creating-connecting)
+Không tự ghép pooler hostname hoặc username: copy nguyên chuỗi từ Supabase Dashboard. Direct connection phù hợp với migration/backup khi môi trường chạy lệnh có kết nối IPv6; Supabase mô tả các lựa chọn kết nối tại [Connect to your database](https://supabase.com/docs/guides/database/connecting-to-postgres).
 
 Hình dạng URL minh họa:
 
@@ -79,7 +77,7 @@ Tạo một database development riêng khi phát triển. Không để các l�
 |---|---|---|
 | `NODE_ENV` | `development` | `production` |
 | `PORT` | `3000` | Để Render cấp port; app đọc `process.env.PORT` |
-| `DATABASE_URL` | External URL của DB development | Internal URL của DB production |
+| `DATABASE_URL` | Supabase Session Pooler URL | Cùng Supabase Session Pooler URL, không có dấu nháy |
 | `JWT_ACCESS_SECRET` | Secret riêng cho local/dev | Secret riêng production |
 | `JWT_REFRESH_SECRET` | Secret khác access secret | Secret khác access secret và khác dev |
 
@@ -125,11 +123,13 @@ Các URL return/cancel do bạn triển khai, không phải secret PayOS cấp. 
 MAIL_HOST="smtp.gmail.com"
 MAIL_PORT=587
 MAIL_SENDER_NAME="PRM393 Parking Management"
+MAIL_BRAND_COLOR="#0F766E"
 MAIL_SENDER_EMAIL="DIA_CHI_GMAIL_THAT_CUA_BAN"
+MAIL_REPLY_TO="DIA_CHI_HO_TRO_CUA_BAN"
 MAIL_PASSWORD="APP_PASSWORD_VUA_TAO"
 ```
 
-Khi implement transport, port 587 dùng STARTTLS. Sau triển khai hãy gửi OTP tới hộp thư bạn kiểm soát và kiểm tra nhận được thư, không chỉ nhìn log. Render Free chặn port này; điền đúng mật khẩu vẫn không giải quyết giới hạn mạng. Nếu giữ Gmail SMTP, dùng hosting/gói hỗ trợ SMTP; chuyển sang email API là thay đổi tích hợp riêng. Module gửi mail hiện chưa có.
+Port 587 dùng STARTTLS. Backend gửi hai email HTML riêng: xác nhận đăng ký và đặt lại mật khẩu; `MAIL_BRAND_COLOR` đổi màu header, còn `MAIL_REPLY_TO` là địa chỉ nhận phản hồi. Sau triển khai hãy gửi OTP tới hộp thư bạn kiểm soát, kiểm tra inbox/Spam và hiển thị trên mobile. Render Free chặn port này; điền đúng mật khẩu vẫn không giải quyết giới hạn mạng. Nếu giữ Gmail SMTP, dùng Render paid; chuyển sang email API là thay đổi tích hợp riêng.
 
 ### 5.5. Plate Recognizer
 
@@ -204,7 +204,7 @@ File `.bak` SQL Server không thể restore trực tiếp bằng công cụ Post
 ### Tạo Web Service
 
 1. Render → **New → Web Service**, kết nối GitHub và chọn repo/branch.
-2. Chọn runtime Node, cùng region với PostgreSQL. Root Directory là thư mục có `package.json` (để trống nếu repo root).
+2. Chọn runtime Node. Root Directory là thư mục có `package.json` (để trống nếu repo root).
 3. Chọn gói phù hợp, thêm ENV ở bước dưới.
 4. Build Command:
 
@@ -228,11 +228,11 @@ Quy trình này giữ devDependencies vì repo hiện để Prisma Client và CL
 
 ### Environment trong dashboard
 
-Điền tối thiểu `NODE_ENV=production`, Internal `DATABASE_URL`, hai JWT secret thật và Node version đã chọn. Render cung cấp `PORT`. Không upload nguyên `.env` dev có localhost rồi hy vọng cloud kết nối đúng database.
+Điền tối thiểu `NODE_ENV=production`, Supabase Session Pooler `DATABASE_URL`, hai JWT secret thật và Node version đã chọn. Render cung cấp `PORT`. Khi dùng OTP, thêm đầy đủ biến `MAIL_*` ở mục 5.4. Không upload nguyên `.env` dev có localhost rồi hy vọng cloud kết nối đúng database.
 
 Các credential PayOS/mail/OCR có thể chuẩn bị theo mục 5, nhưng chỉ cần hoạt động khi module tương ứng đã implement. Tên biến phải khớp code; không có cơ chế tự tích hợp dịch vụ chỉ nhờ biến ENV.
 
-Render yêu cầu web server lắng nghe trên `0.0.0.0` và port được cấp; khi cần sửa cấu hình bind, dùng `app.listen(port, '0.0.0.0')`. Repo đã đọc `PORT`. Đặt Health Check Path `/health` (`GET` công khai, JSON `{"status":"ok"}`, không cần JWT, không truy vấn database). `GET /` công khai, redirect sang `/api/docs`. Gói Free vẫn ngủ khi idle; không dùng health check nội bộ Render để “giữ 24/7”. Xem `docs/render-uptime.md`. [Web services](https://render.com/docs/web-services)
+Render yêu cầu web server lắng nghe trên `0.0.0.0` và port được cấp; khi cần sửa cấu hình bind, dùng `app.listen(port, '0.0.0.0')`. Repo đã đọc `PORT`. Đặt Health Check Path `/health` (`GET` công khai, JSON `{"status":"ok"}`, không cần JWT, không truy vấn database). `GET /` công khai, redirect sang `/api/docs`. UptimeRobot đã monitor `/health` từ bên ngoài; xem `docs/render-uptime.md`. [Web services](https://render.com/docs/web-services)
 
 ### Sau deploy
 
@@ -249,7 +249,7 @@ Thực hiện bằng tài khoản/email bạn thực sự muốn đăng ký, kh�
 3. Execute, kiểm tra envelope `{ statusCode, message, isSuccess, result }` và ghi nhận `userId` khi đăng ký thành công. Response token được phát từ backend thật; không chia sẻ token.
 4. Dùng nút **Authorize**, dán raw `accessToken` (trong `result`) vào scheme `JWT-auth`, không gõ thêm `Bearer` nếu Swagger tự thêm.
 5. Gọi `GET /api/profile`. Email/id phải trùng tài khoản vừa tạo.
-6. Từ công cụ quản trị như pgAdmin/DBeaver kết nối External URL đúng DB production, chạy truy vấn chỉ đọc sau và thay email bằng email vừa dùng:
+6. Từ Supabase SQL Editor hoặc công cụ quản trị kết nối bằng connection string phù hợp, chạy truy vấn chỉ đọc sau và thay email bằng email vừa dùng:
 
 ```sql
 SELECT id, email, first_name, last_name, created_at
@@ -263,15 +263,15 @@ WHERE email = 'EMAIL_BAN_VUA_DANG_KY';
 
 Kết quả đạt: thao tác người dùng ghi vào PostgreSQL hosted, SQL đọc được cùng bản ghi, và dữ liệu tồn tại sau restart. Đối với bãi xe, chỗ đỗ, đặt chỗ và thanh toán, lặp lại cách kiểm tra khi endpoint nghiệp vụ đã có; không coi các model Prisma là endpoint đã triển khai.
 
-Đăng ký auth hiện tại chưa gửi email xác minh. API trả thành công không chứng minh SMTP/OTP đã hoạt động. Tương tự, thanh toán thật phải có giao dịch được nhà cung cấp xác minh, không chỉ một dòng tạo tay trong bảng payments.
+Đăng ký và reset mật khẩu gửi OTP qua template HTML. API trả thành công vẫn chưa chứng minh email đến inbox; kiểm tra thư thật (kể cả Spam) và xác nhận OTP có thể hoàn tất luồng. Tương tự, thanh toán thật phải có giao dịch được nhà cung cấp xác minh, không chỉ một dòng tạo tay trong bảng payments.
 
 ## 9. Backup, file ảnh và các lỗi hay gặp
 
-Bật/kiểm tra chính sách backup của gói database, ghi rõ thời gian giữ bản sao và thử restore vào database riêng trước khi dựa vào backup. Redeploy app không thay thế backup DB. Nếu có ảnh, backup storage ảnh riêng. [Render Postgres backups](https://render.com/docs/postgresql-backups)
+Bật/kiểm tra chính sách backup của Supabase plan, ghi rõ thời gian giữ bản sao và thử restore vào database riêng trước khi dựa vào backup. Redeploy app không thay thế backup DB. Nếu có ảnh, backup storage ảnh riêng. [Supabase backups](https://supabase.com/docs/guides/platform/backups)
 
 | Hiện tượng | Kiểm tra |
 |---|---|
-| Prisma P1001 / không kết nối được | Host/region, internal so với external URL, trạng thái DB, IP allowlist, TLS |
+| Prisma P1001 / không kết nối được | Supabase Session Pooler host/port, password URL encoding, trạng thái project và `sslmode=require` |
 | Prisma P1000 | Username/password và URL encoding; credential có bị rotate không |
 | Prisma P2021 / bảng không tồn tại | Migration đã commit, đã chạy đúng DB, đúng schema chưa |
 | Build thiếu `@prisma/client` hoặc kiểu Prisma | Cài devDependencies theo repo hiện tại và chạy generate trước build |
@@ -287,7 +287,7 @@ Bật/kiểm tra chính sách backup của gói database, ghi rõ thời gian gi
 
 ## 10. Thứ tự thực hiện
 
-1. Tạo database hosted và lấy đúng internal/external URL.
+1. Tạo Supabase project và lấy đúng Session Pooler URL.
 2. Tạo JWT secret, chuẩn bị Environment của backend.
 3. Review schema và lưu migration SQL; không seed.
 4. Hoàn thiện các điểm cấu hình production trong code và kiểm tra build.

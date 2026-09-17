@@ -1,4 +1,4 @@
-# Render Free: ngủ khi idle, không phải 24/7 miễn phí
+# Render Free và UptimeRobot monitor
 
 URL công khai hiện dùng: `https://prm393-backend-u2ym.onrender.com`
 
@@ -26,19 +26,18 @@ Kỳ vọng: HTTP 200, JSON `{"status":"ok"}`, không cần JWT, không truy v�
 
 Health Check Path trên dashboard Render cũng nên là `/health` (xem `docs/render-health-check.md`). Health check của Render **không** thay thế cron bên ngoài khi instance đã spin-down.
 
-## Cách miễn phí tạm thời: cron bên ngoài mỗi 5–10 phút
-
-Chọn **một** dịch vụ bên ngoài (không chạy trên cùng box Render).
+## Monitor UptimeRobot đang dùng
 
 ### UptimeRobot
 
-1. Tạo tài khoản tại [UptimeRobot](https://uptimerobot.com/).
-2. **Add New Monitor**.
-3. Monitor Type: **HTTP(s)**.
-4. Friendly Name: ví dụ `PRM393 backend health`.
-5. URL: `https://prm393-backend-u2ym.onrender.com/health`.
-6. Interval: **5 phút** (hoặc 10 phút nếu gói free giới hạn).
-7. Tạo monitor, để chạy liên tục.
+UptimeRobot được cấu hình làm HTTP(s) monitor cho `https://prm393-backend-u2ym.onrender.com/health`.
+
+- Monitor Type: **HTTP(s)**.
+- Friendly Name: `PRM393 backend health`.
+- Interval: **5 phút** (hoặc theo giới hạn gói đang dùng).
+- Expected response: HTTP 200.
+
+Monitor chạy bên ngoài Render nên có thể đánh thức service khi nó đã spin-down. Kiểm tra trạng thái monitor và alert trên dashboard UptimeRobot; đây là monitor HTTP, không xác minh database Supabase hay SMTP.
 
 ### cron-job.org
 
@@ -57,7 +56,7 @@ Workflow `schedule` trên repo khác hoặc cùng repo, `curl` URL `/health` m�
 ## Giới hạn — đọc trước khi tin “luôn online”
 
 - Render vẫn có thể ngủ, throttle, hoặc thay đổi chính sách **fair use / Terms of Service**. Ping dày đặc có thể bị coi là lạm dụng gói free.
-- PostgreSQL và addon khác trên Render Free có **hạn riêng** (ví dụ hết hạn / giới hạn kết nối), độc lập với web process.
+- PostgreSQL chạy trên Supabase và có giới hạn/quy trình backup riêng, độc lập với web process Render.
 - Cold start vẫn xảy ra nếu ping trễ, job lỗi, hoặc nền tảng spin-down dù có monitor.
 - **Không phải cam kết 24/7.**
 
