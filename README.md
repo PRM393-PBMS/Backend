@@ -4,7 +4,7 @@
 
 # 🅿️ PRM393 · Parking Management Backend
 
-**Backend quản lý bãi đỗ xe · NestJS REST API · PostgreSQL · Tích hợp dịch vụ**
+**Backend site Quản lý bãi đỗ xe · NestJS REST API · PostgreSQL · Tích hợp dịch vụ**
 
 <img src="https://img.shields.io/badge/NestJS-12-E0234E?style=for-the-badge&logo=nestjs&logoColor=white" alt="NestJS 12" />
 <img src="https://img.shields.io/badge/TypeScript-6-3178C6?style=for-the-badge&logo=typescript&logoColor=white" alt="TypeScript 6" />
