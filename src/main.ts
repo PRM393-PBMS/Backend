@@ -6,6 +6,7 @@ import { mkdir } from 'fs/promises';
 import { dirname, isAbsolute, resolve } from 'path';
 import { AppModule } from './app.module';
 import { loadEnvFile } from 'node:process';
+import { hideLegacyPascalCaseProperties } from './common/swagger/hide-legacy-pascal-case-properties';
 
 async function bootstrap() {
   // Load local configuration before Nest constructs Prisma and JWT providers.
@@ -60,6 +61,7 @@ async function bootstrap() {
     .build();
 
   const document = SwaggerModule.createDocument(app, config);
+  hideLegacyPascalCaseProperties(document);
   SwaggerModule.setup('api/docs', app, document, {
     swaggerOptions: {
       persistAuthorization: true,

@@ -6,6 +6,7 @@ import { App } from 'supertest/types';
 import { PbmsResponseDto } from '../../common/dto/pbms-response.dto';
 import { PbmsAuthController } from './pbms-auth.controller';
 import { PbmsAuthService } from './pbms-auth.service';
+import { hideLegacyPascalCaseProperties } from '../../common/swagger/hide-legacy-pascal-case-properties';
 
 describe('PbmsAuthController', () => {
   let app: INestApplication<App>;
@@ -43,6 +44,7 @@ describe('PbmsAuthController', () => {
 
   it('Swagger chỉ có tag PBMS Auth, không có Authentication hay /auth/*', () => {
     const document = SwaggerModule.createDocument(app, new DocumentBuilder().build());
+    hideLegacyPascalCaseProperties(document);
     expect(document.paths['/auth/login']).toBeUndefined();
     expect(document.paths['/auth/register']).toBeUndefined();
     expect(document.paths['/auth/me']).toBeUndefined();
@@ -55,6 +57,18 @@ describe('PbmsAuthController', () => {
     );
     expect(tagNames).not.toContain('Authentication');
     expect(tagNames).toContain('PBMS Auth');
+  });
+
+  it('Swagger chỉ công bố field camelCase cho login PBMS', () => {
+    const document = SwaggerModule.createDocument(app, new DocumentBuilder().build());
+    hideLegacyPascalCaseProperties(document);
+
+    const loginSchema = document.components?.schemas?.PbmsLoginDto;
+
+    expect(loginSchema).toHaveProperty('properties.email');
+    expect(loginSchema).toHaveProperty('properties.password');
+    expect(loginSchema).not.toHaveProperty('properties.Email');
+    expect(loginSchema).not.toHaveProperty('properties.Password');
   });
 
   it('POST /api/Auth/login trả envelope {statusCode,message,isSuccess,result}', async () => {
