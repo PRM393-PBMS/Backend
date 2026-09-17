@@ -25,7 +25,7 @@ describe('PbmsAuthService', () => {
   };
   let hashingService: { compare: jest.Mock; hash: jest.Mock };
   let jwtService: { signAsync: jest.Mock; verifyAsync: jest.Mock };
-  let mailService: { sendEmail: jest.Mock };
+  let mailService: { sendOtpEmail: jest.Mock };
 
   const activeUser = {
     id: 'user-1',
@@ -64,7 +64,7 @@ describe('PbmsAuthService', () => {
       signAsync: jest.fn().mockResolvedValue('signed-token'),
       verifyAsync: jest.fn(),
     };
-    mailService = { sendEmail: jest.fn().mockResolvedValue(undefined) };
+    mailService = { sendOtpEmail: jest.fn().mockResolvedValue(undefined) };
 
     const module: TestingModule = await Test.createTestingModule({
       providers: [
@@ -160,7 +160,11 @@ describe('PbmsAuthService', () => {
 
       expect(result.statusCode).toBe(200);
       expect(result.isSuccess).toBe(true);
-      expect(mailService.sendEmail).toHaveBeenCalled();
+      expect(mailService.sendOtpEmail).toHaveBeenCalledWith(
+        'a@example.com',
+        expect.stringMatching(/^\d{6}$/),
+        'registration',
+      );
     });
   });
 

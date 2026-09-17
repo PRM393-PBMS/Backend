@@ -150,11 +150,7 @@ export class PbmsAuthService {
     );
 
     try {
-      await this.mailService.sendEmail(
-        email,
-        'Mã OTP đăng ký tài khoản',
-        `Mã OTP đăng ký của bạn là: ${otp} (Mã này sẽ hết hạn trong 10 phút)`,
-      );
+      await this.mailService.sendOtpEmail(email, otp, 'registration');
       return new PbmsResponseDto('Nếu email tồn tại, OTP đã được gửi', 200, true);
     } catch (error: unknown) {
       const message = error instanceof Error ? error.message : 'unknown';
@@ -249,11 +245,7 @@ export class PbmsAuthService {
     this.otpStore.set(`Reset_${email}`, this.hashSha256(otp), OTP_TTL_MS);
 
     try {
-      await this.mailService.sendEmail(
-        email,
-        'Mã OTP reset mật khẩu',
-        `Mã OTP đặt lại mật khẩu của bạn là: ${otp} (Mã này sẽ hết hạn trong 10 phút)`,
-      );
+      await this.mailService.sendOtpEmail(email, otp, 'password-reset');
       return new PbmsResponseDto('Nếu email tồn tại, OTP đã được gửi', 200, true);
     } catch (error: unknown) {
       const message = error instanceof Error ? error.message : 'unknown';
