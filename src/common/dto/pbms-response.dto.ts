@@ -13,7 +13,15 @@ export class PbmsResponseDto<T = unknown> {
   @ApiProperty({ example: true })
   isSuccess: boolean;
 
-  @ApiPropertyOptional()
+  @ApiPropertyOptional({
+    description: 'Payload theo từng endpoint; Example Value trên operation có object đầy đủ, không `{}`.',
+    nullable: true,
+    example: {
+      userId: '9b1deb4d-3b7d-4bad-9bdd-2b0d7b3dcb6d',
+      userName: 'fonfon',
+      email: 'fonHocPRM393@gmail.com',
+    },
+  })
   result: T | null;
 
   constructor(

@@ -4,14 +4,15 @@
 
 # 🅿️ PRM393 · Parking Management Backend
 
-**Backend quản lý bãi đỗ xe · REST API · PostgreSQL · Tích hợp dịch vụ**
+**Backend quản lý bãi đỗ xe · NestJS REST API · PostgreSQL · Tích hợp dịch vụ**
 
-<img src="https://img.shields.io/badge/NestJS-12-E0234E?style=for-the-badge&amp;logo=nestjs&amp;logoColor=white" alt="NestJS 12" />
-<img src="https://img.shields.io/badge/TypeScript-6-3178C6?style=for-the-badge&amp;logo=typescript&amp;logoColor=white" alt="TypeScript 6" />
-<img src="https://img.shields.io/badge/Prisma-6.4.1-2D3748?style=for-the-badge&amp;logo=prisma&amp;logoColor=white" alt="Prisma 6.4.1" />
-<img src="https://img.shields.io/badge/PostgreSQL-Database-4169E1?style=for-the-badge&amp;logo=postgresql&amp;logoColor=white" alt="PostgreSQL database" />
+<img src="https://img.shields.io/badge/NestJS-12-E0234E?style=for-the-badge&logo=nestjs&logoColor=white" alt="NestJS 12" />
+<img src="https://img.shields.io/badge/TypeScript-6-3178C6?style=for-the-badge&logo=typescript&logoColor=white" alt="TypeScript 6" />
+<img src="https://img.shields.io/badge/Prisma-6.4.1-2D3748?style=for-the-badge&logo=prisma&logoColor=white" alt="Prisma 6.4.1" />
+<img src="https://img.shields.io/badge/PostgreSQL-Supabase-4169E1?style=for-the-badge&logo=postgresql&logoColor=white" alt="PostgreSQL on Supabase" />
+<img src="https://img.shields.io/badge/License-MIT-green?style=for-the-badge" alt="MIT License" />
 
-**[Tech stack](#-tech-stack) · [Kiến trúc](#-kiến-trúc) · [Chạy local](#-chạy-local) · [Tài liệu](#-tài-liệu)**
+**[API hosted](#-api-hosted) · [Tech stack](#-tech-stack) · [Kiến trúc](#-kiến-trúc) · [Chạy local](#-chạy-local) · [Tài liệu](#-tài-liệu)**
 
 </div>
 
@@ -19,78 +20,88 @@
 
 ## ✨ Dự án làm gì?
 
-API backend cho hệ thống quản lý bãi xe: tài khoản, phân quyền, danh mục bãi đỗ, đặt chỗ, check-in/check-out, gói gửi xe, thanh toán, sự cố và báo cáo. Dữ liệu nghiệp vụ được truy cập qua Prisma tới PostgreSQL; Swagger là giao diện gửi request đến backend.
+API backend cho hệ thống **PRM393 Parking**: tài khoản, phân quyền, danh mục bãi đỗ, đặt chỗ, check-in/check-out, gói gửi xe, thanh toán, sự cố và báo cáo. Dữ liệu đi qua **Prisma 6** tới **PostgreSQL** (Supabase khi host). Swagger là giao diện gửi request đến chính backend.
 
-Repo dùng một nhóm API công khai: `/api/*` (hợp đồng PBMS). Đăng nhập tại `POST /api/Auth/login`; hồ sơ tại `GET /api/profile`. Phiên bản bên dưới lấy từ khai báo trong [package.json](package.json); phiên bản cài đặt cụ thể được khóa trong [package-lock.json](package-lock.json).
+Hợp đồng HTTP công khai chỉ là **`/api/*`**. Đăng nhập **`POST /api/Auth/login`** (JWT Bearer). Hồ sơ **`GET /api/profile`**. Không còn surface Nest **`/auth/*`** (ví dụ `/auth/login` trả 404).
+
+Phiên bản khai báo nằm trong [package.json](package.json); phiên bản cài đặt được khóa trong [package-lock.json](package-lock.json).
 
 | 🔐 Identity | 🚘 Parking | 💳 Payments | 📊 Operations |
 |---|---|---|---|
-| JWT, roles, OTP email | Đặt chỗ, phiên gửi xe, QR | PayOS, webhook | Báo cáo PDF, sự cố, cron |
+| JWT Bearer, roles, OTP email (Resend) | Đặt chỗ, phiên gửi xe, QR, OCR biển số | PayOS + webhook | Báo cáo PDF, sự cố, cron |
+
+## 🌐 API hosted
+
+Ứng dụng chạy trên **Render**; database trên **Supabase PostgreSQL**. Origin API **không** gắn path `/api/docs`.
+
+| | URL |
+|---|---|
+| Origin | [https://prm393-backend-u2ym.onrender.com](https://prm393-backend-u2ym.onrender.com) |
+| Swagger UI | [https://prm393-backend-u2ym.onrender.com/api/docs](https://prm393-backend-u2ym.onrender.com/api/docs) |
+| Health (keep-alive / liveness) | `GET` [https://prm393-backend-u2ym.onrender.com/health](https://prm393-backend-u2ym.onrender.com/health) |
+| Đăng nhập | `POST /api/Auth/login` trên origin ở trên |
+
+Domain **`neoforcelab.com`** dùng cho **email OTP** (`MAIL_FROM` = `otp@neoforcelab.com` sau khi DNS verify trên Resend). Có thể dùng sau cho web/API subdomain, nhưng **chưa** phải host API hiện tại — API vẫn là `*.onrender.com` trừ khi đội tự gắn custom domain trên Render.
+
+Gói Render free **có thể ngủ khi idle** và cold start khi có request. UptimeRobot ping `/health` để giảm sleep, **không** phải cam kết 24/7 hay SLA.
 
 ## 🧰 Tech stack
 
 ### Core & API
 
-| Công nghệ | Phiên bản khai báo | Vai trò trong repo |
+| Công nghệ | Phiên bản khai báo | Vai trò |
 |---|---|---|
-| Node.js | Runtime; hướng dẫn deploy dùng Node 22 | Chạy backend, native `fetch`, crypto và filesystem |
-| TypeScript | `^6.0.2` | Kiểu dữ liệu, strict mode, NodeNext, target ES2023 |
-| NestJS | `^12.0.1` | Module, controller, service, dependency injection |
-| Express adapter | `@nestjs/platform-express ^12.0.1` | HTTP server, upload và static assets |
-| Swagger / OpenAPI | `@nestjs/swagger ^12.0.1` | Tài liệu và gọi thử API tại `/api/docs` |
-| class-validator | `^0.15.1` | Kiểm tra DTO đầu vào |
-| class-transformer | `^0.5.1` | Chuyển đổi dữ liệu DTO |
-| RxJS | `^7.8.1` | Observable và interceptor trong Nest |
-| reflect-metadata | `^0.2.2` | Metadata cho decorators |
+| Node.js | Runtime; hướng dẫn deploy dùng Node 22 | Chạy backend, native `fetch`, crypto, filesystem |
+| TypeScript | `^6.0.2` | Strict mode, NodeNext, target ES2023 |
+| NestJS | `^12.0.1` | Module, controller, service, DI |
+| Express adapter | `@nestjs/platform-express ^12.0.1` | HTTP, upload, static assets |
+| Swagger / OpenAPI | `@nestjs/swagger ^12.0.1` | Docs và thử API tại `/api/docs` |
+| class-validator / class-transformer | `^0.15.1` / `^0.5.1` | Validate và transform DTO |
+| RxJS · reflect-metadata | `^7.8.1` · `^0.2.2` | Interceptor Nest và decorator metadata |
 
 ### Data & authentication
 
 | Công nghệ | Phiên bản khai báo | Vai trò |
 |---|---|---|
-| PostgreSQL | Phiên bản server do môi trường triển khai quyết định | Database quan hệ, UUID, index, foreign key |
-| Prisma CLI + Client | `6.4.1` | Schema, migration, truy vấn có kiểu và transaction |
-| Passport | `^0.7.0` | Nền tảng authentication |
-| Nest Passport | `^12.0.0` | Tích hợp guards/strategies |
-| passport-jwt | `^4.0.1` | Xác thực JWT từ request |
-| Nest JWT | `^12.0.1` | Ký và kiểm tra access/refresh token |
+| PostgreSQL | Do môi trường (local hoặc Supabase) | UUID, index, foreign key |
+| Prisma CLI + Client | `6.4.1` | Schema, migration, query có kiểu |
+| Passport + Nest Passport + passport-jwt | `^0.7.0` / `^12.0.0` / `^4.0.1` | Strategy JWT |
+| Nest JWT | `^12.0.1` | Access / refresh token |
 | bcrypt | `^6.0.0` | Hash mật khẩu và refresh token |
-| Nest Config | `^12.0.0` | Cấu hình qua môi trường |
+| Nest Config | `^12.0.0` | Biến môi trường |
 
-### Tích hợp & xử lý nghiệp vụ
+### Tích hợp & nghiệp vụ
 
 | Thành phần | Công nghệ | Cách dùng |
 |---|---|---|
-| Thanh toán | PayOS REST API + native `fetch` + Node crypto | Tạo/tra cứu thanh toán, xử lý chữ ký; không dùng PayOS SDK trong dependencies |
-| Email / OTP | Resend Emails API | Gửi OTP HTML qua `RESEND_API_KEY` và `MAIL_FROM` |
-| Nhận diện biển số | Plate Recognizer Snapshot API | Upload ảnh qua HTTP, xử lý kết quả nhận diện |
-| Tạo QR | qrcode `^1.5.4` | Sinh mã QR |
-| Đọc QR | jsQR `^1.4.0` | Giải mã QR từ dữ liệu ảnh |
-| Xử lý ảnh | sharp `^0.34.4` | Đọc/chuyển đổi ảnh phục vụ xử lý |
+| Thanh toán | PayOS REST API + `fetch` + Node crypto | Tạo/tra cứu thanh toán, chữ ký webhook; không có PayOS SDK trong dependencies |
+| Email / OTP | **Resend** (`resend` `^6.28.1`) HTTPS | OTP HTML qua `RESEND_API_KEY` và `MAIL_FROM` — **không** Gmail SMTP |
+| OCR biển số | Plate Recognizer Snapshot API | Upload ảnh, đọc kết quả nhận diện |
+| QR | qrcode `^1.5.4`, jsQR `^1.4.0` | Sinh / đọc QR |
+| Ảnh | sharp `^0.34.4` | Xử lý ảnh |
 | Báo cáo | PDFKit `^0.17.2` | Xuất PDF |
-| Job định kỳ | Nest Schedule `^12.0.0` | Cron xử lý reservation |
-| Lưu file | Node filesystem + Express static assets | File upload local theo `UPLOAD_DIR` |
+| Job định kỳ | Nest Schedule `^12.0.0` | Cron reservation |
+| File | Filesystem + Express static | Upload theo `UPLOAD_DIR` |
 
 ### Tooling, testing & hosting
 
 | Nhóm | Công cụ |
 |---|---|
-| Unit / integration tests | Jest `^30.0.0`, ts-jest `^29.2.5`, `@nestjs/testing ^12.0.1` |
-| HTTP tests | Supertest `^7.0.0` |
-| Lint | Oxlint `^1.58.0` |
-| Format | Prettier `^3.4.2` |
-| Build / development | Nest CLI & Schematics `^12.0.0`, ts-node, ts-loader, tsconfig-paths, source-map-support |
-| Type definitions | Node, Express, Jest, bcrypt, Multer, Passport JWT, PDFKit, QRCode, Supertest |
-| Package management | npm + `package-lock.json` |
-| Hosting được hướng dẫn | Render Web Service + Supabase PostgreSQL |
-| Quản trị database | pgAdmin 4 hoặc công cụ PostgreSQL tương đương; không phải dependency của app |
+| Tests | Jest `^30.0.0`, ts-jest, `@nestjs/testing`, Supertest |
+| Lint / format | Oxlint `^1.58.0`, Prettier `^3.4.2` |
+| Build | Nest CLI, ts-node, ts-loader, tsconfig-paths |
+| Package | npm + `package-lock.json` |
+| Hosting được hướng dẫn | **Render** Web Service + **Supabase** PostgreSQL |
+| CORS mặc định | `http://localhost:5173` (`CORS_ORIGIN`) |
+| Quản trị DB | pgAdmin 4 hoặc client PostgreSQL tương đương (không phải dependency app) |
 
 <details>
-<summary><strong>🔎 Công cụ có trong dependencies nhưng không đồng nghĩa đã được triển khai</strong></summary>
+<summary><strong>🔎 Ghi chú dependencies / CI</strong></summary>
 
-- `@nestjs/observe ^0.1.8`: package đã khai báo; bootstrap hiện chưa thể hiện cấu hình observability riêng.
-- `@nestjs/mau ^0.2.6` và `npm run deploy`: công cụ deploy có trong starter; quy trình Render của repo dùng build/start command riêng.
-- Không có workflow CI trong `.github/workflows` tại thời điểm cập nhật README. Badge phía trên mô tả stack, không phải chứng nhận CI hoặc uptime.
-- `@prisma/client` hiện thuộc devDependencies. Quy trình build/deploy bên dưới giữ devDependencies để runtime còn Prisma Client.
+- `@nestjs/observe`: đã khai báo; bootstrap chưa cấu hình observability riêng.
+- `@nestjs/mau` và `npm run deploy`: có trong starter; quy trình Render dùng build/start riêng.
+- Không có workflow CI trong `.github/workflows` lúc cập nhật README. Badge mô tả stack, không chứng nhận CI hay uptime.
+- `@prisma/client` đang ở **devDependencies**. Build/deploy giữ `--include=dev` để runtime còn Prisma Client.
 
 </details>
 
@@ -100,11 +111,11 @@ Repo dùng một nhóm API công khai: `/api/*` (hợp đồng PBMS). Đăng nh�
 flowchart TD
     Client[Mobile / Web client] --> API[NestJS + Express]
     Swagger[Swagger /api/docs] --> API
-    API --> Guard[JWT guards + role checks]
+    API --> Guard[JWT Bearer + role checks]
     Guard --> Controller[Controllers + DTO validation]
     Controller --> Service[Business services]
     Service --> Prisma[Prisma Client]
-    Prisma --> DB[(PostgreSQL)]
+    Prisma --> DB[(PostgreSQL / Supabase)]
     Service --> PayOS[PayOS REST API]
     Service --> Mail[Resend Emails API]
     Service --> OCR[Plate Recognizer]
@@ -112,74 +123,74 @@ flowchart TD
     Cron[Nest Schedule] --> Service
 ```
 
-Các endpoint được đánh dấu `@Public()` có thể truy cập không cần access token; các route còn lại đi qua global JWT guard. Kiểm tra quyền nghiệp vụ được áp dụng theo controller/guard tương ứng.
+Route `@Public()` không cần access token. Các route còn lại đi qua global JWT guard. Quyền nghiệp vụ áp dụng theo controller/guard tương ứng.
 
-## 🧩 Các module
+## 🧩 Module
 
 | Thư mục | Phạm vi |
 |---|---|
-| [`src/auth`](src/auth) | Auth PBMS (`/api/Auth`), token, OTP, mail, guards và decorators |
-| [`src/users`](src/users) · [`src/roles`](src/roles) | Người dùng, hồ sơ và vai trò |
+| [`src/auth`](src/auth) | Auth PBMS **`/api/Auth`** (login, OTP, refresh, logout), JWT, mail Resend, guards |
+| [`src/users`](src/users) · [`src/roles`](src/roles) | Người dùng, hồ sơ `/api/profile`, vai trò |
 | [`src/catalog`](src/catalog) | Loại xe, tầng, cổng, chỗ đỗ, bảng giá, gói gửi xe |
-| [`src/reservations`](src/reservations) | Đặt chỗ và xử lý trạng thái theo lịch |
-| [`src/parking`](src/parking) | Hoạt động bãi xe và phiên gửi xe |
-| [`src/subscriptions`](src/subscriptions) | Gói tháng, gia hạn và yêu cầu đổi xe |
-| [`src/payments`](src/payments) | Thanh toán và webhook |
-| [`src/incidents`](src/incidents) | Quản lý sự cố |
-| [`src/reports`](src/reports) | Báo cáo và xuất PDF |
-| [`src/integrations`](src/integrations) | PayOS, Plate Recognizer và file storage |
-| [`src/prisma`](src/prisma) · [`prisma`](prisma) | Kết nối DB, schema và migration SQL |
-| [`src/common`](src/common) | DTO dùng chung, interceptor, QR và xử lý biển số |
+| [`src/reservations`](src/reservations) | Đặt chỗ và cron trạng thái |
+| [`src/parking`](src/parking) | Hoạt động bãi xe, phiên gửi xe, OCR |
+| [`src/subscriptions`](src/subscriptions) | Gói tháng, gia hạn, đổi xe |
+| [`src/payments`](src/payments) | Thanh toán PayOS và webhook |
+| [`src/incidents`](src/incidents) | Sự cố |
+| [`src/reports`](src/reports) | Báo cáo PDF |
+| [`src/integrations`](src/integrations) | PayOS, Plate Recognizer, file storage |
+| [`src/prisma`](src/prisma) · [`prisma`](prisma) | Prisma, schema, migration |
+| [`src/common`](src/common) | DTO chung, interceptor, QR, biển số |
 
 ## 🚀 Chạy local
 
-Cần Node.js phù hợp (hướng dẫn repo dùng Node 22), npm và một PostgreSQL development đã tạo. Chạy từ thư mục gốc repo.
+Cần Node.js phù hợp (hướng dẫn repo: **Node 22**), npm, và PostgreSQL development. Chạy từ **root repo**.
 
 ```bash
 npm ci --include=dev
 ```
 
-Tạo `.env` từ [.env.example](.env.example), chỉ khi chưa có file `.env`. Điền Supabase **Session Pooler URL** có `sslmode=require` và hai JWT secret riêng; xem [hướng dẫn lấy cấu hình](docs/huong-dan-env-va-deploy.md). Không commit URL database hoặc password.
+Tạo `.env` từ [.env.example](.env.example) nếu chưa có. Điền Supabase **Session Pooler URL** (`sslmode=require`) và **hai** JWT secret riêng — xem [hướng dẫn ENV & deploy](docs/huong-dan-env-va-deploy.md). Không commit URL database hay password.
 
 ```bash
 npx --no-install prisma generate
 ```
 
-Với **database development mới, trống** và migration đã được review, áp dụng migration được lưu trong repo:
+Database **development mới, trống**, migration đã review:
 
 ```bash
 npx --no-install prisma migrate deploy
 npm run start:dev
 ```
 
-Nếu database đã có bảng/dữ liệu, cần kiểm tra lịch sử migration trước khi áp dụng. Không dùng reset hoặc seed để thay thế việc kiểm tra schema. Migration tạo cấu trúc bảng; dữ liệu vận hành được nhập qua API hoặc import từ nguồn dữ liệu thật.
+Database đã có bảng/dữ liệu: kiểm tra lịch sử migration trước khi deploy. Không dùng reset/seed thay cho kiểm tra schema. Migration tạo cấu trúc; dữ liệu vận hành nhập qua API hoặc import.
 
 | URL local mặc định | Mục đích |
 |---|---|
-| `http://localhost:3000/` | Chuyển đến Swagger |
+| `http://localhost:3000/` | Redirect 302 → Swagger |
 | `http://localhost:3000/api/docs` | Swagger UI |
-| `http://localhost:3000/health` | HTTP liveness, không kiểm tra database readiness |
-| `http://localhost:3000/api/Auth/*` | Auth PBMS (login, OTP, refresh, logout) |
-| `http://localhost:3000/api/*` | API nghiệp vụ; xem danh sách path trong tài liệu |
+| `http://localhost:3000/health` | Liveness HTTP (`{"status":"ok"}`), **không** kiểm tra DB |
+| `http://localhost:3000/api/Auth/login` | Đăng nhập JWT (không dùng `/auth/login`) |
+| `http://localhost:3000/api/Auth/*` | OTP đăng ký/reset, refresh, logout |
+| `http://localhost:3000/api/*` | API nghiệp vụ — danh sách path trong Swagger |
 
-<details>
-<summary><strong>🔑 Các nhóm ENV cần chuẩn bị</strong></summary>
+### Biến môi trường (chỉ tên — không dán secret)
 
 | Nhóm | Biến |
 |---|---|
 | Database | `DATABASE_URL` |
 | JWT | `JWT_ACCESS_SECRET`, `JWT_REFRESH_SECRET` |
-| Server | `NODE_ENV`, `PORT`, `CORS_ORIGIN` |
+| Server | `NODE_ENV`, `PORT`, `CORS_ORIGIN`, `PUBLIC_API_URL` |
 | PayOS | `PAYOS_CLIENT_ID`, `PAYOS_API_KEY`, `PAYOS_CHECKSUM_KEY`, `PAYOS_RETURN_URL`, `PAYOS_CANCEL_URL` |
 | Email / Resend | `RESEND_API_KEY`, `MAIL_FROM`, `MAIL_SENDER_NAME`, `MAIL_REPLY_TO`, `MAIL_BRAND_COLOR` |
 | OCR | `PLATE_RECOGNIZER_API_KEY`, `PLATE_RECOGNIZER_ENDPOINT`, `PLATE_RECOGNIZER_REGIONS`, `PLATE_RECOGNIZER_MINIMUM_CONFIDENCE` |
 | Files | `UPLOAD_DIR` |
 
-Giữ secret trong `.env` hoặc Environment của hosting. Không commit credential vào README, ảnh chụp hoặc frontend. Credential dịch vụ phải có thật để kiểm chứng email, thanh toán và OCR.
+`CORS_ORIGIN` mặc định **`http://localhost:5173`**. `PUBLIC_API_URL` tùy chọn: hiện trên dropdown Servers của Swagger; để trống = cùng origin với trang `/api/docs`. `MAIL_FROM` production: **`otp@neoforcelab.com`** sau khi domain Verified trên Resend.
 
-</details>
+Giữ secret trong `.env` hoặc Environment hosting. Không commit credential. Email, thanh toán và OCR chỉ kiểm chứng được khi đã có tài khoản nhà cung cấp thật.
 
-## 🧪 Development commands
+## 🧪 Lệnh development
 
 ```bash
 npm start                 # Chạy Nest
@@ -188,43 +199,43 @@ npm run start:debug       # Debug + watch
 npm run build             # Biên dịch TypeScript
 npm run start:prod        # Chạy bản build
 npm run lint              # Oxlint
-npm run format            # Format src/ và test/ bằng Prettier
+npm run format            # Prettier trên src/ và test/
 npm test -- --runInBand    # Jest
 npm run test:cov          # Coverage
 ```
 
-HTTP smoke tests cho root, Swagger, health và global guard có thể chạy với cấu hình Jest chính:
+Smoke HTTP (root, Swagger, health, guard) với Jest chính:
 
 ```bash
 node --experimental-vm-modules ./node_modules/jest/bin/jest.js --config ./jest.config.ts --testRegex 'app.e2e-spec.ts$' --runInBand
 ```
 
-Script `test:e2e` riêng cũng có trong `package.json`; nó dùng `test/jest-e2e.json`. Lệnh trên tái sử dụng cấu hình transform TypeScript của repo. Test dùng mocks không chứng minh dịch vụ hosted đã hoạt động; cần kiểm chứng luồng thực trên môi trường phù hợp.
+`npm run test:e2e` dùng `test/jest-e2e.json`. Test mock **không** chứng minh dịch vụ hosted đã chạy; cần kiểm chứng luồng thật trên môi trường phù hợp.
 
 ## ☁️ Deployment
 
-Render chạy backend và Swagger trong cùng một Web Service. Supabase PostgreSQL là tài nguyên riêng, được kết nối qua `DATABASE_URL` bằng Session Pooler.
+Render chạy backend và Swagger **cùng một** Web Service. Supabase PostgreSQL kết nối qua `DATABASE_URL` (Session Pooler).
 
 | Cấu hình Web Service | Giá trị |
 |---|---|
 | Build | `npm ci --include=dev && npx --no-install prisma generate && npm run build` |
-| Pre-deploy, khi gói hỗ trợ và migration đã review | `npx --no-install prisma migrate deploy` |
+| Pre-deploy (khi gói hỗ trợ và migration đã review) | `npx --no-install prisma migrate deploy` |
 | Start | `npm run start:prod` |
 | Health Check Path | `/health` |
-| Database | Supabase Session Pooler URL, có `schema=public&sslmode=require` |
+| Database | Supabase Session Pooler, `schema=public&sslmode=require` |
 
-Chi tiết trong [hướng dẫn deployment](docs/huong-dan-env-va-deploy.md), [setup health check](docs/render-health-check.md) và [UptimeRobot cho Render](docs/render-uptime.md). Không chạy `migrate dev`, reset hoặc seed tự động trong startup production.
+Chi tiết: [ENV & deploy](docs/huong-dan-env-va-deploy.md), [health check](docs/render-health-check.md), [uptime Render](docs/render-uptime.md). Không chạy `migrate dev`, reset hay seed tự động lúc startup production.
 
 <details>
 <summary><strong>📌 Phạm vi vận hành hiện tại</strong></summary>
 
-- OTP đang lưu trong memory của process, mất khi restart và chưa chia sẻ giữa nhiều instance.
-- OTP đăng ký và reset mật khẩu được gửi bằng email HTML riêng của dự án qua Resend; cấu hình `RESEND_API_KEY` / `MAIL_FROM` và kiểm tra inbox thật sau deploy. Xem [Resend setup](docs/resend-setup.md).
-- Upload dùng filesystem; cần persistent storage nếu muốn giữ file sau redeploy.
-- Cron chạy trong process ứng dụng; cần đánh giá điều phối khi chạy nhiều instance.
-- Health 200 chỉ xác nhận HTTP liveness. Kiểm tra database bằng API và đối chiếu bản ghi thực.
-- Có code tích hợp không đồng nghĩa tài khoản nhà cung cấp, webhook và quyền truy cập mạng đã được cấu hình trên hosting.
-- Một số tài liệu trong `docs/` là bản kế hoạch/snapshot trước đó. Khi trạng thái khác nhau, đối chiếu source, schema và migration hiện tại.
+- OTP lưu **in-memory** theo process: mất khi restart, không chia sẻ nhiều instance.
+- OTP đăng ký/reset gửi HTML qua **Resend**; cần `RESEND_API_KEY` + `MAIL_FROM` và inbox thật sau deploy. Xem [Resend setup](docs/resend-setup.md).
+- Upload filesystem: cần disk bền nếu muốn giữ file sau redeploy (Render free thường không có).
+- Cron chạy trong process app; nhiều instance cần đánh giá điều phối.
+- `GET /health` chỉ liveness HTTP. Kiểm tra DB bằng API và bản ghi thật.
+- Có code tích hợp ≠ đã cấu hình tài khoản, webhook và mạng trên hosting.
+- Một số file trong `docs/` là snapshot/kế hoạch cũ. Khi lệch, lấy source, schema và migration hiện tại làm chuẩn.
 
 </details>
 
@@ -232,20 +243,19 @@ Chi tiết trong [hướng dẫn deployment](docs/huong-dan-env-va-deploy.md), [
 
 | Tài liệu | Nội dung |
 |---|---|
-| [ENV & deployment](docs/huong-dan-env-va-deploy.md) | Lấy credential, host API/DB và kiểm chứng dữ liệu thật |
-| [Resend setup](docs/resend-setup.md) | OTP Resend, `otp@neoforcelab.com`, DNS verify |
-| [Render health check](docs/render-health-check.md) | Root redirect, Swagger, health và dashboard settings |
-| [Render uptime & UptimeRobot](docs/render-uptime.md) | Sleep khi idle, cold start và monitor `/health` từ UptimeRobot |
-| [PBMS API paths](docs/openapi-pbms-paths.md) | Hợp đồng route PBMS |
+| [ENV & deployment](docs/huong-dan-env-va-deploy.md) | Credential, host API/DB, kiểm chứng dữ liệu |
+| [Resend setup](docs/resend-setup.md) | OTP Resend HTTPS, `otp@neoforcelab.com`, DNS verify |
+| [Render health check](docs/render-health-check.md) | Redirect gốc, Swagger, `/health` |
+| [Render uptime & UptimeRobot](docs/render-uptime.md) | Sleep khi idle, cold start, monitor `/health` |
+| [PBMS API paths](docs/openapi-pbms-paths.md) | Hợp đồng route `/api/*` |
 | [Prisma review](docs/prisma-draft-review.md) | Bối cảnh thiết kế schema |
-| [Third-party follow-up](docs/third-party-follow-up.md) | Kế hoạch tích hợp và chuyển đổi từ hệ thống cũ |
+| [Third-party follow-up](docs/third-party-follow-up.md) | Ghi chú tích hợp (đối chiếu với source hiện tại) |
 
 ---
 
 <div align="center">
 
-**PRM393 · FPT University · Backend Engineering · fogit **
-
+**PRM393 · FPT University · Backend Engineering**
 
 Licensed under the [MIT License](LICENSE).
 

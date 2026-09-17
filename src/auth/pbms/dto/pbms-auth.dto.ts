@@ -1,9 +1,17 @@
 import { ApiProperty, ApiPropertyOptional } from '@nestjs/swagger';
 import { IsOptional, IsString } from 'class-validator';
+import {
+  dummyRefreshToken,
+  PBMS_REGISTER_EXAMPLE,
+} from '../../../common/swagger/pbms-example-data';
 
 /** Login body — nhận camelCase và PascalCase. */
 export class PbmsLoginDto {
-  @ApiPropertyOptional()
+  @ApiPropertyOptional({
+    type: String,
+    format: 'email',
+    example: PBMS_REGISTER_EXAMPLE.email,
+  })
   @IsOptional()
   @IsString()
   email?: string;
@@ -13,7 +21,7 @@ export class PbmsLoginDto {
   @IsString()
   Email?: string;
 
-  @ApiPropertyOptional()
+  @ApiPropertyOptional({ type: String, example: PBMS_REGISTER_EXAMPLE.password })
   @IsOptional()
   @IsString()
   password?: string;
@@ -26,7 +34,7 @@ export class PbmsLoginDto {
 
 /** Body đăng ký OTP. */
 export class PbmsRegisterDto {
-  @ApiPropertyOptional()
+  @ApiPropertyOptional({ type: String, example: PBMS_REGISTER_EXAMPLE.userName })
   @IsOptional()
   @IsString()
   userName?: string;
@@ -36,7 +44,7 @@ export class PbmsRegisterDto {
   @IsString()
   UserName?: string;
 
-  @ApiPropertyOptional()
+  @ApiPropertyOptional({ type: String, example: PBMS_REGISTER_EXAMPLE.fullName })
   @IsOptional()
   @IsString()
   fullName?: string;
@@ -46,7 +54,11 @@ export class PbmsRegisterDto {
   @IsString()
   FullName?: string;
 
-  @ApiPropertyOptional()
+  @ApiPropertyOptional({
+    type: String,
+    format: 'email',
+    example: PBMS_REGISTER_EXAMPLE.email,
+  })
   @IsOptional()
   @IsString()
   email?: string;
@@ -56,7 +68,7 @@ export class PbmsRegisterDto {
   @IsString()
   Email?: string;
 
-  @ApiPropertyOptional()
+  @ApiPropertyOptional({ type: String, example: PBMS_REGISTER_EXAMPLE.phoneNumber })
   @IsOptional()
   @IsString()
   phoneNumber?: string;
@@ -66,7 +78,7 @@ export class PbmsRegisterDto {
   @IsString()
   PhoneNumber?: string;
 
-  @ApiPropertyOptional()
+  @ApiPropertyOptional({ type: String, example: PBMS_REGISTER_EXAMPLE.password })
   @IsOptional()
   @IsString()
   password?: string;
@@ -76,7 +88,7 @@ export class PbmsRegisterDto {
   @IsString()
   Password?: string;
 
-  @ApiPropertyOptional()
+  @ApiPropertyOptional({ type: String, example: PBMS_REGISTER_EXAMPLE.confirmPassword })
   @IsOptional()
   @IsString()
   confirmPassword?: string;
@@ -89,7 +101,11 @@ export class PbmsRegisterDto {
 
 /** Body xác thực OTP đăng ký. */
 export class PbmsVerifyRegisterOtpDto {
-  @ApiPropertyOptional()
+  @ApiPropertyOptional({
+    type: String,
+    format: 'email',
+    example: PBMS_REGISTER_EXAMPLE.email,
+  })
   @IsOptional()
   @IsString()
   email?: string;
@@ -99,7 +115,7 @@ export class PbmsVerifyRegisterOtpDto {
   @IsString()
   Email?: string;
 
-  @ApiPropertyOptional()
+  @ApiPropertyOptional({ type: String, example: '482917' })
   @IsOptional()
   @IsString()
   otp?: string;
@@ -112,7 +128,11 @@ export class PbmsVerifyRegisterOtpDto {
 
 /** Body yêu cầu OTP. */
 export class PbmsRequestOtpDto {
-  @ApiPropertyOptional()
+  @ApiPropertyOptional({
+    type: String,
+    format: 'email',
+    example: PBMS_REGISTER_EXAMPLE.email,
+  })
   @IsOptional()
   @IsString()
   email?: string;
@@ -125,7 +145,11 @@ export class PbmsRequestOtpDto {
 
 /** Body xác thực OTP reset mật khẩu. */
 export class PbmsVerifyResetPasswordOtpDto {
-  @ApiPropertyOptional()
+  @ApiPropertyOptional({
+    type: String,
+    format: 'email',
+    example: PBMS_REGISTER_EXAMPLE.email,
+  })
   @IsOptional()
   @IsString()
   email?: string;
@@ -135,7 +159,7 @@ export class PbmsVerifyResetPasswordOtpDto {
   @IsString()
   Email?: string;
 
-  @ApiPropertyOptional()
+  @ApiPropertyOptional({ type: String, example: '482917' })
   @IsOptional()
   @IsString()
   otp?: string;
@@ -145,7 +169,7 @@ export class PbmsVerifyResetPasswordOtpDto {
   @IsString()
   Otp?: string;
 
-  @ApiPropertyOptional()
+  @ApiPropertyOptional({ type: String, example: PBMS_REGISTER_EXAMPLE.password })
   @IsOptional()
   @IsString()
   newPassword?: string;
@@ -155,7 +179,7 @@ export class PbmsVerifyResetPasswordOtpDto {
   @IsString()
   NewPassword?: string;
 
-  @ApiPropertyOptional()
+  @ApiPropertyOptional({ type: String, example: PBMS_REGISTER_EXAMPLE.confirmPassword })
   @IsOptional()
   @IsString()
   confirmPassword?: string;
@@ -168,7 +192,11 @@ export class PbmsVerifyResetPasswordOtpDto {
 
 /** RefreshTokenDTO */
 export class PbmsRefreshTokenDto {
-  @ApiProperty({ description: 'Refresh token (refreshTokenKey)' })
+  @ApiProperty({
+    description: 'Refresh token (refreshTokenKey)',
+    type: String,
+    example: dummyRefreshToken,
+  })
   @IsOptional()
   @IsString()
   refreshTokenKey?: string;

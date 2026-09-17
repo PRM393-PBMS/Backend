@@ -71,6 +71,49 @@ describe('PbmsAuthController', () => {
     expect(loginSchema).not.toHaveProperty('properties.Password');
   });
 
+  it('Swagger register DTO dùng example đăng ký thật, không generic string', () => {
+    const document = SwaggerModule.createDocument(app, new DocumentBuilder().build());
+    hideLegacyPascalCaseProperties(document);
+
+    const registerSchema = document.components?.schemas?.PbmsRegisterDto;
+    expect(registerSchema && 'properties' in registerSchema ? registerSchema.properties : undefined).toMatchObject({
+      userName: { example: 'fonfon' },
+      fullName: { example: 'Huỳnh Dũng Phong' },
+      email: { example: 'fonHocPRM393@gmail.com' },
+      phoneNumber: { example: '0123456789' },
+      password: { example: 'passcuafon@123' },
+      confirmPassword: { example: 'passcuafon@123' },
+    });
+
+    const sendOtp = document.paths['/api/Auth/send-register-otp']?.post;
+    const example =
+      sendOtp?.requestBody && 'content' in sendOtp.requestBody
+        ? sendOtp.requestBody.content?.['application/json']?.examples?.default
+        : undefined;
+    expect(example && 'value' in example ? example.value : undefined).toEqual({
+      userName: 'fonfon',
+      fullName: 'Huỳnh Dũng Phong',
+      email: 'fonHocPRM393@gmail.com',
+      phoneNumber: '0123456789',
+      password: 'passcuafon@123',
+      confirmPassword: 'passcuafon@123',
+    });
+
+    const loginOk = document.paths['/api/Auth/login']?.post?.responses?.['200'];
+    const loginExample =
+      loginOk && 'content' in loginOk
+        ? loginOk.content?.['application/json']?.schema &&
+          'example' in loginOk.content['application/json'].schema
+          ? loginOk.content['application/json'].schema.example
+          : undefined
+        : undefined;
+    expect(loginExample).toMatchObject({
+      statusCode: 200,
+      isSuccess: true,
+      result: { user: { userName: 'fonfon', email: 'fonHocPRM393@gmail.com' } },
+    });
+  });
+
   it('POST /api/Auth/login trả envelope {statusCode,message,isSuccess,result}', async () => {
     pbmsAuthService.login.mockResolvedValue(
       new PbmsResponseDto('Đăng nhập thành công', 200, true, {
