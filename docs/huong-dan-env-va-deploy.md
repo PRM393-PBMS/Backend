@@ -10,7 +10,7 @@ Bạn sẽ có backend HTTPS, Swagger trên chính backend đó, và PostgreSQL 
 flowchart LR
   A[Mobile / Frontend / Swagger] -->|HTTPS + JWT| B[NestJS trên Render]
   B -->|Prisma + DATABASE_URL| C[PostgreSQL trên Supabase]
-  B --> D[PayOS / SMTP / Plate Recognizer khi đã tích hợp]
+  B --> D[PayOS / Resend / Plate Recognizer khi đã tích hợp]
 ```
 
 Ví dụ địa chỉ minh họa, phải thay bằng địa chỉ được cấp:
@@ -34,8 +34,8 @@ Swagger gửi request thật đến API. Dữ liệu chỉ là mock nếu code A
 | Các route PBMS `/api/*` | Là mục tiêu trong tài liệu; chưa có controller được đăng ký cho các module này |
 | Prisma schema | Đã mở rộng các model nghiệp vụ; có model không đồng nghĩa đã có API |
 | Migration | Có migration `20260917032600_pbms_domain`; review trước khi chạy trên database mới |
-| ENV đang được đọc | `DATABASE_URL`, JWT, CORS, SMTP `MAIL_*`, upload và các biến tích hợp đã có trong `.env.example` |
-| SMTP | Nodemailer gửi OTP đăng ký/reset bằng template HTML riêng của dự án |
+| ENV đang được đọc | `DATABASE_URL`, JWT, CORS, Resend `RESEND_API_KEY` / `MAIL_*`, upload và các biến tích hợp đã có trong `.env.example` |
+| Email OTP | Resend Emails API; template HTML riêng của dự án |
 | Prisma Client | Đang ở devDependencies; phải giữ nó trong môi trường runtime hoặc chuyển đúng sang dependencies |
 | JWT secret | Code vẫn có fallback hardcoded; cần bỏ fallback và kiểm tra biến bắt buộc trước khi vận hành production thực tế |
 
@@ -43,9 +43,9 @@ Vì vậy, có thể chuẩn bị hạ tầng và kiểm chứng auth với data
 
 ## 3. Lựa chọn hosting
 
-Hướng dẫn chính: **Render Web Service + Supabase PostgreSQL**. Chọn gói Render phù hợp nếu cần gửi Gmail SMTP; Render Free chặn các port SMTP. Xem chi phí thực tế trong dashboard trước khi tạo; tài liệu này không chốt giá hay tự đăng ký gói.
+Hướng dẫn chính: **Render Web Service + Supabase PostgreSQL**. OTP gửi qua Resend HTTPS nên không phụ thuộc outbound SMTP. Xem chi phí thực tế trong dashboard trước khi tạo; tài liệu này không chốt giá hay tự đăng ký gói.
 
-Render Free có thể ngủ khi không hoạt động, không có persistent disk và chặn outbound SMTP trên các port 25/465/587. UptimeRobot hiện monitor endpoint `/health` từ bên ngoài để giảm cold start, nhưng không phải SLA. Vì vậy không dùng cấu hình Free như giải pháp lâu dài cho dữ liệu thật và OTP Gmail. [Giới hạn chính thức](https://render.com/docs/free)
+Render Free có thể ngủ khi không hoạt động và không có persistent disk. UptimeRobot hiện monitor endpoint `/health` từ bên ngoài để giảm cold start, nhưng không phải SLA. Không dùng cấu hình Free như giải pháp lâu dài cho dữ liệu thật. [Giới hạn chính thức](https://render.com/docs/free)
 
 Chuẩn bị tài khoản GitHub, Render, quyền truy cập repository, và tài khoản các nhà cung cấp nếu cần chức năng tích hợp. Chỉ đưa credential vào `.env` local hoặc Environment của hosting; không commit vào GitHub và không đưa vào frontend/mobile.
 
@@ -111,25 +111,23 @@ Repo chưa gọi `app.enableCors()`, nên điền biến chưa bật CORS. Khi t
 
 Các URL return/cancel do bạn triển khai, không phải secret PayOS cấp. Sau khi module backend hoàn thành, cấu hình webhook HTTPS dự kiến `https://BACKEND/api/payments/payos-webhook`. Route hiện chưa được triển khai; chưa đăng ký webhook vào một URL trả 404. Backend phải kiểm tra chữ ký và đối chiếu giao dịch, không đánh dấu đã thanh toán chỉ vì trình duyệt mở trang success. [SDK Node](https://payos.vn/docs/sdks/back-end/node/), [API/webhook](https://payos.vn/docs/api/)
 
-### 5.4. Gmail SMTP cho OTP/email
+### 5.4. Resend cho OTP/email
 
-1. Chọn tài khoản email thực dùng để gửi mail dự án.
-2. Trong Google Account → Security, bật **2-Step Verification**.
-3. Mở [App passwords](https://myaccount.google.com/apppasswords), tạo mật khẩu ứng dụng, đặt tên để nhận biết backend.
-4. Copy mật khẩu ứng dụng vào `MAIL_PASSWORD`; không dùng mật khẩu đăng nhập Google.
-5. Nếu không có mục App passwords, kiểm tra loại tài khoản/chính sách quản trị theo [Google Help](https://support.google.com/accounts/answer/185833?hl=en). Không phải mọi tài khoản đều cho phép.
+Chi tiết đầy đủ: [docs/resend-setup.md](resend-setup.md). Tóm tắt:
+
+1. Tạo tài khoản Resend, tạo API key **mới** (thu hồi key đã dán chat). Chỉ điền key vào `.env` gitignored và Render Environment.
+2. Domain brand: `neoforcelab.com`. `MAIL_FROM=otp@neoforcelab.com`. Email login dashboard không phải địa chỉ `From`.
+3. Đơn hàng tên miền còn chờ: đợi DNS active → Resend Add Domain → dán bản ghi DNS từ dashboard → **Verified** rồi mới gửi OTP tới Gmail khách.
 
 ```dotenv
-MAIL_HOST="smtp.gmail.com"
-MAIL_PORT=587
-MAIL_SENDER_NAME="PRM393 Parking Management"
+RESEND_API_KEY=
+MAIL_FROM=otp@neoforcelab.com
+MAIL_SENDER_NAME="NEO Force Lab"
+MAIL_REPLY_TO=otp@neoforcelab.com
 MAIL_BRAND_COLOR="#0F766E"
-MAIL_SENDER_EMAIL="DIA_CHI_GMAIL_THAT_CUA_BAN"
-MAIL_REPLY_TO="DIA_CHI_HO_TRO_CUA_BAN"
-MAIL_PASSWORD="APP_PASSWORD_VUA_TAO"
 ```
 
-Port 587 dùng STARTTLS. Backend gửi hai email HTML riêng: xác nhận đăng ký và đặt lại mật khẩu; `MAIL_BRAND_COLOR` đổi màu header, còn `MAIL_REPLY_TO` là địa chỉ nhận phản hồi. Sau triển khai hãy gửi OTP tới hộp thư bạn kiểm soát, kiểm tra inbox/Spam và hiển thị trên mobile. Render Free chặn port này; điền đúng mật khẩu vẫn không giải quyết giới hạn mạng. Nếu giữ Gmail SMTP, dùng Render paid; chuyển sang email API là thay đổi tích hợp riêng.
+Không dùng `MAIL_HOST` / `MAIL_PORT` / `MAIL_PASSWORD`. Chi tiết: [docs/resend-setup.md](resend-setup.md).
 
 ### 5.5. Plate Recognizer
 
@@ -228,7 +226,7 @@ Quy trình này giữ devDependencies vì repo hiện để Prisma Client và CL
 
 ### Environment trong dashboard
 
-Điền tối thiểu `NODE_ENV=production`, Supabase Session Pooler `DATABASE_URL`, hai JWT secret thật và Node version đã chọn. Render cung cấp `PORT`. Khi dùng OTP, thêm đầy đủ biến `MAIL_*` ở mục 5.4. Không upload nguyên `.env` dev có localhost rồi hy vọng cloud kết nối đúng database.
+Điền tối thiểu `NODE_ENV=production`, Supabase Session Pooler `DATABASE_URL`, hai JWT secret thật và Node version đã chọn. Render cung cấp `PORT`. Khi dùng OTP, thêm `RESEND_API_KEY` và `MAIL_FROM` (xem mục 5.4 và `docs/resend-setup.md`). Không upload nguyên `.env` dev có localhost rồi hy vọng cloud kết nối đúng database.
 
 Các credential PayOS/mail/OCR có thể chuẩn bị theo mục 5, nhưng chỉ cần hoạt động khi module tương ứng đã implement. Tên biến phải khớp code; không có cơ chế tự tích hợp dịch vụ chỉ nhờ biến ENV.
 
@@ -281,7 +279,7 @@ Bật/kiểm tra chính sách backup của Supabase plan, ghi rõ thời gian gi
 | Register 409 / conflict trong envelope | Email đã tồn tại thật; đăng nhập thay vì chèn lại |
 | Route `/auth/login` 404 | Surface Nest `/auth/*` đã gỡ; dùng `/api/Auth/login` |
 | Web frontend bị CORS | Code chưa nối CORS_ORIGIN, origin không khớp; không phải lỗi password DB |
-| SMTP timeout trên Free | Giới hạn outbound SMTP, không phải chỉ do App Password |
+| OTP không gửi / lỗi cấu hình Resend | Thiếu `RESEND_API_KEY` hoặc `MAIL_FROM`; domain `neoforcelab.com` chưa Verified trên Resend |
 | Dữ liệu mất sau redeploy | DB URL trỏ nhầm DB, DB hết hạn/reset, hoặc dữ liệu chỉ nằm trong memory |
 | Ảnh mất nhưng bản ghi còn | Filesystem không persistent; cần storage bền vững |
 

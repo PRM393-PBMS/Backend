@@ -61,7 +61,7 @@ Repo dùng một nhóm API công khai: `/api/*` (hợp đồng PBMS). Đăng nh�
 | Thành phần | Công nghệ | Cách dùng |
 |---|---|---|
 | Thanh toán | PayOS REST API + native `fetch` + Node crypto | Tạo/tra cứu thanh toán, xử lý chữ ký; không dùng PayOS SDK trong dependencies |
-| Email / OTP | Nodemailer `^6.10.1` + SMTP | Gửi email bằng cấu hình `MAIL_*` |
+| Email / OTP | Resend Emails API | Gửi OTP HTML qua `RESEND_API_KEY` và `MAIL_FROM` |
 | Nhận diện biển số | Plate Recognizer Snapshot API | Upload ảnh qua HTTP, xử lý kết quả nhận diện |
 | Tạo QR | qrcode `^1.5.4` | Sinh mã QR |
 | Đọc QR | jsQR `^1.4.0` | Giải mã QR từ dữ liệu ảnh |
@@ -79,7 +79,7 @@ Repo dùng một nhóm API công khai: `/api/*` (hợp đồng PBMS). Đăng nh�
 | Lint | Oxlint `^1.58.0` |
 | Format | Prettier `^3.4.2` |
 | Build / development | Nest CLI & Schematics `^12.0.0`, ts-node, ts-loader, tsconfig-paths, source-map-support |
-| Type definitions | Node, Express, Jest, bcrypt, Multer, Nodemailer, Passport JWT, PDFKit, QRCode, Supertest |
+| Type definitions | Node, Express, Jest, bcrypt, Multer, Passport JWT, PDFKit, QRCode, Supertest |
 | Package management | npm + `package-lock.json` |
 | Hosting được hướng dẫn | Render Web Service + Supabase PostgreSQL |
 | Quản trị database | pgAdmin 4 hoặc công cụ PostgreSQL tương đương; không phải dependency của app |
@@ -106,7 +106,7 @@ flowchart TD
     Service --> Prisma[Prisma Client]
     Prisma --> DB[(PostgreSQL)]
     Service --> PayOS[PayOS REST API]
-    Service --> Mail[Nodemailer / SMTP]
+    Service --> Mail[Resend Emails API]
     Service --> OCR[Plate Recognizer]
     Service --> Assets[QR / Images / PDF / Uploads]
     Cron[Nest Schedule] --> Service
@@ -171,7 +171,7 @@ Nếu database đã có bảng/dữ liệu, cần kiểm tra lịch sử migrati
 | JWT | `JWT_ACCESS_SECRET`, `JWT_REFRESH_SECRET` |
 | Server | `NODE_ENV`, `PORT`, `CORS_ORIGIN` |
 | PayOS | `PAYOS_CLIENT_ID`, `PAYOS_API_KEY`, `PAYOS_CHECKSUM_KEY`, `PAYOS_RETURN_URL`, `PAYOS_CANCEL_URL` |
-| SMTP | `MAIL_HOST`, `MAIL_PORT`, `MAIL_SENDER_NAME`, `MAIL_BRAND_COLOR`, `MAIL_SENDER_EMAIL`, `MAIL_REPLY_TO`, `MAIL_PASSWORD` |
+| Email / Resend | `RESEND_API_KEY`, `MAIL_FROM`, `MAIL_SENDER_NAME`, `MAIL_REPLY_TO`, `MAIL_BRAND_COLOR` |
 | OCR | `PLATE_RECOGNIZER_API_KEY`, `PLATE_RECOGNIZER_ENDPOINT`, `PLATE_RECOGNIZER_REGIONS`, `PLATE_RECOGNIZER_MINIMUM_CONFIDENCE` |
 | Files | `UPLOAD_DIR` |
 
@@ -219,7 +219,7 @@ Chi tiết trong [hướng dẫn deployment](docs/huong-dan-env-va-deploy.md), [
 <summary><strong>📌 Phạm vi vận hành hiện tại</strong></summary>
 
 - OTP đang lưu trong memory của process, mất khi restart và chưa chia sẻ giữa nhiều instance.
-- OTP đăng ký và reset mật khẩu được gửi bằng email HTML riêng của dự án; cấu hình qua các biến `MAIL_*` và kiểm tra inbox thật sau deploy.
+- OTP đăng ký và reset mật khẩu được gửi bằng email HTML riêng của dự án qua Resend; cấu hình `RESEND_API_KEY` / `MAIL_FROM` và kiểm tra inbox thật sau deploy. Xem [Resend setup](docs/resend-setup.md).
 - Upload dùng filesystem; cần persistent storage nếu muốn giữ file sau redeploy.
 - Cron chạy trong process ứng dụng; cần đánh giá điều phối khi chạy nhiều instance.
 - Health 200 chỉ xác nhận HTTP liveness. Kiểm tra database bằng API và đối chiếu bản ghi thực.
@@ -233,6 +233,7 @@ Chi tiết trong [hướng dẫn deployment](docs/huong-dan-env-va-deploy.md), [
 | Tài liệu | Nội dung |
 |---|---|
 | [ENV & deployment](docs/huong-dan-env-va-deploy.md) | Lấy credential, host API/DB và kiểm chứng dữ liệu thật |
+| [Resend setup](docs/resend-setup.md) | OTP Resend, `otp@neoforcelab.com`, DNS verify |
 | [Render health check](docs/render-health-check.md) | Root redirect, Swagger, health và dashboard settings |
 | [Render uptime & UptimeRobot](docs/render-uptime.md) | Sleep khi idle, cold start và monitor `/health` từ UptimeRobot |
 | [PBMS API paths](docs/openapi-pbms-paths.md) | Hợp đồng route PBMS |

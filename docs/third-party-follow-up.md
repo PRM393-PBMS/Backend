@@ -74,7 +74,7 @@ Webhook PayOS: **I/O bắt buộc giữ** dù implement Node. Không đổi path
 
 ## Sẽ làm trên Node
 
-`package.json`: Nest 12, JWT, Passport, bcrypt, class-validator, Swagger, Prisma 6.4.1, **nodemailer** (OTP). PayOS/OCR/PDF chưa cài.
+`package.json`: Nest 12, JWT, Passport, bcrypt, class-validator, Swagger, Prisma 6.4.1, **resend** (OTP). PayOS/OCR/PDF đã có trong dependencies hiện tại; đối chiếu `package.json`.
 
 Đề xuất khi implement (ghi chú, chưa `npm install`):
 
@@ -82,7 +82,7 @@ Webhook PayOS: **I/O bắt buộc giữ** dù implement Node. Không đổi path
 |------------|----------------------|
 | Config sections `PayOS`, `MailSettings`, `PlateRecognizer` | `@nestjs/config` + env (skill: đọc theo tên biến, ghi `.env.example`) |
 | PayOS SDK PBMS `payOS` 2.1.0 | REST PayOS hoặc SDK Node chính thức **khi** chốt version tương thích Nest 12 — chưa cài |
-| MailKit SMTP | `nodemailer` (hoặc wrapper Nest mail) |
+| Mail OTP | `resend` Emails API (không SMTP) |
 | HttpClient PlateRecognizer | `fetch` / axios — endpoint public, key từ env |
 | Hangfire SQL | Job: `@nestjs/schedule` (cron overdue) + hàng đợi delay NoShow (`@nestjs/bullmq` **chỉ khi** cron không đủ delayed job). Chưa chọn package cuối. |
 | QRCoder | `qrcode` (PNG data URL) |
@@ -104,7 +104,7 @@ Secret trong `SWP391_BackEnd/PBMS/appsettings.json` **đã nằm trên GitHub**.
 | PostgreSQL | Supabase Session Pooler URL cho local và Render. | Không commit URL/password; copy connection string từ Supabase Dashboard → Connect. |
 | Dump SQL Server | **Không yêu cầu** | Schema trống trên Postgres; không dump data PBMS. |
 | PayOS | ClientId, ApiKey, ChecksumKey, ReturnUrl, CancelUrl | Return/Cancel PBMS đang trỏ `http://localhost:5173/payment-success` và `payment-cancel` — xác nhận có giữ cho PRM không. |
-| SMTP | Host, Port, SenderName, SenderEmail, Password (app password) | PBMS dùng `smtp.gmail.com:587`. |
+| Email OTP | `RESEND_API_KEY`, `MAIL_FROM=otp@neoforcelab.com` | Domain phải Verified trên Resend. Xem `docs/resend-setup.md`. |
 | PlateRecognizer | ApiKey; Endpoint/Regions/MinimumConfidence nếu khác mặc định PBMS | Endpoint PBMS: `https://api.platerecognizer.com/v1/plate-reader/`, Regions `vn`, threshold `0.75`. |
 | Webhook public | URL HTTPS PayOS gọi được tới Nest | Localhost không nhận webhook thật — cần tunnel (ngrok, …) do **bạn** tạo. Path giữ `/api/payments/payos-webhook`. |
 | CORS thêm | Origin ngoài `http://localhost:5173` (mobile, domain deploy) | Mặc định theo PBMS: chỉ 5173. |
@@ -127,11 +127,10 @@ PAYOS_CHECKSUM_KEY=
 PAYOS_RETURN_URL=http://localhost:5173/payment-success
 PAYOS_CANCEL_URL=http://localhost:5173/payment-cancel
 
-MAIL_HOST=smtp.gmail.com
-MAIL_PORT=587
-MAIL_SENDER_NAME=
-MAIL_SENDER_EMAIL=
-MAIL_PASSWORD=
+RESEND_API_KEY=
+MAIL_FROM=otp@neoforcelab.com
+MAIL_SENDER_NAME="NEO Force Lab"
+MAIL_REPLY_TO=otp@neoforcelab.com
 
 PLATE_RECOGNIZER_API_KEY=
 PLATE_RECOGNIZER_ENDPOINT=https://api.platerecognizer.com/v1/plate-reader/
@@ -172,7 +171,7 @@ Map UUID / snake_case trong `prisma/schema.prisma`. Migration `20260917032600_pb
 
 ## Đang chặn
 
-Không còn chờ dump SQL Server. OTP cần `MAIL_SENDER_EMAIL` + `MAIL_PASSWORD` trên máy chạy Nest. PayOS/OCR cần credential env; thiếu thì fail lúc gọi API, không giả lập thanh toán.
+Không còn chờ dump SQL Server. OTP cần `RESEND_API_KEY` + `MAIL_FROM` trên máy chạy Nest. PayOS/OCR cần credential env; thiếu thì fail lúc gọi API, không giả lập thanh toán.
 
 ---
 

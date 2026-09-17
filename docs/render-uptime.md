@@ -37,7 +37,7 @@ UptimeRobot được cấu hình làm HTTP(s) monitor cho `https://prm393-backen
 - Interval: **5 phút** (hoặc theo giới hạn gói đang dùng).
 - Expected response: HTTP 200.
 
-Monitor chạy bên ngoài Render nên có thể đánh thức service khi nó đã spin-down. Kiểm tra trạng thái monitor và alert trên dashboard UptimeRobot; đây là monitor HTTP, không xác minh database Supabase hay SMTP.
+Monitor chạy bên ngoài Render nên có thể đánh thức service khi nó đã spin-down. Kiểm tra trạng thái monitor và alert trên dashboard UptimeRobot; đây là monitor HTTP, không xác minh database Supabase hay gửi mail Resend.
 
 ### cron-job.org
 
