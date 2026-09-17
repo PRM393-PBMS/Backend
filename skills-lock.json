@@ -1,6 +1,18 @@
 {
   "version": 1,
   "skills": {
+    "email-best-practices": {
+      "source": "resend/email-best-practices",
+      "sourceType": "github",
+      "skillPath": "SKILL.md",
+      "computedHash": "652506fcb66611db5d9b1fcdad46e856bd9a4c18e9f05688771b96b1d00f3317"
+    },
+    "nodemailer": {
+      "source": "aidotnet/moyucode",
+      "sourceType": "github",
+      "skillPath": "skills/tools/nodemailer/SKILL.md",
+      "computedHash": "762dcaa61fee58838c57caf1f082a5bb5ea8022b75525abb04d03885e11dcba7"
+    },
     "supabase": {
       "source": "supabase/agent-skills",
       "sourceType": "github",
