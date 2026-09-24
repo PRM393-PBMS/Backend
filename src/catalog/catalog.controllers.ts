@@ -43,7 +43,7 @@ export class VehicleTypesController {
   constructor(private readonly vehicleTypes: VehicleTypesService) {}
 
   @Get()
-  @PbmsRoles('Manager', 'Staff')
+  @PbmsRoles('manager', 'staff')
   @ApiOperation({ summary: 'Danh sách loại phương tiện' })
   @ApiPbmsOkResponse('Lấy danh sách loại phương tiện thành công', [vehicleTypeExample])
   getAll(): Promise<PbmsResponseDto> {
@@ -51,7 +51,7 @@ export class VehicleTypesController {
   }
 
   @Get(':id')
-  @PbmsRoles('Manager', 'Staff')
+  @PbmsRoles('manager', 'staff')
   @ApiOperation({ summary: 'Chi tiết loại phương tiện' })
   @ApiPbmsOkResponse('Lấy loại phương tiện thành công', vehicleTypeExample)
   getById(@Param('id') id: string): Promise<PbmsResponseDto> {
@@ -59,7 +59,7 @@ export class VehicleTypesController {
   }
 
   @Post()
-  @PbmsRoles('Manager')
+  @PbmsRoles('manager')
   @ApiOperation({ summary: 'Tạo loại phương tiện' })
   @ApiPbmsBodyExample(PbmsBodyDto, { typeName: 'Xe máy', dimensions: '2.0m x 0.8m' })
   @ApiPbmsOkResponse('Tạo loại phương tiện thành công', vehicleTypeExample, 201)
@@ -68,7 +68,7 @@ export class VehicleTypesController {
   }
 
   @Put()
-  @PbmsRoles('Manager')
+  @PbmsRoles('manager')
   @ApiOperation({ summary: 'Cập nhật loại phương tiện' })
   @ApiPbmsBodyExample(PbmsBodyDto, {
     vehicleTypeId: ids.vehicleTypeId,
@@ -81,7 +81,7 @@ export class VehicleTypesController {
   }
 
   @Delete(':id')
-  @PbmsRoles('Manager')
+  @PbmsRoles('manager')
   @ApiOperation({ summary: 'Xóa loại phương tiện' })
   @ApiPbmsOkResponse('Xóa loại phương tiện thành công', null)
   remove(@Param('id') id: string): Promise<PbmsResponseDto> {
@@ -114,7 +114,7 @@ export class FloorsController {
 
   @ApiBearerAuth('JWT-auth')
   @Post()
-  @PbmsRoles('Manager')
+  @PbmsRoles('manager')
   @ApiOperation({ summary: 'Tạo tầng' })
   @ApiPbmsBodyExample(PbmsBodyDto, {
     floorName: 'Tầng B1',
@@ -129,7 +129,7 @@ export class FloorsController {
 
   @ApiBearerAuth('JWT-auth')
   @Put()
-  @PbmsRoles('Manager')
+  @PbmsRoles('manager')
   @ApiOperation({ summary: 'Cập nhật tầng' })
   @ApiPbmsBodyExample(PbmsBodyDto, {
     floorId: ids.floorId,
@@ -145,7 +145,7 @@ export class FloorsController {
 
   @ApiBearerAuth('JWT-auth')
   @Delete(':id')
-  @PbmsRoles('Manager')
+  @PbmsRoles('manager')
   @ApiOperation({ summary: 'Xóa tầng' })
   @ApiPbmsOkResponse('Xóa tầng thành công', null)
   remove(@Param('id') id: string): Promise<PbmsResponseDto> {
@@ -178,7 +178,7 @@ export class GatesController {
 
   @ApiBearerAuth('JWT-auth')
   @Post()
-  @PbmsRoles('Manager')
+  @PbmsRoles('manager')
   @ApiOperation({ summary: 'Tạo cổng' })
   @ApiPbmsBodyExample(PbmsBodyDto, {
     floorId: ids.floorId,
@@ -192,7 +192,7 @@ export class GatesController {
 
   @ApiBearerAuth('JWT-auth')
   @Put()
-  @PbmsRoles('Manager')
+  @PbmsRoles('manager')
   @ApiOperation({ summary: 'Cập nhật cổng' })
   @ApiPbmsBodyExample(PbmsBodyDto, {
     gateId: ids.gateEntryId,
@@ -207,7 +207,7 @@ export class GatesController {
 
   @ApiBearerAuth('JWT-auth')
   @Delete(':id')
-  @PbmsRoles('Manager')
+  @PbmsRoles('manager')
   @ApiOperation({ summary: 'Xóa cổng' })
   @ApiPbmsOkResponse('Xóa cổng thành công', null)
   remove(@Param('id') id: string): Promise<PbmsResponseDto> {
@@ -240,7 +240,7 @@ export class ParkingSlotsController {
 
   @ApiBearerAuth('JWT-auth')
   @Post()
-  @PbmsRoles('Manager')
+  @PbmsRoles('manager')
   @ApiOperation({ summary: 'Tạo ô đỗ' })
   @ApiPbmsBodyExample(PbmsBodyDto, {
     floorId: ids.floorId,
@@ -255,7 +255,7 @@ export class ParkingSlotsController {
 
   @ApiBearerAuth('JWT-auth')
   @Put()
-  @PbmsRoles('Manager')
+  @PbmsRoles('manager')
   @ApiOperation({ summary: 'Cập nhật ô đỗ' })
   @ApiPbmsBodyExample(PbmsBodyDto, {
     parkingSlotId: ids.slotId,
@@ -271,7 +271,7 @@ export class ParkingSlotsController {
 
   @ApiBearerAuth('JWT-auth')
   @Patch(':id/status')
-  @PbmsRoles('Manager', 'Staff')
+  @PbmsRoles('manager', 'staff')
   @ApiOperation({ summary: 'Cập nhật trạng thái ô đỗ' })
   @ApiPbmsBodyExample(PbmsBodyDto, { status: 'Occupied' })
   @ApiPbmsOkResponse('Cập nhật trạng thái ô đỗ thành công', { ...slotExample, status: 'Occupied' })
@@ -281,7 +281,7 @@ export class ParkingSlotsController {
 
   @ApiBearerAuth('JWT-auth')
   @Delete(':id')
-  @PbmsRoles('Manager')
+  @PbmsRoles('manager')
   @ApiOperation({ summary: 'Xóa ô đỗ' })
   @ApiPbmsOkResponse('Xóa ô đỗ thành công', null)
   remove(@Param('id') id: string): Promise<PbmsResponseDto> {
@@ -314,7 +314,7 @@ export class PricingPoliciesController {
 
   @ApiBearerAuth('JWT-auth')
   @Post()
-  @PbmsRoles('Manager')
+  @PbmsRoles('manager')
   @ApiOperation({ summary: 'Tạo chính sách giá' })
   @ApiPbmsBodyExample(PbmsBodyDto, {
     vehicleTypeId: ids.vehicleTypeId,
@@ -331,7 +331,7 @@ export class PricingPoliciesController {
 
   @ApiBearerAuth('JWT-auth')
   @Put()
-  @PbmsRoles('Manager')
+  @PbmsRoles('manager')
   @ApiOperation({ summary: 'Cập nhật chính sách giá' })
   @ApiPbmsBodyExample(PbmsBodyDto, {
     policyId: ids.policyId,
@@ -350,7 +350,7 @@ export class PricingPoliciesController {
 
   @ApiBearerAuth('JWT-auth')
   @Delete(':id')
-  @PbmsRoles('Manager')
+  @PbmsRoles('manager')
   @ApiOperation({ summary: 'Xóa chính sách giá' })
   @ApiPbmsOkResponse('Xóa chính sách giá thành công', null)
   remove(@Param('id') id: string): Promise<PbmsResponseDto> {
@@ -383,12 +383,13 @@ export class SubscriptionPackagesController {
 
   @ApiBearerAuth('JWT-auth')
   @Post()
-  @PbmsRoles('Manager')
+  @PbmsRoles('manager')
   @ApiOperation({ summary: 'Tạo gói thuê bao' })
   @ApiPbmsBodyExample(PbmsBodyDto, {
     vehicleTypeId: ids.vehicleTypeId,
     packageName: 'Gói tháng xe máy',
     durationMonths: 1,
+    durationDays: 30,
     price: 300000,
     requireFixedSlot: true,
     description: 'Thuê bao tháng, ưu tiên ô cố định',
@@ -400,11 +401,12 @@ export class SubscriptionPackagesController {
 
   @ApiBearerAuth('JWT-auth')
   @Put(':id')
-  @PbmsRoles('Manager')
+  @PbmsRoles('manager')
   @ApiOperation({ summary: 'Cập nhật gói thuê bao' })
   @ApiPbmsBodyExample(PbmsBodyDto, {
     packageName: 'Gói tháng xe máy',
     durationMonths: 1,
+    durationDays: 30,
     price: 300000,
     requireFixedSlot: true,
     description: 'Thuê bao tháng, ưu tiên ô cố định',
@@ -417,7 +419,7 @@ export class SubscriptionPackagesController {
 
   @ApiBearerAuth('JWT-auth')
   @Delete(':id')
-  @PbmsRoles('Manager')
+  @PbmsRoles('manager')
   @ApiOperation({ summary: 'Xóa gói thuê bao' })
   @ApiPbmsOkResponse('Xóa gói thuê bao thành công', null)
   remove(@Param('id') id: string): Promise<PbmsResponseDto> {

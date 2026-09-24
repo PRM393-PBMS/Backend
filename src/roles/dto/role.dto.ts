@@ -1,9 +1,8 @@
 import { ApiPropertyOptional } from '@nestjs/swagger';
 import { IsOptional, IsString } from 'class-validator';
-import { ids } from '../../common/swagger/pbms-example-data';
 
 export class CreateRoleDto {
-  @ApiPropertyOptional({ type: String, example: 'Staff' })
+  @ApiPropertyOptional({ type: String, example: 'staff' })
   @IsOptional()
   @IsString()
   roleName?: string;
@@ -19,10 +18,9 @@ export class CreateRoleDto {
 }
 
 export class UpdateRoleDto extends CreateRoleDto {
-  @ApiPropertyOptional({ type: String, format: 'uuid', example: ids.roleStaffId })
+  @ApiPropertyOptional({ type: Number, example: 2 })
   @IsOptional()
-  @IsString()
-  roleId?: string;
+  roleId?: number;
 
-  @ApiPropertyOptional() @IsOptional() @IsString() RoleId?: string;
+  @ApiPropertyOptional() @IsOptional() RoleId?: number | string;
 }

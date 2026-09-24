@@ -288,21 +288,12 @@ export class PaymentsService {
 
     const start = new Date();
     const end = new Date(start);
-    end.setUTCMonth(end.getUTCMonth() + subscription.package.durationMonths);
-    const customerRole = await this.prisma.role.findFirst({
-      where: { roleName: { equals: 'Customer', mode: 'insensitive' } },
-    });
+    end.setUTCDate(end.getUTCDate() + subscription.package.durationDays);
     await this.prisma.$transaction(async (tx) => {
       await tx.monthlySubscription.update({
         where: { id: subscriptionId },
-        data: { status: 'Active', startDate: start, endDate: end },
+        data: { status: 'Active', startDate: start, endDate: end, autoRenew: true },
       });
-      if (subscription.user.pbmsRole?.roleName === 'User' && customerRole) {
-        await tx.user.update({
-          where: { id: subscription.userId },
-          data: { pbmsRoleId: customerRole.id },
-        });
-      }
     });
   }
 
@@ -330,7 +321,7 @@ export class PaymentsService {
     const oldEnd = subscription.endDate;
     const start = oldEnd < new Date() ? new Date() : oldEnd;
     const newEnd = new Date(start);
-    newEnd.setUTCMonth(newEnd.getUTCMonth() + pkg.durationMonths);
+    newEnd.setUTCDate(newEnd.getUTCDate() + pkg.durationDays);
     await this.prisma.$transaction([
       this.prisma.monthlySubscription.update({
         where: { id: subscription.id },

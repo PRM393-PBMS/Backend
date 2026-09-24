@@ -76,7 +76,7 @@ export class PbmsAuthService {
           email: user.email,
           fullName: user.fullName,
           phoneNumber: user.phoneNumber,
-          roleName: user.pbmsRole?.roleName ?? 'User',
+          roleName: user.pbmsRole?.roleName ?? 'customer',
         },
         accessToken: tokens.accessToken,
         refreshToken: tokens.refreshToken,
@@ -185,11 +185,11 @@ export class PbmsAuthService {
     }
 
     const defaultRole = await this.prisma.role.findFirst({
-      where: { roleName: { equals: 'User', mode: 'insensitive' } },
+      where: { OR: [{ id: 1 }, { roleName: { equals: 'customer', mode: 'insensitive' } }] },
     });
     if (!defaultRole) {
       return new PbmsResponseDto(
-        "Lỗi cấu hình hệ thống: Không tìm thấy quyền 'User' mặc định",
+        "Lỗi cấu hình hệ thống: Không tìm thấy quyền 'customer' mặc định",
         500,
         false,
       );
@@ -208,7 +208,7 @@ export class PbmsAuthService {
           isActive: true,
           isEmailVerified: true,
           role: UserRole.USER,
-          pbmsRoleId: defaultRole.id,
+          roleId: defaultRole.id,
         },
       });
       this.otpStore.delete(`Register_${email}`);
@@ -400,7 +400,7 @@ export class PbmsAuthService {
     email: string;
     userName: string | null;
     role: UserRole;
-    pbmsRoleId: string | null;
+    roleId: number;
     pbmsRole: { roleName: string } | null;
   }): Promise<{ accessToken: string; refreshToken: string }> {
     const accessToken = await this.signAccessToken(user);
@@ -427,10 +427,10 @@ export class PbmsAuthService {
     email: string;
     userName: string | null;
     role: UserRole;
-    pbmsRoleId: string | null;
+    roleId: number;
     pbmsRole: { roleName: string } | null;
   }): Promise<string> {
-    const pbmsRoleName = user.pbmsRole?.roleName ?? 'User';
+    const pbmsRoleName = user.pbmsRole?.roleName ?? 'customer';
     return this.jwtService.signAsync(
       {
         sub: user.id,
@@ -440,7 +440,7 @@ export class PbmsAuthService {
         UserId: user.id,
         UserName: user.userName ?? '',
         Email: user.email,
-        RoleId: user.pbmsRoleId ?? '',
+        RoleId: user.roleId,
       },
       {
         secret: this.accessSecret(),

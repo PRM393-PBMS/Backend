@@ -97,7 +97,7 @@ export class MonthlySubscriptionsService {
 
     const start = new Date();
     const end = new Date(start);
-    end.setUTCMonth(end.getUTCMonth() + pkg.durationMonths);
+    end.setUTCDate(end.getUTCDate() + pkg.durationDays);
 
     try {
       const created = await this.prisma.$transaction(async (tx) => {
@@ -111,7 +111,7 @@ export class MonthlySubscriptionsService {
             endDate: end,
             price: pkg.price,
             fixedSlotId: selectedSlot?.id ?? null,
-            status: createPayment ? 'PendingPayment' : 'PendingPayment',
+            autoRenew: true,
           },
         });
         const payment = createPayment

@@ -3,7 +3,7 @@ import { Prisma, UserRole } from '@prisma/client';
 import { PrismaService } from '../prisma/prisma.service';
 import { HashingService } from '../auth/services/hashing.service';
 import { PbmsResponseDto } from '../common/dto/pbms-response.dto';
-import { isEmptyGuid, pbmsPick, pbmsPickGuid } from '../common/pbms-fields';
+import { isEmptyGuid, pbmsPick, pbmsPickGuid, pbmsPickNumber } from '../common/pbms-fields';
 
 const EMAIL_RE = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
 
@@ -146,7 +146,7 @@ export class UsersService {
       return PbmsResponseDto.fail('Vui lòng nhập mật khẩu');
     }
     const roleRes = await this.resolveAssignableRole(
-      pbmsPickGuid(dto, 'roleId', 'RoleId'),
+      pbmsPickNumber(dto, 'roleId', 'RoleId'),
       pbmsPick(dto, 'roleName', 'RoleName'),
     );
     if (roleRes.error) {
@@ -168,7 +168,7 @@ export class UsersService {
           phoneNumber,
           status: 'Active',
           isActive: true,
-          pbmsRoleId: roleRes.role!.id,
+          roleId: roleRes.role!.id,
           role: this.nestRole(roleRes.role!.roleName),
         },
         include: { pbmsRole: true },
@@ -207,7 +207,7 @@ export class UsersService {
       return fieldErr;
     }
     const roleRes = await this.resolveAssignableRole(
-      pbmsPickGuid(dto, 'roleId', 'RoleId'),
+      pbmsPickNumber(dto, 'roleId', 'RoleId'),
       pbmsPick(dto, 'roleName', 'RoleName'),
     );
     if (roleRes.error) {
@@ -227,7 +227,7 @@ export class UsersService {
           email,
           fullName: pbmsPick(dto, 'fullName', 'FullName').trim() || 'Chưa đặt tên',
           phoneNumber,
-          pbmsRoleId: roleRes.role!.id,
+          roleId: roleRes.role!.id,
           role: this.nestRole(roleRes.role!.roleName),
           ...(password ? { passwordHash: await this.hashing.hash(password) } : {}),
         },
@@ -304,7 +304,7 @@ export class UsersService {
     fullName: string | null;
     phoneNumber: string | null;
     status: string | null;
-    pbmsRoleId: string | null;
+    roleId: number;
     pbmsRole: { roleName: string } | null;
     createdAt: Date;
     updatedAt: Date;
@@ -316,7 +316,7 @@ export class UsersService {
       fullName: user.fullName ?? '',
       phoneNumber: user.phoneNumber,
       status: user.status ?? 'Active',
-      roleId: user.pbmsRoleId ?? '00000000-0000-0000-0000-000000000000',
+      roleId: user.roleId,
       roleName: user.pbmsRole?.roleName ?? 'Chưa phân quyền',
       createdAt: user.createdAt,
       updatedAt: user.updatedAt,
@@ -336,15 +336,16 @@ export class UsersService {
     return null;
   }
 
-  private async resolveAssignableRole(roleId: string, roleName: string) {
-    if (isEmptyGuid(roleId) && !roleName.trim()) {
+  private async resolveAssignableRole(roleId: number | undefined, roleName: string) {
+    if ((roleId === undefined || roleId === null) && !roleName.trim()) {
       return { role: null, error: PbmsResponseDto.fail('Vui lòng chọn quyền cho người dùng') };
     }
-    const role = !isEmptyGuid(roleId)
-      ? await this.prisma.role.findUnique({ where: { id: roleId } })
-      : await this.prisma.role.findFirst({
-          where: { roleName: { equals: roleName.trim(), mode: 'insensitive' } },
-        });
+    const role =
+      roleId !== undefined && roleId !== null
+        ? await this.prisma.role.findUnique({ where: { id: roleId } })
+        : await this.prisma.role.findFirst({
+            where: { roleName: { equals: roleName.trim(), mode: 'insensitive' } },
+          });
     if (!role) {
       return { role: null, error: PbmsResponseDto.fail('Quyền người dùng không tồn tại', 404) };
     }

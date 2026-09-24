@@ -12,8 +12,8 @@ export const PBMS_REGISTER_EXAMPLE = {
 export const ids = {
   userId: '9b1deb4d-3b7d-4bad-9bdd-2b0d7b3dcb6d',
   staffId: 'a3bb189e-8bf9-3888-91fa-8d7ee3d3ba87',
-  roleUserId: 'c56a4180-65aa-42ec-a945-5fd21dec0538',
-  roleStaffId: 'd9428888-122b-11e1-b85c-61cd3cbb3210',
+  roleUserId: 1,
+  roleStaffId: 2,
   vehicleTypeId: '550e8400-e29b-41d4-a716-446655440000',
   floorId: '6ec0bd7f-11c0-43da-975e-2a8ad9ebae0b',
   gateEntryId: '7c9e6679-7425-40de-944b-e07fc1f90ae7',
@@ -56,7 +56,7 @@ export const userExample = {
   phoneNumber: PBMS_REGISTER_EXAMPLE.phoneNumber,
   status: 'Active',
   roleId: ids.roleUserId,
-  roleName: 'User',
+  roleName: 'customer',
   createdAt: iso.created,
   updatedAt: iso.updated,
 };
@@ -68,7 +68,7 @@ export const loginResultExample = {
     email: PBMS_REGISTER_EXAMPLE.email,
     fullName: PBMS_REGISTER_EXAMPLE.fullName,
     phoneNumber: PBMS_REGISTER_EXAMPLE.phoneNumber,
-    roleName: 'User',
+    roleName: 'customer',
   },
   accessToken: dummyAccessToken,
   refreshToken: dummyRefreshToken,
@@ -76,7 +76,7 @@ export const loginResultExample = {
 
 export const roleExample = {
   roleId: ids.roleStaffId,
-  roleName: 'Staff',
+  roleName: 'staff',
   description: 'Nhân viên vận hành bãi xe',
 };
 
@@ -132,6 +132,7 @@ export const packageExample = {
   vehicleTypeId: ids.vehicleTypeId,
   vehicleTypeName: 'Xe máy',
   durationMonths: 1,
+  durationDays: 30,
   price: 300000,
   requireFixedSlot: true,
   description: 'Thuê bao tháng, ưu tiên ô cố định',

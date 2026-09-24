@@ -51,7 +51,7 @@ export class PaymentsController {
 
   @ApiBearerAuth('JWT-auth')
   @UseGuards(PbmsRolesGuard)
-  @PbmsRoles('Manager')
+  @PbmsRoles('manager')
   @UseInterceptors(PbmsStatusInterceptor)
   @Get()
   @ApiOperation({ summary: 'Danh sách thanh toán' })
@@ -62,7 +62,7 @@ export class PaymentsController {
 
   @ApiBearerAuth('JWT-auth')
   @UseGuards(PbmsRolesGuard)
-  @PbmsRoles('Manager')
+  @PbmsRoles('manager')
   @UseInterceptors(PbmsStatusInterceptor)
   @Get(':id')
   @ApiOperation({ summary: 'Chi tiết thanh toán' })
@@ -73,7 +73,7 @@ export class PaymentsController {
 
   @ApiBearerAuth('JWT-auth')
   @UseGuards(PbmsRolesGuard)
-  @PbmsRoles('Manager')
+  @PbmsRoles('manager')
   @UseInterceptors(PbmsStatusInterceptor)
   @Post()
   @ApiOperation({ summary: 'Tạo thanh toán' })
@@ -94,7 +94,7 @@ export class PaymentsController {
 
   @ApiBearerAuth('JWT-auth')
   @UseGuards(PbmsRolesGuard)
-  @PbmsRoles('Manager')
+  @PbmsRoles('manager')
   @UseInterceptors(PbmsStatusInterceptor)
   @Put()
   @ApiOperation({ summary: 'Cập nhật thanh toán' })
@@ -111,7 +111,7 @@ export class PaymentsController {
 
   @ApiBearerAuth('JWT-auth')
   @UseGuards(PbmsRolesGuard)
-  @PbmsRoles('Manager')
+  @PbmsRoles('manager')
   @UseInterceptors(PbmsStatusInterceptor)
   @Delete(':id')
   @ApiOperation({ summary: 'Xóa thanh toán' })

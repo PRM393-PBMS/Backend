@@ -37,8 +37,8 @@ describe('PbmsAuthService', () => {
     status: 'Active',
     isActive: true,
     role: UserRole.USER,
-    pbmsRoleId: 'role-user',
-    pbmsRole: { roleName: 'User' },
+    roleId: 1,
+    pbmsRole: { roleName: 'customer' },
   };
 
   beforeEach(async () => {
@@ -131,7 +131,7 @@ describe('PbmsAuthService', () => {
           user: expect.objectContaining({
             userId: 'user-1',
             userName: 'alice',
-            roleName: 'User',
+            roleName: 'customer',
           }),
         }),
       );

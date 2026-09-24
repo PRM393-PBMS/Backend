@@ -23,7 +23,7 @@ model User {
   passwordHash    String   @map("password_hash") @db.VarChar(255)
   firstName       String?  @map("first_name") @db.VarChar(100)
   lastName        String?  @map("last_name") @db.VarChar(100)
-  /// Nest `/auth/*` only. PBMS JSON uses pbmsRole.roleName.
+  /// Enum Nest nội bộ. JWT/API PBMS đọc Role.roleName.
   role            UserRole @default(USER)
   isActive        Boolean  @default(true) @map("is_active")
   isEmailVerified Boolean  @default(false) @map("is_email_verified")
@@ -38,10 +38,10 @@ model User {
   phoneNumber String? @unique @map("phone_number") @db.VarChar(15)
   /// PBMS User.status varchar(20) default Active (Active, Inactive, Banned).
   status      String? @default("Active") @db.VarChar(20)
-  /// PBMS User.roleId. Optional for Nest-only rows until a Role seed exists.
-  pbmsRoleId  String? @map("pbms_role_id") @db.Uuid
+  /// 1=customer, 2=staff, 3=manager, 4=admin. Đăng ký mặc định 1.
+  roleId      Int     @map("role_id") @db.SmallInt
 
-  pbmsRole Role? @relation(fields: [pbmsRoleId], references: [id], onDelete: Restrict)
+  pbmsRole Role? @relation(fields: [roleId], references: [id], onDelete: Restrict)
 
   refreshTokens         RefreshToken[]
   assignedParkingSlots  ParkingSlot[]
@@ -54,7 +54,7 @@ model User {
   handledVehicleChanges VehicleChangeRequest[] @relation("VehicleChangeHandler")
 
   @@index([role, isActive], name: "idx_users_role_is_active")
-  @@index([pbmsRoleId], name: "idx_users_pbms_role_id")
+  @@index([roleId], name: "idx_users_role_id")
   @@index([status], name: "idx_users_status")
   @@map("users")
 }
@@ -82,7 +82,8 @@ model RefreshToken {
 }
 
 model Role {
-  id          String  @id @default(uuid()) @db.Uuid
+  /// 1=customer, 2=staff, 3=manager, 4=admin
+  id          Int     @id @db.SmallInt
   roleName    String  @unique @map("role_name") @db.VarChar(50)
   description String? @db.VarChar(255)
 
@@ -182,6 +183,8 @@ model SubscriptionPackage {
   packageName      String  @map("package_name") @db.VarChar(100)
   vehicleTypeId    String  @map("vehicle_type_id") @db.Uuid
   durationMonths   Int     @map("duration_months")
+  /// Số ngày gói; backfill duration_months * 30. Dùng cho end_date.
+  durationDays     Int     @default(30) @map("duration_days")
   price            Decimal @db.Decimal(15, 2)
   requireFixedSlot Boolean @default(false) @map("require_fixed_slot")
   description      String? @db.VarChar(500)
@@ -196,17 +199,20 @@ model SubscriptionPackage {
 }
 
 model MonthlySubscription {
-  id            String   @id @default(uuid()) @db.Uuid
-  userId        String   @map("user_id") @db.Uuid
-  vehicleTypeId String   @map("vehicle_type_id") @db.Uuid
-  licensePlate  String   @map("license_plate") @db.VarChar(15)
-  packageId     String   @map("package_id") @db.Uuid
-  startDate     DateTime @map("start_date") @db.Timestamptz(6)
-  endDate       DateTime @map("end_date") @db.Timestamptz(6)
-  price         Decimal  @db.Decimal(15, 2)
-  fixedSlotId   String?  @map("fixed_slot_id") @db.Uuid
+  id            String    @id @default(uuid()) @db.Uuid
+  userId        String    @map("user_id") @db.Uuid
+  vehicleTypeId String    @map("vehicle_type_id") @db.Uuid
+  licensePlate  String    @map("license_plate") @db.VarChar(15)
+  packageId     String    @map("package_id") @db.Uuid
+  startDate     DateTime  @map("start_date") @db.Timestamptz(6)
+  endDate       DateTime  @map("end_date") @db.Timestamptz(6)
+  price         Decimal   @db.Decimal(15, 2)
+  fixedSlotId   String?   @map("fixed_slot_id") @db.Uuid
   /// MonthlySubscriptionStatus: PendingPayment, Active, Cancelled, Expired. Default Active. varchar(30).
-  status        String   @default("Active") @db.VarChar(30)
+  status        String    @default("Active") @db.VarChar(30)
+  /// false = hết hạn không tạo renew (cron). Không loại gói khỏi trạng thái đang hiệu lực theo ngày.
+  autoRenew     Boolean   @default(true) @map("auto_renew")
+  cancelledAt   DateTime? @map("cancelled_at") @db.Timestamptz(6)
 
   user                  User                   @relation(fields: [userId], references: [id], onDelete: Restrict)
   vehicleType           VehicleType            @relation(fields: [vehicleTypeId], references: [id], onDelete: Restrict)

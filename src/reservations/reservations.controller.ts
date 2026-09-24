@@ -61,7 +61,7 @@ export class ReservationsController {
   }
 
   @Get()
-  @PbmsRoles('Manager', 'Staff')
+  @PbmsRoles('manager', 'staff')
   @ApiOperation({ summary: 'Danh sách đặt chỗ' })
   @ApiPbmsOkResponse('Lấy danh sách đặt chỗ thành công', [reservationExample])
   getAll(@Query('status') status?: string, @Query('date') date?: string): Promise<PbmsResponseDto> {
@@ -97,7 +97,7 @@ export class ReservationsController {
   }
 
   @Put(':reservationId/status')
-  @PbmsRoles('Manager', 'Staff')
+  @PbmsRoles('manager', 'staff')
   @ApiOperation({ summary: 'Cập nhật trạng thái đặt chỗ' })
   @ApiPbmsBodyExample(PbmsBodyDto, { status: 'CheckedIn' })
   @ApiPbmsOkResponse('Cập nhật trạng thái đặt chỗ thành công', {

@@ -2,14 +2,14 @@ import { Injectable } from '@nestjs/common';
 import { Prisma } from '@prisma/client';
 import { PrismaService } from '../prisma/prisma.service';
 import { PbmsResponseDto } from '../common/dto/pbms-response.dto';
-import { isEmptyGuid, pbmsPick, pbmsPickGuid } from '../common/pbms-fields';
+import { parseRoleId, pbmsPick, pbmsPickNumber } from '../common/pbms-fields';
 
 @Injectable()
 export class RolesService {
   constructor(private readonly prisma: PrismaService) {}
 
   async getAll(): Promise<PbmsResponseDto> {
-    const roles = await this.prisma.role.findMany({ orderBy: { roleName: 'asc' } });
+    const roles = await this.prisma.role.findMany({ orderBy: { id: 'asc' } });
     if (roles.length === 0) {
       return PbmsResponseDto.fail('Không tìm thấy quyền nào trong hệ thống', 404);
     }
@@ -17,10 +17,11 @@ export class RolesService {
   }
 
   async getById(id: string): Promise<PbmsResponseDto> {
-    if (isEmptyGuid(id)) {
+    const roleId = parseRoleId(id);
+    if (roleId === null) {
       return PbmsResponseDto.fail('Vui lòng nhập RoleId');
     }
-    const role = await this.prisma.role.findUnique({ where: { id } });
+    const role = await this.prisma.role.findUnique({ where: { id: roleId } });
     if (!role) {
       return PbmsResponseDto.fail('Không tìm thấy quyền', 404);
     }
@@ -34,9 +35,11 @@ export class RolesService {
     }
     const roleName = pbmsPick(dto, 'roleName', 'RoleName').trim();
     const description = pbmsPick(dto, 'description', 'Description').trim();
+    const max = await this.prisma.role.aggregate({ _max: { id: true } });
+    const nextId = (max._max.id ?? 0) + 1;
     try {
       const role = await this.prisma.role.create({
-        data: { roleName, description: description || '' },
+        data: { id: nextId, roleName, description: description || '' },
       });
       return PbmsResponseDto.ok('Tạo quyền thành công', this.map(role), 201);
     } catch (error: unknown) {
@@ -49,24 +52,24 @@ export class RolesService {
   }
 
   async update(dto: object): Promise<PbmsResponseDto> {
-    const id = pbmsPickGuid(dto, 'roleId', 'RoleId');
-    if (isEmptyGuid(id)) {
+    const roleId = pbmsPickNumber(dto, 'roleId', 'RoleId') ?? parseRoleId(pbmsPick(dto, 'roleId', 'RoleId'));
+    if (roleId === null || roleId === undefined) {
       return PbmsResponseDto.fail('Dữ liệu cập nhật quyền không hợp lệ');
     }
-    const role = await this.prisma.role.findUnique({ where: { id } });
+    const role = await this.prisma.role.findUnique({ where: { id: roleId } });
     if (!role) {
       return PbmsResponseDto.fail('Không tìm thấy quyền', 404);
     }
     if (role.roleName.toLowerCase() === 'admin') {
       return PbmsResponseDto.fail('Không thể chỉnh sửa quyền admin');
     }
-    const validation = await this.validateName(pbmsPick(dto, 'roleName', 'RoleName'), id);
+    const validation = await this.validateName(pbmsPick(dto, 'roleName', 'RoleName'), roleId);
     if (validation) {
       return validation;
     }
     try {
       const updated = await this.prisma.role.update({
-        where: { id },
+        where: { id: roleId },
         data: {
           roleName: pbmsPick(dto, 'roleName', 'RoleName').trim(),
           description: pbmsPick(dto, 'description', 'Description').trim() || '',
@@ -83,25 +86,26 @@ export class RolesService {
   }
 
   async remove(id: string): Promise<PbmsResponseDto> {
-    if (isEmptyGuid(id)) {
+    const roleId = parseRoleId(id);
+    if (roleId === null) {
       return PbmsResponseDto.fail('Vui lòng nhập RoleId');
     }
-    const role = await this.prisma.role.findUnique({ where: { id } });
+    const role = await this.prisma.role.findUnique({ where: { id: roleId } });
     if (!role) {
       return PbmsResponseDto.fail('Không tìm thấy quyền', 404);
     }
-    if (role.roleName.toLowerCase() === 'admin') {
+    if (role.roleName.toLowerCase() === 'admin' || roleId === 4) {
       return PbmsResponseDto.fail('Không thể xóa quyền admin');
     }
-    const users = await this.prisma.user.count({ where: { pbmsRoleId: id } });
+    const users = await this.prisma.user.count({ where: { roleId } });
     if (users > 0) {
       return PbmsResponseDto.fail('Không thể xóa quyền đang được gán cho người dùng');
     }
-    await this.prisma.role.delete({ where: { id } });
+    await this.prisma.role.delete({ where: { id: roleId } });
     return PbmsResponseDto.ok('Xóa quyền thành công');
   }
 
-  private map(role: { id: string; roleName: string; description: string | null }) {
+  private map(role: { id: number; roleName: string; description: string | null }) {
     return {
       roleId: role.id,
       roleName: role.roleName,
@@ -109,7 +113,7 @@ export class RolesService {
     };
   }
 
-  private async validateName(roleName: string, currentId: string | null): Promise<PbmsResponseDto | null> {
+  private async validateName(roleName: string, currentId: number | null): Promise<PbmsResponseDto | null> {
     const trimmed = roleName.trim();
     if (!trimmed) {
       return PbmsResponseDto.fail('Vui lòng nhập tên quyền');
@@ -123,7 +127,7 @@ export class RolesService {
     const dup = await this.prisma.role.findFirst({
       where: {
         roleName: { equals: trimmed, mode: 'insensitive' },
-        ...(currentId ? { NOT: { id: currentId } } : {}),
+        ...(currentId !== null ? { NOT: { id: currentId } } : {}),
       },
     });
     if (dup) {

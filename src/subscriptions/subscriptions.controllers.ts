@@ -51,7 +51,7 @@ export class MonthlySubscriptionsController {
   }
 
   @Post()
-  @PbmsRoles('Manager')
+  @PbmsRoles('manager')
   @ApiOperation({ summary: 'Manager tạo gói tháng' })
   @ApiPbmsBodyExample(PbmsBodyDto, {
     userId: ids.userId,
@@ -72,7 +72,7 @@ export class MonthlySubscriptionsController {
   }
 
   @Get('user/:userId')
-  @PbmsRoles('Manager')
+  @PbmsRoles('manager')
   @ApiOperation({ summary: 'Gói tháng theo người dùng' })
   @ApiPbmsOkResponse('Lấy gói tháng theo người dùng thành công', [subscriptionExample])
   getByUser(@Param('userId') userId: string): Promise<PbmsResponseDto> {
@@ -80,7 +80,7 @@ export class MonthlySubscriptionsController {
   }
 
   @Get()
-  @PbmsRoles('Manager')
+  @PbmsRoles('manager')
   @ApiOperation({ summary: 'Danh sách gói tháng' })
   @ApiPbmsOkResponse('Lấy danh sách gói tháng thành công', [subscriptionExample])
   getAll(): Promise<PbmsResponseDto> {
@@ -120,7 +120,7 @@ export class MonthlySubscriptionsController {
   }
 
   @Put(':id')
-  @PbmsRoles('Manager')
+  @PbmsRoles('manager')
   @ApiOperation({ summary: 'Cập nhật gói tháng' })
   @ApiPbmsBodyExample(PbmsBodyDto, {
     licensePlate: '59A12345',
@@ -135,7 +135,7 @@ export class MonthlySubscriptionsController {
   }
 
   @Delete(':id')
-  @PbmsRoles('Manager')
+  @PbmsRoles('manager')
   @ApiOperation({ summary: 'Xóa gói tháng' })
   @ApiPbmsOkResponse('Xóa gói tháng thành công', null)
   remove(@Param('id') id: string): Promise<PbmsResponseDto> {
@@ -152,7 +152,7 @@ export class SubscriptionRenewalsController {
   constructor(private readonly renewals: SubscriptionRenewalsService) {}
 
   @Post('direct-renew')
-  @PbmsRoles('Manager')
+  @PbmsRoles('manager')
   @ApiOperation({ summary: 'Gia hạn trực tiếp' })
   @ApiPbmsBodyExample(PbmsBodyDto, {
     subscriptionId: ids.subscriptionId,
@@ -188,7 +188,7 @@ export class SubscriptionRenewalsController {
   }
 
   @Get()
-  @PbmsRoles('Manager')
+  @PbmsRoles('manager')
   @ApiOperation({ summary: 'Danh sách gia hạn' })
   @ApiPbmsOkResponse('Lấy danh sách gia hạn thành công', [renewalExample])
   getAll(): Promise<PbmsResponseDto> {
@@ -207,7 +207,7 @@ export class SubscriptionRenewalsController {
   }
 
   @Put()
-  @PbmsRoles('Manager')
+  @PbmsRoles('manager')
   @ApiOperation({ summary: 'Cập nhật gia hạn' })
   @ApiPbmsBodyExample(PbmsBodyDto, {
     renewalId: ids.renewalId,
@@ -220,7 +220,7 @@ export class SubscriptionRenewalsController {
   }
 
   @Delete(':id')
-  @PbmsRoles('Manager')
+  @PbmsRoles('manager')
   @ApiOperation({ summary: 'Xóa gia hạn' })
   @ApiPbmsOkResponse('Xóa gia hạn thành công', null)
   remove(@Param('id') id: string): Promise<PbmsResponseDto> {
@@ -237,7 +237,7 @@ export class VehicleChangeRequestsController {
   constructor(private readonly requests: VehicleChangeRequestsService) {}
 
   @Post('change-vehicle')
-  @PbmsRoles('Customer', 'User')
+  @PbmsRoles('customer')
   @ApiOperation({ summary: 'Gửi yêu cầu đổi biển số' })
   @ApiPbmsBodyExample(PbmsBodyDto, {
     subscriptionId: ids.subscriptionId,
@@ -250,7 +250,7 @@ export class VehicleChangeRequestsController {
   }
 
   @Get('my-requests')
-  @PbmsRoles('Customer', 'User')
+  @PbmsRoles('customer')
   @ApiOperation({ summary: 'Yêu cầu đổi biển số của tôi' })
   @ApiPbmsOkResponse('Lấy yêu cầu đổi xe của tôi thành công', [vehicleChangeExample])
   getMine(@GetPbmsUserId() userId: string): Promise<PbmsResponseDto> {
@@ -258,7 +258,7 @@ export class VehicleChangeRequestsController {
   }
 
   @Get('change-vehicle')
-  @PbmsRoles('Manager')
+  @PbmsRoles('manager')
   @ApiOperation({ summary: 'Danh sách yêu cầu đổi biển số' })
   @ApiPbmsOkResponse('Lấy danh sách yêu cầu đổi xe thành công', [vehicleChangeExample])
   getAll(): Promise<PbmsResponseDto> {
@@ -266,7 +266,7 @@ export class VehicleChangeRequestsController {
   }
 
   @Put('change-vehicle/:id/approve')
-  @PbmsRoles('Manager')
+  @PbmsRoles('manager')
   @ApiOperation({ summary: 'Duyệt đổi biển số' })
   @ApiPbmsOkResponse('Duyệt yêu cầu đổi xe thành công', { ...vehicleChangeExample, status: 'Approved' })
   approve(@Param('id') id: string, @GetPbmsUserId() staffId: string): Promise<PbmsResponseDto> {
@@ -274,7 +274,7 @@ export class VehicleChangeRequestsController {
   }
 
   @Put('change-vehicle/:id/reject')
-  @PbmsRoles('Manager')
+  @PbmsRoles('manager')
   @ApiOperation({ summary: 'Từ chối đổi biển số' })
   @ApiPbmsBodyExample(PbmsBodyDto, { reason: 'Biển số không khớp giấy tờ' })
   @ApiPbmsOkResponse('Từ chối yêu cầu đổi xe thành công', {
@@ -302,7 +302,7 @@ export class VehicleChangeRequestsController {
   }
 
   @Put('change-vehicle/:id')
-  @PbmsRoles('Customer', 'User')
+  @PbmsRoles('customer')
   @ApiOperation({ summary: 'Cập nhật yêu cầu đổi biển số' })
   @ApiPbmsBodyExample(PbmsBodyDto, { newLicensePlate: '59B67890', reason: 'Đổi xe mới' })
   @ApiPbmsOkResponse('Cập nhật yêu cầu đổi xe thành công', vehicleChangeExample)
@@ -315,7 +315,7 @@ export class VehicleChangeRequestsController {
   }
 
   @Delete('change-vehicle/:id')
-  @PbmsRoles('Customer', 'User')
+  @PbmsRoles('customer')
   @ApiOperation({ summary: 'Xóa yêu cầu đổi biển số' })
   @ApiPbmsOkResponse('Xóa yêu cầu đổi xe thành công', null)
   remove(@Param('id') id: string, @GetPbmsUserId() userId: string): Promise<PbmsResponseDto> {

@@ -13,7 +13,7 @@ import { ReportsService } from './reports.service';
 @ApiTags('PBMS Reports')
 @ApiBearerAuth('JWT-auth')
 @UseGuards(PbmsRolesGuard)
-@PbmsRoles('Manager', 'manager', 'Admin', 'admin')
+@PbmsRoles('manager', 'admin')
 @Controller('api/reports')
 export class ReportsController {
   constructor(private readonly reports: ReportsService) {}

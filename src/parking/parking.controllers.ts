@@ -50,7 +50,7 @@ export class ParkingSessionsController {
   ) {}
 
   @Get('my/:id/fee-preview')
-  @PbmsRoles('Customer', 'User')
+  @PbmsRoles('customer')
   @ApiOperation({ summary: 'Xem phí tạm tính phiên của tôi' })
   @ApiPbmsOkResponse('Tính phí gửi xe tạm tính thành công', feeExample)
   myFee(@Param('id') id: string, @GetPbmsUserId() userId: string): Promise<PbmsResponseDto> {
@@ -58,7 +58,7 @@ export class ParkingSessionsController {
   }
 
   @Get('my/:id/checkout-payment')
-  @PbmsRoles('Customer', 'User')
+  @PbmsRoles('customer')
   @ApiOperation({ summary: 'Xem thanh toán checkout phiên của tôi' })
   @ApiPbmsOkResponse('Lấy yêu cầu thanh toán checkout thành công', {
     Payment: paymentExample,
@@ -69,7 +69,7 @@ export class ParkingSessionsController {
   }
 
   @Get('my')
-  @PbmsRoles('Customer', 'User')
+  @PbmsRoles('customer')
   @ApiOperation({ summary: 'Phiên gửi xe của tôi' })
   @ApiPbmsOkResponse('Lấy phiên gửi xe của tôi thành công', [sessionExample])
   getMine(@GetPbmsUserId() userId: string): Promise<PbmsResponseDto> {
@@ -77,7 +77,7 @@ export class ParkingSessionsController {
   }
 
   @Get()
-  @PbmsRoles('Manager', 'Staff')
+  @PbmsRoles('manager', 'staff')
   @ApiOperation({ summary: 'Danh sách phiên gửi xe' })
   @ApiPbmsOkResponse('Lấy danh sách phiên gửi xe thành công', [sessionExample])
   getAll(): Promise<PbmsResponseDto> {
@@ -85,7 +85,7 @@ export class ParkingSessionsController {
   }
 
   @Get(':id')
-  @PbmsRoles('Manager', 'Staff')
+  @PbmsRoles('manager', 'staff')
   @ApiOperation({ summary: 'Chi tiết phiên gửi xe' })
   @ApiPbmsOkResponse('Lấy phiên gửi xe thành công', sessionExample)
   getById(@Param('id') id: string): Promise<PbmsResponseDto> {
@@ -93,7 +93,7 @@ export class ParkingSessionsController {
   }
 
   @Post()
-  @PbmsRoles('Manager', 'Staff')
+  @PbmsRoles('manager', 'staff')
   @ApiOperation({ summary: 'Tạo phiên gửi xe' })
   @ApiPbmsBodyExample(PbmsBodyDto, {
     licensePlateIn: '59A12345',
@@ -109,7 +109,7 @@ export class ParkingSessionsController {
   }
 
   @Put()
-  @PbmsRoles('Manager', 'Staff')
+  @PbmsRoles('manager', 'staff')
   @ApiOperation({ summary: 'Cập nhật phiên gửi xe' })
   @ApiPbmsBodyExample(PbmsBodyDto, {
     sessionId: ids.sessionId,
@@ -124,7 +124,7 @@ export class ParkingSessionsController {
   }
 
   @Delete(':id')
-  @PbmsRoles('Manager', 'Staff')
+  @PbmsRoles('manager', 'staff')
   @ApiOperation({ summary: 'Xóa phiên gửi xe' })
   @ApiPbmsOkResponse('Xóa phiên gửi xe thành công', null)
   remove(@Param('id') id: string): Promise<PbmsResponseDto> {
@@ -156,7 +156,7 @@ export class ParkingOperationsController {
 
   @ApiBearerAuth('JWT-auth')
   @UseGuards(PbmsRolesGuard)
-  @PbmsRoles('Staff', 'Manager')
+  @PbmsRoles('staff', 'manager')
   @Post('upload-and-recognize-plate')
   @UseInterceptors(FileInterceptor('file'))
   @ApiConsumes('multipart/form-data')
@@ -178,7 +178,7 @@ export class ParkingOperationsController {
 
   @ApiBearerAuth('JWT-auth')
   @UseGuards(PbmsRolesGuard)
-  @PbmsRoles('Staff', 'Manager')
+  @PbmsRoles('staff', 'manager')
   @UseInterceptors(PbmsStatusInterceptor)
   @Post('upload-and-decode-qr')
   @UseInterceptors(FileInterceptor('file'))
@@ -201,7 +201,7 @@ export class ParkingOperationsController {
 
   @ApiBearerAuth('JWT-auth')
   @UseGuards(PbmsRolesGuard)
-  @PbmsRoles('Staff', 'Manager')
+  @PbmsRoles('staff', 'manager')
   @Post('upload-image')
   @UseInterceptors(FileInterceptor('file'))
   @ApiConsumes('multipart/form-data')
@@ -221,7 +221,7 @@ export class ParkingOperationsController {
 
   @ApiBearerAuth('JWT-auth')
   @UseGuards(PbmsRolesGuard)
-  @PbmsRoles('Staff', 'Manager')
+  @PbmsRoles('staff', 'manager')
   @UseInterceptors(PbmsStatusInterceptor)
   @Post('resolve-qr-payload')
   @ApiOperation({ summary: 'Giải mã payload QR' })
@@ -236,7 +236,7 @@ export class ParkingOperationsController {
 
   @ApiBearerAuth('JWT-auth')
   @UseGuards(PbmsRolesGuard)
-  @PbmsRoles('Staff', 'Manager')
+  @PbmsRoles('staff', 'manager')
   @UseInterceptors(PbmsStatusInterceptor)
   @Post('check-in')
   @ApiOperation({ summary: 'Check-in xe' })
@@ -253,7 +253,7 @@ export class ParkingOperationsController {
 
   @ApiBearerAuth('JWT-auth')
   @UseGuards(PbmsRolesGuard)
-  @PbmsRoles('Staff', 'Manager')
+  @PbmsRoles('staff', 'manager')
   @UseInterceptors(PbmsStatusInterceptor)
   @Post('check-out')
   @ApiOperation({ summary: 'Check-out xe' })
@@ -273,7 +273,7 @@ export class ParkingOperationsController {
 
   @ApiBearerAuth('JWT-auth')
   @UseGuards(PbmsRolesGuard)
-  @PbmsRoles('Staff', 'Manager')
+  @PbmsRoles('staff', 'manager')
   @UseInterceptors(PbmsStatusInterceptor)
   @Get('check-out/payment/:paymentId')
   @ApiOperation({ summary: 'Trạng thái thanh toán checkout' })
@@ -286,7 +286,7 @@ export class ParkingOperationsController {
 
   @ApiBearerAuth('JWT-auth')
   @UseGuards(PbmsRolesGuard)
-  @PbmsRoles('Staff', 'Manager')
+  @PbmsRoles('staff', 'manager')
   @UseInterceptors(PbmsStatusInterceptor)
   @Post('check-out/payment/:paymentId/confirm-cash')
   @ApiOperation({ summary: 'Xác nhận checkout tiền mặt' })
@@ -300,7 +300,7 @@ export class ParkingOperationsController {
 
   @ApiBearerAuth('JWT-auth')
   @UseGuards(PbmsRolesGuard)
-  @PbmsRoles('Staff', 'Manager')
+  @PbmsRoles('staff', 'manager')
   @UseInterceptors(PbmsStatusInterceptor)
   @Post('check-out/payment/:paymentId/cancel')
   @ApiOperation({ summary: 'Hủy checkout' })
@@ -311,7 +311,7 @@ export class ParkingOperationsController {
 
   @ApiBearerAuth('JWT-auth')
   @UseGuards(PbmsRolesGuard)
-  @PbmsRoles('Staff', 'Manager')
+  @PbmsRoles('staff', 'manager')
   @UseInterceptors(PbmsStatusInterceptor)
   @Get('fee-preview/:sessionId')
   @ApiOperation({ summary: 'Phí tạm tính theo phiên' })

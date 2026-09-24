@@ -57,6 +57,9 @@ export class SubscriptionPackagesService {
           vehicleTypeId,
           packageName,
           durationMonths: pbmsPickNumber(dto, 'durationMonths', 'DurationMonths') ?? 1,
+          durationDays:
+            pbmsPickNumber(dto, 'durationDays', 'DurationDays') ??
+            (pbmsPickNumber(dto, 'durationMonths', 'DurationMonths') ?? 1) * 30,
           price: new Prisma.Decimal(pbmsPickNumber(dto, 'price', 'Price') ?? 0),
           requireFixedSlot: pbmsPickBool(dto, 'requireFixedSlot', 'RequireFixedSlot') ?? false,
           description: pbmsPick(dto, 'description', 'Description').trim() || null,
@@ -90,6 +93,9 @@ export class SubscriptionPackagesService {
           vehicleTypeId,
           packageName: pbmsPick(dto, 'packageName', 'PackageName').trim() || existing.packageName,
           durationMonths: pbmsPickNumber(dto, 'durationMonths', 'DurationMonths') ?? existing.durationMonths,
+          durationDays:
+            pbmsPickNumber(dto, 'durationDays', 'DurationDays') ??
+            existing.durationDays,
           price: new Prisma.Decimal(pbmsPickNumber(dto, 'price', 'Price') ?? Number(existing.price)),
           requireFixedSlot: pbmsPickBool(dto, 'requireFixedSlot', 'RequireFixedSlot') ?? existing.requireFixedSlot,
           description: pbmsPick(dto, 'description', 'Description').trim() || existing.description,
@@ -124,6 +130,7 @@ export class SubscriptionPackagesService {
     vehicleTypeId: string;
     packageName: string;
     durationMonths: number;
+    durationDays: number;
     price: Prisma.Decimal;
     requireFixedSlot: boolean;
     description: string | null;
@@ -136,6 +143,7 @@ export class SubscriptionPackagesService {
       vehicleTypeId: item.vehicleTypeId,
       vehicleTypeName: item.vehicleType.typeName,
       durationMonths: item.durationMonths,
+      durationDays: item.durationDays,
       price: toMoney(item.price),
       requireFixedSlot: item.requireFixedSlot,
       description: item.description,
