@@ -57,6 +57,8 @@ export const userExample = {
   status: 'Active',
   roleId: ids.roleUserId,
   roleName: 'customer',
+  avatarUrl: 'https://api.example.com/uploads/avatars/9b1deb4d-3b7d-4bad-9bdd-2b0d7b3dcb6d.jpg',
+  walletBalance: 150000,
   createdAt: iso.created,
   updatedAt: iso.updated,
 };
@@ -69,6 +71,7 @@ export const loginResultExample = {
     fullName: PBMS_REGISTER_EXAMPLE.fullName,
     phoneNumber: PBMS_REGISTER_EXAMPLE.phoneNumber,
     roleName: 'customer',
+    avatarUrl: 'https://api.example.com/uploads/avatars/9b1deb4d-3b7d-4bad-9bdd-2b0d7b3dcb6d.jpg',
   },
   accessToken: dummyAccessToken,
   refreshToken: dummyRefreshToken,
@@ -156,10 +159,74 @@ export const subscriptionExample = {
 export const subscriptionPaymentExample = {
   subscriptionId: ids.subscriptionId,
   paymentId: ids.paymentId,
+  paymentMethod: 'PayOS',
   orderCode: 'PBMS-20260917-1001',
   amount: 300000,
   paymentLinkId: 'plink_demo_not_a_secret',
   paymentUrl: 'https://pay.payos.vn/web/plink_demo_not_a_secret',
+  status: 'PendingPayment',
+};
+
+export const subscriptionWalletPaymentExample = {
+  subscriptionId: ids.subscriptionId,
+  paymentId: ids.paymentId,
+  paymentMethod: 'Wallet',
+  amount: 300000,
+  walletBalance: 50000,
+  status: 'Active',
+};
+
+export const walletTransactionExample = {
+  walletTransactionId: '3c5ea4c0-4067-11e9-8bad-9b1deb4d3b7d',
+  direction: 'Credit',
+  type: 'TopUp',
+  amount: 150000,
+  absoluteAmount: 150000,
+  balanceAfter: 150000,
+  createdAt: iso.updated,
+  paymentId: ids.paymentId,
+  subscriptionId: null,
+  paymentMethod: 'PayOS',
+  paymentType: 'WalletTopUp',
+  orderCode: '1727000000001',
+  packageName: null,
+  licensePlate: null,
+  description: 'Nạp ví qua PayOS',
+};
+
+export const walletSpendExample = {
+  walletTransactionId: '4c5ea4c0-4067-11e9-8bad-9b1deb4d3b7d',
+  direction: 'Debit',
+  type: 'SubscriptionFee',
+  amount: -300000,
+  absoluteAmount: 300000,
+  balanceAfter: 50000,
+  createdAt: iso.updated,
+  paymentId: ids.paymentId,
+  subscriptionId: ids.subscriptionId,
+  paymentMethod: 'Wallet',
+  paymentType: 'SubscriptionFee',
+  orderCode: 'WALLET-21ec20203aea',
+  packageName: 'Gói tháng xe máy',
+  licensePlate: '59A12345',
+  description: 'Mua gói tháng Gói tháng xe máy — 59A12345',
+};
+
+export const walletExample = {
+  userId: ids.userId,
+  walletBalance: 150000,
+  transactions: [walletTransactionExample, walletSpendExample],
+};
+
+export const walletTopUpExample = {
+  paymentId: ids.paymentId,
+  paymentMethod: 'PayOS',
+  paymentType: 'WalletTopUp',
+  amount: 100000,
+  walletBalance: 150000,
+  paymentLinkId: 'plink_demo_not_a_secret',
+  paymentUrl: 'https://pay.payos.vn/web/plink_demo_not_a_secret',
+  orderCode: '1727000000001',
 };
 
 export const renewalExample = {

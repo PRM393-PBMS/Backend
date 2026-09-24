@@ -31,7 +31,11 @@ export class PaymentsController {
   @Public()
   @Post('payos-webhook')
   @HttpCode(200)
-  @ApiOperation({ summary: 'Webhook PayOS (thành công: HTTP 200 body rỗng)' })
+  @ApiOperation({
+    summary: 'Webhook PayOS (thành công: HTTP 200 body rỗng)',
+    description:
+      'Public (không JWT) — chỉ PayOS gọi. Xác nhận thanh toán: nạp ví (`WalletTopUp` cộng `walletBalance` + ghi Credit) hoặc gói tháng/gia hạn. Thành công: HTTP 200, body rỗng (không envelope PBMS). Lỗi xử lý: HTTP 500 JSON `{ statusCode, message, isSuccess: false }`. FE không gọi API này; FE poll ví/gói hoặc đợi redirect PayOS rồi GET lại.',
+  })
   async webhook(@Body() body: Record<string, unknown>, @Res() res: Response): Promise<void> {
     try {
       await this.payments.handleWebhook(body ?? {});

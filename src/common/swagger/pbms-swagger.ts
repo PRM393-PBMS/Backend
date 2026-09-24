@@ -31,9 +31,14 @@ export function ApiPbmsOkResponse(message: string, result: unknown, statusCode =
 }
 
 /** Example Value trên body — chỉ field camelCase dùng cho endpoint đó. */
-export function ApiPbmsBodyExample(type: Type<unknown>, value: Record<string, unknown>) {
+export function ApiPbmsBodyExample(
+  type: Type<unknown>,
+  value: Record<string, unknown>,
+  description?: string,
+) {
   return ApiBody({
     type,
+    description,
     examples: {
       default: {
         value,

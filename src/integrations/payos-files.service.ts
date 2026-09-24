@@ -57,7 +57,13 @@ export class PayosService {
     const cancelUrl = process.env.PAYOS_CANCEL_URL ?? 'http://localhost:5173/payment-cancel';
     const amount = Math.round(Number(payment.amount));
     const prefix =
-      payment.paymentType === 'CheckoutFee' ? 'PARK' : payment.paymentType === 'Deposit' ? 'RES' : 'SUB';
+      payment.paymentType === 'CheckoutFee'
+        ? 'PARK'
+        : payment.paymentType === 'Deposit'
+          ? 'RES'
+          : payment.paymentType === 'WalletTopUp'
+            ? 'WAL'
+            : 'SUB';
     const description = `${prefix}-${payment.id.replace(/-/g, '').slice(0, 8)}`.slice(0, 25);
     const signature = this.signCreate(checksumKey, {
       amount,

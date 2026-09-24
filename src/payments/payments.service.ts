@@ -13,14 +13,18 @@ import {
   toMoney,
 } from '../common/pbms-fields';
 import { isMotorbikeType } from '../common/license-plate';
+import { WalletsService } from '../wallets/wallets.service';
 
-const METHODS = ['PayOS', 'Cash'];
+const METHODS = ['PayOS', 'Cash', 'Wallet'];
 const STATUSES = ['Pending', 'Success', 'Failed'];
-const TYPES = ['Deposit', 'CheckoutFee', 'SubscriptionFee', 'SubscriptionRenewal'];
+const TYPES = ['Deposit', 'CheckoutFee', 'SubscriptionFee', 'SubscriptionRenewal', 'WalletTopUp'];
 
 @Injectable()
 export class PaymentsService {
-  constructor(private readonly prisma: PrismaService) {}
+  constructor(
+    private readonly prisma: PrismaService,
+    private readonly wallets: WalletsService,
+  ) {}
 
   mapPayment(payment: {
     id: string;
@@ -180,13 +184,16 @@ export class PaymentsService {
     }
     const code = String(body.code ?? body.Code ?? '');
     const success = code === '00';
-    await this.prisma.payment.update({
-      where: { id: payment.id },
+    const marked = await this.prisma.payment.updateMany({
+      where: { id: payment.id, paymentStatus: 'Pending' },
       data: {
         paymentStatus: success ? 'Success' : 'Failed',
         paymentTime: new Date(),
       },
     });
+    if (marked.count !== 1) {
+      return;
+    }
     if (success) {
       await this.dispatchPayment(payment.id);
     } else {
@@ -232,6 +239,15 @@ export class PaymentsService {
     }
     if (sameStatus(type, 'CheckoutFee')) {
       await this.completeCheckoutSession(payment);
+      return;
+    }
+    if (sameStatus(type, 'WalletTopUp')) {
+      if (!payment.userId) {
+        throw new Error(`Không thể cộng ví cho thanh toán ${payment.id}: thiếu UserId.`);
+      }
+      await this.prisma.$transaction(async (tx) => {
+        await this.wallets.creditFromPayment(tx, payment);
+      });
       return;
     }
     throw new Error(`Không có luồng xử lý cho loại thanh toán '${payment.paymentType}'.`);
@@ -414,7 +430,7 @@ export class PaymentsService {
     }
     const method = METHODS.find((item) => item.toLowerCase() === paymentMethod.trim().toLowerCase());
     if (!method) {
-      return this.invalid('Phương thức thanh toán chỉ được là PayOS hoặc Cash');
+      return this.invalid('Phương thức thanh toán chỉ được là PayOS, Cash hoặc Wallet');
     }
     const normalizedStatus = STATUSES.find((item) => item.toLowerCase() === status.trim().toLowerCase());
     if (!normalizedStatus) {

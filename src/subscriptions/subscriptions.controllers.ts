@@ -9,7 +9,7 @@ import {
   UseGuards,
   UseInterceptors,
 } from '@nestjs/common';
-import { ApiBearerAuth, ApiOperation, ApiTags } from '@nestjs/swagger';
+import { ApiBearerAuth, ApiOperation, ApiParam, ApiTags } from '@nestjs/swagger';
 import { GetPbmsRole } from '../auth/common/decorators/get-pbms-role.decorator';
 import { GetPbmsUserId } from '../auth/common/decorators/get-pbms-user-id.decorator';
 import { PbmsRoles } from '../auth/common/decorators/pbms-roles.decorator';
@@ -38,13 +38,26 @@ export class MonthlySubscriptionsController {
   constructor(private readonly subscriptions: MonthlySubscriptionsService) {}
 
   @Post('register')
-  @ApiOperation({ summary: 'Đăng ký gói tháng (tạo thanh toán PayOS)' })
-  @ApiPbmsBodyExample(PbmsBodyDto, {
-    packageId: ids.packageId,
-    licensePlate: '59A12345',
-    vehicleTypeId: ids.vehicleTypeId,
-    fixedSlotId: ids.slotId,
+  @ApiOperation({
+    summary: 'Đăng ký gói tháng: paymentMethod PayOS (mặc định) hoặc Wallet',
+    description: [
+      'JWT bắt buộc. Body: `packageId`, `licensePlate` (4–15 chữ/số) bắt buộc; `vehicleTypeId` tuỳ chọn; `fixedSlotId` khi gói ô tô `requireFixedSlot`; `paymentMethod` `PayOS` (mặc định nếu trống) hoặc `Wallet`. Khác hai giá trị → `Phương thức thanh toán gói chỉ được là PayOS hoặc Wallet`.',
+      '**PayOS** (example Swagger): gói `PendingPayment`. Message `Tạo đăng ký gói thành công`. `result`: `subscriptionId`, `paymentId`, `paymentMethod=PayOS`, `orderCode`, `amount`, `paymentLinkId`, `paymentUrl`, `status=PendingPayment`. FE mở `paymentUrl`; `Active` sau webhook.',
+      '**Wallet**: trừ ví ngay. Message `Thanh toán gói bằng ví thành công`. `result`: `subscriptionId`, `paymentId`, `paymentMethod=Wallet`, `amount`, `walletBalance` (sau trừ), `status=Active`. Không `paymentUrl`.',
+      'Lỗi: thiếu gói/biển; biển không hợp lệ; 404 gói ngừng bán; biển đã có gói Active/PendingPayment; ô không hợp lệ / xe máy không dùng `fixedSlotId`; 409 hết ô cư dân; 401; 400 số dư không đủ (`result` có `paymentMethod`, `walletBalance`, `amount` — không tạo gói); 500.',
+    ].join('\n\n'),
   })
+  @ApiPbmsBodyExample(
+    PbmsBodyDto,
+    {
+      packageId: ids.packageId,
+      licensePlate: '59A12345',
+      vehicleTypeId: ids.vehicleTypeId,
+      fixedSlotId: ids.slotId,
+      paymentMethod: 'PayOS',
+    },
+    '`packageId`, `licensePlate` bắt buộc. `vehicleTypeId`/`fixedSlotId` theo loại gói. `paymentMethod` tùy chọn: `PayOS` | `Wallet`.',
+  )
   @ApiPbmsOkResponse('Tạo đăng ký gói thành công', subscriptionPaymentExample, 201)
   register(@GetPbmsUserId() userId: string, @Body() dto: PbmsBodyDto): Promise<PbmsResponseDto> {
     return this.subscriptions.register(userId, dto, true);
@@ -88,13 +101,31 @@ export class MonthlySubscriptionsController {
   }
 
   @Post('payment/:subscriptionId')
-  @ApiOperation({ summary: 'Tạo lại thanh toán gói tháng' })
+  @ApiParam({
+    name: 'subscriptionId',
+    description: 'UUID gói tháng (thường đang PendingPayment) thuộc user hiện tại',
+  })
+  @ApiOperation({
+    summary: 'Tạo lại thanh toán gói tháng: paymentMethod PayOS hoặc Wallet',
+    description: [
+      'JWT bắt buộc. Path `subscriptionId` thuộc user. Body `paymentMethod` tuỳ chọn: `PayOS` (mặc định nếu trống) hoặc `Wallet`. Dùng khi gói chưa `Active` (thường `PendingPayment`).',
+      '**PayOS:** tái sử dụng/tạo payment Pending. Message `Tạo thanh toán gói thành công`. `result` có `paymentUrl`, `paymentLinkId`, `orderCode`, `status` hiện tại.',
+      '**Wallet:** trừ ví, kích hoạt. Message `Thanh toán gói bằng ví thành công`. `result`: `walletBalance`, `status=Active`, không `paymentUrl`.',
+      'Lỗi: `paymentMethod` không hợp lệ; 404 gói; 403 không phải chủ; `Gói đã được kích hoạt`; 400 số dư ví không đủ; 500.',
+    ].join('\n\n'),
+  })
+  @ApiPbmsBodyExample(
+    PbmsBodyDto,
+    { paymentMethod: 'Wallet' },
+    '`paymentMethod` tùy chọn: `PayOS` | `Wallet`. Ví dụ thanh toán bằng số dư ví.',
+  )
   @ApiPbmsOkResponse('Tạo thanh toán gói thành công', subscriptionPaymentExample)
   createPayment(
     @Param('subscriptionId') subscriptionId: string,
     @GetPbmsUserId() userId: string,
+    @Body() dto: PbmsBodyDto,
   ): Promise<PbmsResponseDto> {
-    return this.subscriptions.createPayment(subscriptionId, userId);
+    return this.subscriptions.createPayment(subscriptionId, userId, dto);
   }
 
   @Get(':id')

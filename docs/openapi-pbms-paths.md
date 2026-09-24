@@ -76,8 +76,9 @@ Route: **`/api/profile`** (lowercase cố định). Class: `[Authorize]`.
 |--------|------|------|---------|----------|------------|
 | GET | `/api/profile` | JWT | — | `ResponseDTO` | ProfileController |
 | PUT | `/api/profile` | JWT | `UpdateProfileDTO` | `ResponseDTO` | ProfileController |
+| POST | `/api/profile/avatar` | JWT | multipart `file` | `ResponseDTO` | ProfileController |
 
-**2**
+**3**
 
 ---
 
@@ -184,7 +185,7 @@ Route: `/api/MonthlySubscription`. Class: `[Authorize]`.
 
 | Method | Path | Auth | Request | Response | Controller |
 |--------|------|------|---------|----------|------------|
-| POST | `/api/MonthlySubscription/register` | JWT | `RegisterMonthlySubscriptionDTO` | `ResponseDTO` | MonthlySubscriptionController |
+| POST | `/api/MonthlySubscription/register` | JWT | `RegisterMonthlySubscriptionDTO` (`paymentMethod`: `PayOS` mặc định hoặc `Wallet`) | `ResponseDTO` | MonthlySubscriptionController |
 | POST | `/api/MonthlySubscription` | JWT Manager | `ManagerCreateMonthlySubscriptionDTO` | `ResponseDTO` | MonthlySubscriptionController |
 | GET | `/api/MonthlySubscription` | JWT Manager | — | `ResponseDTO` | MonthlySubscriptionController |
 | GET | `/api/MonthlySubscription/my` | JWT | — | `ResponseDTO` | MonthlySubscriptionController |
@@ -193,7 +194,7 @@ Route: `/api/MonthlySubscription`. Class: `[Authorize]`.
 | PUT | `/api/MonthlySubscription/{id}` | JWT Manager | `UpdateMonthlySubscriptionDTO` | `ResponseDTO` | MonthlySubscriptionController |
 | PUT | `/api/MonthlySubscription/{id}/cancel` | JWT | path `guid` | `ResponseDTO` | MonthlySubscriptionController |
 | DELETE | `/api/MonthlySubscription/{id}` | JWT Manager | path `guid` | `ResponseDTO` | MonthlySubscriptionController |
-| POST | `/api/MonthlySubscription/payment/{subscriptionId}` | JWT | path `guid` | `ResponseDTO` | MonthlySubscriptionController |
+| POST | `/api/MonthlySubscription/payment/{subscriptionId}` | JWT | path `guid` + body tùy chọn `{ paymentMethod }` | `ResponseDTO` | MonthlySubscriptionController |
 
 **10**
 
@@ -348,6 +349,24 @@ Route cố định: **`/api/reports`**. Class: `[Authorize(Roles = "Manager,mana
 | GET | `/api/reports/export` | JWT Manager,manager,Admin,admin | query `ReportExportRequestDTO` | **File binary PDF** (`File(content, contentType, fileName)`); lỗi → `ResponseDTO` | ReportController |
 
 **5**
+
+---
+
+## Wallet — additive Nest (`WalletsController`)
+
+Route cố định: **`/api/wallet`**. JWT. Không nằm trong inventory 126 path PBMS gốc.
+
+| Method | Path | Auth | Request | Response | Controller |
+|--------|------|------|---------|----------|------------|
+| GET | `/api/wallet` | JWT | — | `ResponseDTO` (`walletBalance`, `transactions`) | WalletsController |
+| GET | `/api/wallet/transactions` | JWT | — | `ResponseDTO` (mảng nạp + chi) | WalletsController |
+| GET | `/api/wallet/top-ups` | JWT | — | `ResponseDTO` (mảng Credit / nạp PayOS) | WalletsController |
+| GET | `/api/wallet/spends` | JWT | — | `ResponseDTO` (mảng Debit / mua gói) | WalletsController |
+| POST | `/api/wallet/top-up` | JWT | `{ amount }` | `ResponseDTO` (`paymentUrl` PayOS) | WalletsController |
+
+Nạp ví: PayOS webhook `POST /api/payments/payos-webhook` cộng `users.wallet_balance` khi `paymentType=WalletTopUp`. Mua gói `paymentMethod=Wallet` trừ ví, không mở checkout. Lịch sử ví xem cạnh `GET /api/MonthlySubscription/my`.
+
+**5** (additive)
 
 ---
 

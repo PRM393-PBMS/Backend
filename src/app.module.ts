@@ -17,6 +17,7 @@ import { ReservationsModule } from './reservations/reservations.module';
 import { RolesModule } from './roles/roles.module';
 import { SubscriptionsModule } from './subscriptions/subscriptions.module';
 import { UsersModule } from './users/users.module';
+import { WalletsModule } from './wallets/wallets.module';
 
 @Module({
   imports: [
@@ -26,6 +27,7 @@ import { UsersModule } from './users/users.module';
     IntegrationsModule,
     AuthModule,
     UsersModule,
+    WalletsModule,
     RolesModule,
     CatalogModule,
     SubscriptionsModule,

@@ -77,6 +77,7 @@ export class PbmsAuthService {
           fullName: user.fullName,
           phoneNumber: user.phoneNumber,
           roleName: user.pbmsRole?.roleName ?? 'customer',
+          avatarUrl: user.avatarUrl ?? null,
         },
         accessToken: tokens.accessToken,
         refreshToken: tokens.refreshToken,
