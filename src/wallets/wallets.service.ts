@@ -15,8 +15,11 @@ export class InsufficientWalletFundsError extends Error {
 const TOP_UP_MIN = 2000;
 const TOP_UP_MAX = 10_000_000;
 const TX_TAKE = 200;
+const UUID_RE =
+  /^[0-9a-f]{8}-[0-9a-f]{4}-[1-8][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i;
 
 type WalletHistoryFilter = 'TopUp' | 'SubscriptionFee';
+type DbClient = Prisma.TransactionClient | PrismaService;
 
 @Injectable()
 export class WalletsService {
@@ -25,40 +28,49 @@ export class WalletsService {
     private readonly payos: PayosService,
   ) {}
 
-  async getMine(userId: string): Promise<PbmsResponseDto> {
+  async ensureMine(userId: string): Promise<PbmsResponseDto> {
     if (isEmptyGuid(userId)) {
       return PbmsResponseDto.fail('Vui lòng đăng nhập', 401);
     }
     const user = await this.prisma.user.findUnique({
       where: { id: userId },
-      select: { walletBalance: true },
+      select: { id: true },
     });
     if (!user) {
       return PbmsResponseDto.fail('Không tìm thấy người dùng', 404);
     }
-    const transactions = await this.loadHistory(userId);
+    const wallet = await this.ensureWallet(this.prisma, userId);
+    return PbmsResponseDto.ok('Mở ví thành công', this.mapWalletSummary(wallet));
+  }
+
+  async getById(userId: string, walletId: string): Promise<PbmsResponseDto> {
+    const owned = await this.requireOwnedWallet(userId, walletId);
+    if (owned.error) {
+      return owned.error;
+    }
+    const transactions = await this.loadHistory(owned.wallet.id);
     return PbmsResponseDto.ok('Lấy thông tin ví thành công', {
-      userId,
-      walletBalance: toMoney(user.walletBalance),
+      ...this.mapWalletSummary(owned.wallet),
       transactions,
     });
   }
 
-  async listTransactions(userId: string): Promise<PbmsResponseDto> {
-    return this.listHistory(userId, undefined, 'Lấy lịch sử ví thành công');
+  async listTransactions(userId: string, walletId: string): Promise<PbmsResponseDto> {
+    return this.listHistory(userId, walletId, undefined, 'Lấy lịch sử ví thành công');
   }
 
-  async listTopUps(userId: string): Promise<PbmsResponseDto> {
-    return this.listHistory(userId, 'TopUp', 'Lấy lịch sử nạp ví thành công');
+  async listTopUps(userId: string, walletId: string): Promise<PbmsResponseDto> {
+    return this.listHistory(userId, walletId, 'TopUp', 'Lấy lịch sử nạp ví thành công');
   }
 
-  async listSpends(userId: string): Promise<PbmsResponseDto> {
-    return this.listHistory(userId, 'SubscriptionFee', 'Lấy lịch sử chi ví thành công');
+  async listSpends(userId: string, walletId: string): Promise<PbmsResponseDto> {
+    return this.listHistory(userId, walletId, 'SubscriptionFee', 'Lấy lịch sử chi ví thành công');
   }
 
-  async topUp(userId: string, dto: object): Promise<PbmsResponseDto> {
-    if (isEmptyGuid(userId)) {
-      return PbmsResponseDto.fail('Vui lòng đăng nhập', 401);
+  async topUp(userId: string, walletId: string, dto: object): Promise<PbmsResponseDto> {
+    const owned = await this.requireOwnedWallet(userId, walletId);
+    if (owned.error) {
+      return owned.error;
     }
     const amount = pbmsPickNumber(dto, 'amount', 'Amount');
     if (amount === undefined) {
@@ -68,13 +80,6 @@ export class WalletsService {
       return PbmsResponseDto.fail(
         `Số tiền nạp phải là số nguyên từ ${TOP_UP_MIN} đến ${TOP_UP_MAX} VND`,
       );
-    }
-    const user = await this.prisma.user.findUnique({
-      where: { id: userId },
-      select: { id: true, walletBalance: true },
-    });
-    if (!user) {
-      return PbmsResponseDto.fail('Không tìm thấy người dùng', 404);
     }
 
     const payment = await this.prisma.payment.create({
@@ -98,11 +103,12 @@ export class WalletsService {
       return PbmsResponseDto.ok(
         'Tạo liên kết nạp ví thành công',
         {
+          walletId: owned.wallet.id,
           paymentId: payment.id,
           paymentMethod: 'PayOS',
           paymentType: 'WalletTopUp',
           amount,
-          walletBalance: toMoney(user.walletBalance),
+          walletBalance: toMoney(owned.wallet.balance),
           paymentLinkId: link.paymentLinkId,
           paymentUrl: link.paymentUrl,
           orderCode: link.orderCode,
@@ -124,29 +130,30 @@ export class WalletsService {
     userId: string,
     amount: Prisma.Decimal,
     paymentId: string,
-  ): Promise<Prisma.Decimal> {
-    const debited = await tx.user.updateMany({
-      where: { id: userId, walletBalance: { gte: amount } },
-      data: { walletBalance: { decrement: amount } },
+  ): Promise<{ walletId: string; balanceAfter: Prisma.Decimal }> {
+    const wallet = await this.ensureWallet(tx, userId);
+    const debited = await tx.wallet.updateMany({
+      where: { id: wallet.id, userId, balance: { gte: amount } },
+      data: { balance: { decrement: amount } },
     });
     if (debited.count !== 1) {
       throw new InsufficientWalletFundsError();
     }
-    const user = await tx.user.findUnique({
-      where: { id: userId },
-      select: { walletBalance: true },
+    const updated = await tx.wallet.findUnique({
+      where: { id: wallet.id },
+      select: { balance: true },
     });
-    const balanceAfter = user?.walletBalance ?? new Prisma.Decimal(0);
+    const balanceAfter = updated?.balance ?? new Prisma.Decimal(0);
     await tx.walletTransaction.create({
       data: {
-        userId,
+        walletId: wallet.id,
         paymentId,
         type: 'SubscriptionFee',
         amount: amount.negated(),
         balanceAfter,
       },
     });
-    return balanceAfter;
+    return { walletId: wallet.id, balanceAfter };
   }
 
   async creditFromPayment(
@@ -162,42 +169,95 @@ export class WalletsService {
     if (existing) {
       return;
     }
-    const user = await tx.user.update({
-      where: { id: payment.userId },
-      data: { walletBalance: { increment: payment.amount } },
+    const wallet = await this.ensureWallet(tx, payment.userId);
+    const updated = await tx.wallet.update({
+      where: { id: wallet.id },
+      data: { balance: { increment: payment.amount } },
     });
     await tx.walletTransaction.create({
       data: {
-        userId: payment.userId,
+        walletId: wallet.id,
         paymentId: payment.id,
         type: 'TopUp',
         amount: payment.amount,
-        balanceAfter: user.walletBalance,
+        balanceAfter: updated.balance,
       },
     });
   }
 
+  async getBalanceForUser(userId: string): Promise<{
+    walletId: string | null;
+    walletBalance: number;
+  }> {
+    const wallet = await this.prisma.wallet.findUnique({
+      where: { userId },
+      select: { id: true, balance: true },
+    });
+    return {
+      walletId: wallet?.id ?? null,
+      walletBalance: toMoney(wallet?.balance),
+    };
+  }
+
   private async listHistory(
     userId: string,
+    walletId: string,
     type: WalletHistoryFilter | undefined,
     message: string,
   ): Promise<PbmsResponseDto> {
-    if (isEmptyGuid(userId)) {
-      return PbmsResponseDto.fail('Vui lòng đăng nhập', 401);
+    const owned = await this.requireOwnedWallet(userId, walletId);
+    if (owned.error) {
+      return owned.error;
     }
-    const user = await this.prisma.user.findUnique({
-      where: { id: userId },
-      select: { id: true },
-    });
-    if (!user) {
-      return PbmsResponseDto.fail('Không tìm thấy người dùng', 404);
-    }
-    return PbmsResponseDto.ok(message, await this.loadHistory(userId, type));
+    return PbmsResponseDto.ok(message, await this.loadHistory(owned.wallet.id, type));
   }
 
-  private async loadHistory(userId: string, type?: WalletHistoryFilter) {
+  private async requireOwnedWallet(
+    userId: string,
+    walletId: string,
+  ): Promise<{ wallet: { id: string; userId: string; balance: Prisma.Decimal }; error?: never } | { wallet?: never; error: PbmsResponseDto }> {
+    if (isEmptyGuid(userId)) {
+      return { error: PbmsResponseDto.fail('Vui lòng đăng nhập', 401) };
+    }
+    if (isEmptyGuid(walletId) || !UUID_RE.test(walletId)) {
+      return { error: PbmsResponseDto.fail('Vui lòng nhập WalletId hợp lệ') };
+    }
+    const wallet = await this.prisma.wallet.findUnique({
+      where: { id: walletId },
+      select: { id: true, userId: true, balance: true },
+    });
+    if (!wallet) {
+      return { error: PbmsResponseDto.fail('Không tìm thấy ví', 404) };
+    }
+    if (wallet.userId !== userId) {
+      return { error: PbmsResponseDto.fail('Bạn không sở hữu ví này', 403) };
+    }
+    return { wallet };
+  }
+
+  private async ensureWallet(db: DbClient, userId: string) {
+    const existing = await db.wallet.findUnique({ where: { userId } });
+    if (existing) {
+      return existing;
+    }
+    try {
+      return await db.wallet.create({
+        data: { userId, balance: new Prisma.Decimal(0) },
+      });
+    } catch (error: unknown) {
+      if (error instanceof Prisma.PrismaClientKnownRequestError && error.code === 'P2002') {
+        const again = await db.wallet.findUnique({ where: { userId } });
+        if (again) {
+          return again;
+        }
+      }
+      throw error;
+    }
+  }
+
+  private async loadHistory(walletId: string, type?: WalletHistoryFilter) {
     const items = await this.prisma.walletTransaction.findMany({
-      where: type ? { userId, type } : { userId },
+      where: type ? { walletId, type } : { walletId },
       include: {
         payment: {
           select: {
@@ -220,6 +280,14 @@ export class WalletsService {
       take: TX_TAKE,
     });
     return items.map((item) => this.mapTransaction(item));
+  }
+
+  private mapWalletSummary(wallet: { id: string; userId: string; balance: Prisma.Decimal }) {
+    return {
+      walletId: wallet.id,
+      userId: wallet.userId,
+      walletBalance: toMoney(wallet.balance),
+    };
   }
 
   private mapTransaction(item: {

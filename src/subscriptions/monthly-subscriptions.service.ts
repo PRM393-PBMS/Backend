@@ -382,13 +382,13 @@ export class MonthlySubscriptionsService {
             transactionReference: `WALLET-${subscription.id.replace(/-/g, '').slice(0, 12)}`,
           },
         });
-        const walletBalance = await this.wallets.debitInTransaction(tx, userId, pkg.price, payment.id);
+        const debit = await this.wallets.debitInTransaction(tx, userId, pkg.price, payment.id);
         await this.activateSubscriptionInTx(tx, {
           ...subscription,
           package: pkg,
           vehicleType: pkg.vehicleType,
         });
-        return { subscription, payment, walletBalance };
+        return { subscription, payment, debit };
       });
       return PbmsResponseDto.ok(
         'Thanh toán gói bằng ví thành công',
@@ -397,7 +397,8 @@ export class MonthlySubscriptionsService {
           paymentId: created.payment.id,
           paymentMethod: 'Wallet',
           amount: toMoney(created.payment.amount),
-          walletBalance: toMoney(created.walletBalance),
+          walletId: created.debit.walletId,
+          walletBalance: toMoney(created.debit.balanceAfter),
           status: 'Active',
         },
         201,
@@ -459,7 +460,7 @@ export class MonthlySubscriptionsService {
                 transactionReference: `WALLET-${subscription.id.replace(/-/g, '').slice(0, 12)}`,
               },
             });
-        const walletBalance = await this.wallets.debitInTransaction(
+        const debit = await this.wallets.debitInTransaction(
           tx,
           userId,
           subscription.price,
@@ -473,14 +474,15 @@ export class MonthlySubscriptionsService {
           package: subscription.package,
           vehicleType: subscription.vehicleType,
         });
-        return { payment, walletBalance };
+        return { payment, debit };
       });
       return PbmsResponseDto.ok('Thanh toán gói bằng ví thành công', {
         subscriptionId: subscription.id,
         paymentId: paid.payment.id,
         paymentMethod: 'Wallet',
         amount: toMoney(paid.payment.amount),
-        walletBalance: toMoney(paid.walletBalance),
+        walletId: paid.debit.walletId,
+        walletBalance: toMoney(paid.debit.balanceAfter),
         status: 'Active',
       });
     } catch (error: unknown) {
@@ -567,13 +569,11 @@ export class MonthlySubscriptionsService {
   }
 
   private async insufficientWallet(userId: string, amount: Prisma.Decimal): Promise<PbmsResponseDto> {
-    const user = await this.prisma.user.findUnique({
-      where: { id: userId },
-      select: { walletBalance: true },
-    });
+    const snapshot = await this.wallets.getBalanceForUser(userId);
     return new PbmsResponseDto('Số dư ví không đủ để thanh toán gói này', 400, false, {
       paymentMethod: 'Wallet',
-      walletBalance: toMoney(user?.walletBalance),
+      walletId: snapshot.walletId,
+      walletBalance: snapshot.walletBalance,
       amount: toMoney(amount),
     });
   }

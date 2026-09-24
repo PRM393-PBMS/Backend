@@ -6,9 +6,11 @@ import { InsufficientWalletFundsError, WalletsService } from './wallets.service'
 
 describe('WalletsService', () => {
   const userId = '9b1deb4d-3b7d-4bad-9bdd-2b0d7b3dcb6d';
+  const walletId = '7c9e6679-7425-40de-944b-e07fc1f90ae7';
   let service: WalletsService;
   let prisma: {
-    user: { findUnique: jest.Mock; updateMany: jest.Mock };
+    user: { findUnique: jest.Mock };
+    wallet: { findUnique: jest.Mock; create: jest.Mock; updateMany: jest.Mock };
     walletTransaction: { findMany: jest.Mock; create: jest.Mock };
     payment: { create: jest.Mock; update: jest.Mock };
   };
@@ -16,7 +18,8 @@ describe('WalletsService', () => {
 
   beforeEach(async () => {
     prisma = {
-      user: { findUnique: jest.fn(), updateMany: jest.fn() },
+      user: { findUnique: jest.fn() },
+      wallet: { findUnique: jest.fn(), create: jest.fn(), updateMany: jest.fn() },
       walletTransaction: { findMany: jest.fn(), create: jest.fn() },
       payment: { create: jest.fn(), update: jest.fn() },
     };
@@ -32,13 +35,28 @@ describe('WalletsService', () => {
   });
 
   it('returns 401 when listing a wallet without a user', async () => {
-    const result = await service.getMine('');
+    const result = await service.getById('', walletId);
     expect(result.statusCode).toBe(401);
     expect(result.message).toBe('Vui lòng đăng nhập');
   });
 
+  it('forbids reading another user wallet', async () => {
+    prisma.wallet.findUnique.mockResolvedValue({
+      id: walletId,
+      userId: 'aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa',
+      balance: new Prisma.Decimal(1),
+    });
+    const result = await service.getById(userId, walletId);
+    expect(result.statusCode).toBe(403);
+    expect(result.message).toBe('Bạn không sở hữu ví này');
+  });
+
   it('maps top-up history as Credit and spend history as Debit with subscription ids', async () => {
-    prisma.user.findUnique.mockResolvedValue({ id: userId });
+    prisma.wallet.findUnique.mockResolvedValue({
+      id: walletId,
+      userId,
+      balance: new Prisma.Decimal(50000),
+    });
     prisma.walletTransaction.findMany.mockResolvedValue([
       {
         id: 'tx-credit',
@@ -78,7 +96,7 @@ describe('WalletsService', () => {
       },
     ]);
 
-    const all = await service.listTransactions(userId);
+    const all = await service.listTransactions(userId, walletId);
     expect(all.statusCode).toBe(200);
     expect(all.result).toEqual([
       expect.objectContaining({
@@ -104,26 +122,35 @@ describe('WalletsService', () => {
     ]);
 
     prisma.walletTransaction.findMany.mockClear();
-    await service.listTopUps(userId);
+    await service.listTopUps(userId, walletId);
     expect(prisma.walletTransaction.findMany).toHaveBeenCalledWith(
-      expect.objectContaining({ where: { userId, type: 'TopUp' } }),
+      expect.objectContaining({ where: { walletId, type: 'TopUp' } }),
     );
 
     prisma.walletTransaction.findMany.mockClear();
-    await service.listSpends(userId);
+    await service.listSpends(userId, walletId);
     expect(prisma.walletTransaction.findMany).toHaveBeenCalledWith(
-      expect.objectContaining({ where: { userId, type: 'SubscriptionFee' } }),
+      expect.objectContaining({ where: { walletId, type: 'SubscriptionFee' } }),
     );
   });
 
   it('rejects a top-up below the PayOS minimum', async () => {
-    const result = await service.topUp(userId, { amount: 500 });
+    prisma.wallet.findUnique.mockResolvedValue({
+      id: walletId,
+      userId,
+      balance: new Prisma.Decimal(0),
+    });
+    const result = await service.topUp(userId, walletId, { amount: 500 });
     expect(result.isSuccess).toBe(false);
     expect(result.message).toContain('Số tiền nạp phải là số nguyên');
   });
 
   it('creates a PayOS top-up link without changing the current balance', async () => {
-    prisma.user.findUnique.mockResolvedValue({ id: userId, walletBalance: new Prisma.Decimal(20000) });
+    prisma.wallet.findUnique.mockResolvedValue({
+      id: walletId,
+      userId,
+      balance: new Prisma.Decimal(20000),
+    });
     prisma.payment.create.mockResolvedValue({
       id: 'pay-1',
       amount: new Prisma.Decimal(100000),
@@ -136,11 +163,12 @@ describe('WalletsService', () => {
       orderCode: '1727',
     });
 
-    const result = await service.topUp(userId, { amount: 100000 });
+    const result = await service.topUp(userId, walletId, { amount: 100000 });
 
     expect(result.statusCode).toBe(201);
     expect(result.result).toEqual(
       expect.objectContaining({
+        walletId,
         paymentMethod: 'PayOS',
         paymentType: 'WalletTopUp',
         paymentUrl: 'https://pay.payos.vn/web/demo',
@@ -150,14 +178,14 @@ describe('WalletsService', () => {
   });
 
   it('refuses a debit when the stored balance is too low', async () => {
-    prisma.user.updateMany.mockResolvedValue({ count: 0 });
+    prisma.wallet.findUnique.mockResolvedValue({
+      id: walletId,
+      userId,
+      balance: new Prisma.Decimal(0),
+    });
+    prisma.wallet.updateMany.mockResolvedValue({ count: 0 });
     await expect(
-      service.debitInTransaction(
-        prisma as never,
-        userId,
-        new Prisma.Decimal(300000),
-        'pay-1',
-      ),
+      service.debitInTransaction(prisma as never, userId, new Prisma.Decimal(300000), 'pay-1'),
     ).rejects.toBeInstanceOf(InsufficientWalletFundsError);
   });
 });

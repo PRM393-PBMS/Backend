@@ -4,9 +4,11 @@ import { extname } from 'path';
 import { PrismaService } from '../prisma/prisma.service';
 import { HashingService } from '../auth/services/hashing.service';
 import { PbmsResponseDto } from '../common/dto/pbms-response.dto';
-import { isEmptyGuid, pbmsPick, pbmsPickGuid, pbmsPickNumber, toMoney } from '../common/pbms-fields';
+import { isEmptyGuid, pbmsPick, pbmsPickGuid, pbmsPickNumber } from '../common/pbms-fields';
 import { FilesService } from '../integrations/payos-files.service';
 import type { UploadedImage } from '../common/uploaded-image';
+
+const userPublicInclude = { pbmsRole: true, wallet: { select: { id: true } } } as const;
 
 const EMAIL_RE = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
 const AVATAR_MAX_BYTES = 5 * 1024 * 1024;
@@ -23,7 +25,7 @@ export class UsersService {
 
   async getAll(): Promise<PbmsResponseDto> {
     const users = await this.prisma.user.findMany({
-      include: { pbmsRole: true },
+      include: userPublicInclude,
       orderBy: { createdAt: 'desc' },
       take: 1000,
     });
@@ -39,7 +41,7 @@ export class UsersService {
     }
     const user = await this.prisma.user.findUnique({
       where: { id },
-      include: { pbmsRole: true },
+      include: userPublicInclude,
     });
     if (!user) {
       return PbmsResponseDto.fail('Không tìm thấy người dùng', 404);
@@ -53,7 +55,7 @@ export class UsersService {
     }
     const user = await this.prisma.user.findUnique({
       where: { id: userId },
-      include: { pbmsRole: true },
+      include: userPublicInclude,
     });
     if (!user) {
       return PbmsResponseDto.fail('Không tìm thấy người dùng', 404);
@@ -67,7 +69,7 @@ export class UsersService {
     }
     const user = await this.prisma.user.findUnique({
       where: { id: userId },
-      include: { pbmsRole: true },
+      include: userPublicInclude,
     });
     if (!user) {
       return PbmsResponseDto.fail('Không tìm thấy người dùng', 404);
@@ -111,7 +113,7 @@ export class UsersService {
       const updated = await this.prisma.user.update({
         where: { id: userId },
         data,
-        include: { pbmsRole: true },
+        include: userPublicInclude,
       });
       return PbmsResponseDto.ok('Cập nhật thông tin cá nhân thành công', this.mapUser(updated));
     } catch (error: unknown) {
@@ -137,7 +139,7 @@ export class UsersService {
     }
     const user = await this.prisma.user.findUnique({
       where: { id: userId },
-      include: { pbmsRole: true },
+      include: userPublicInclude,
     });
     if (!user) {
       return PbmsResponseDto.fail('Không tìm thấy người dùng', 404);
@@ -147,7 +149,7 @@ export class UsersService {
       const updated = await this.prisma.user.update({
         where: { id: userId },
         data: { avatarUrl: upload.imageUrl },
-        include: { pbmsRole: true },
+        include: userPublicInclude,
       });
       return PbmsResponseDto.ok('Cập nhật ảnh đại diện thành công', this.mapUser(updated));
     } catch (error: unknown) {
@@ -211,7 +213,7 @@ export class UsersService {
           roleId: roleRes.role!.id,
           role: this.nestRole(roleRes.role!.roleName),
         },
-        include: { pbmsRole: true },
+        include: userPublicInclude,
       });
       return PbmsResponseDto.ok('Tạo người dùng thành công', this.mapUser(user), 201);
     } catch (error: unknown) {
@@ -232,7 +234,7 @@ export class UsersService {
     }
     const user = await this.prisma.user.findUnique({
       where: { id: userId },
-      include: { pbmsRole: true },
+      include: userPublicInclude,
     });
     if (!user) {
       return PbmsResponseDto.fail('Không tìm thấy người dùng', 404);
@@ -271,7 +273,7 @@ export class UsersService {
           role: this.nestRole(roleRes.role!.roleName),
           ...(password ? { passwordHash: await this.hashing.hash(password) } : {}),
         },
-        include: { pbmsRole: true },
+        include: userPublicInclude,
       });
       return PbmsResponseDto.ok('Cập nhật người dùng thành công', this.mapUser(updated));
     } catch (error: unknown) {
@@ -299,7 +301,7 @@ export class UsersService {
     }
     const user = await this.prisma.user.findUnique({
       where: { id },
-      include: { pbmsRole: true },
+      include: userPublicInclude,
     });
     if (!user) {
       return PbmsResponseDto.fail('Không tìm thấy người dùng', 404);
@@ -310,7 +312,7 @@ export class UsersService {
     const updated = await this.prisma.user.update({
       where: { id },
       data: { status: normalized, isActive: normalized === 'Active' },
-      include: { pbmsRole: true },
+      include: userPublicInclude,
     });
     return PbmsResponseDto.ok('Cập nhật trạng thái người dùng thành công', this.mapUser(updated));
   }
@@ -321,7 +323,7 @@ export class UsersService {
     }
     const user = await this.prisma.user.findUnique({
       where: { id },
-      include: { pbmsRole: true },
+      include: userPublicInclude,
     });
     if (!user) {
       return PbmsResponseDto.fail('Không tìm thấy người dùng', 404);
@@ -332,7 +334,7 @@ export class UsersService {
     const updated = await this.prisma.user.update({
       where: { id },
       data: { status: 'Inactive', isActive: false },
-      include: { pbmsRole: true },
+      include: userPublicInclude,
     });
     return PbmsResponseDto.ok('Xóa người dùng thành công', this.mapUser(updated));
   }
@@ -346,7 +348,7 @@ export class UsersService {
     status: string | null;
     roleId: number;
     avatarUrl: string | null;
-    walletBalance?: Prisma.Decimal | number | null;
+    wallet?: { id: string } | null;
     pbmsRole: { roleName: string } | null;
     createdAt: Date;
     updatedAt: Date;
@@ -361,7 +363,7 @@ export class UsersService {
       roleId: user.roleId,
       roleName: user.pbmsRole?.roleName ?? 'Chưa phân quyền',
       avatarUrl: user.avatarUrl ?? null,
-      walletBalance: toMoney(user.walletBalance),
+      walletId: user.wallet?.id ?? null,
       createdAt: user.createdAt,
       updatedAt: user.updatedAt,
     };

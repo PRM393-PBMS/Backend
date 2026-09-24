@@ -32,7 +32,7 @@ export class ProfileController {
     summary: 'Lấy thông tin cá nhân',
     description: [
       'JWT bắt buộc. Không body.',
-      '`result`: `userId`, `userName`, `email`, `fullName`, `phoneNumber`, `status`, `roleId`, `roleName`, `avatarUrl`, `walletBalance`, `createdAt`, `updatedAt`.',
+      '`result`: `userId`, `userName`, `email`, `fullName`, `phoneNumber`, `status`, `roleId`, `roleName`, `avatarUrl`, `walletId` (UUID hoặc null), `createdAt`, `updatedAt`. Không trả số dư ví — FE dùng `walletId` để gọi `/api/wallet/{walletId}`.',
       'Lỗi: 401 nếu chưa đăng nhập; 404 nếu không tìm thấy user.',
     ].join('\n\n'),
   })

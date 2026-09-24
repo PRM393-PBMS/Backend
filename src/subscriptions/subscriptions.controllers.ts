@@ -43,8 +43,8 @@ export class MonthlySubscriptionsController {
     description: [
       'JWT bắt buộc. Body: `packageId`, `licensePlate` (4–15 chữ/số) bắt buộc; `vehicleTypeId` tuỳ chọn; `fixedSlotId` khi gói ô tô `requireFixedSlot`; `paymentMethod` `PayOS` (mặc định nếu trống) hoặc `Wallet`. Khác hai giá trị → `Phương thức thanh toán gói chỉ được là PayOS hoặc Wallet`.',
       '**PayOS** (example Swagger): gói `PendingPayment`. Message `Tạo đăng ký gói thành công`. `result`: `subscriptionId`, `paymentId`, `paymentMethod=PayOS`, `orderCode`, `amount`, `paymentLinkId`, `paymentUrl`, `status=PendingPayment`. FE mở `paymentUrl`; `Active` sau webhook.',
-      '**Wallet**: trừ ví ngay. Message `Thanh toán gói bằng ví thành công`. `result`: `subscriptionId`, `paymentId`, `paymentMethod=Wallet`, `amount`, `walletBalance` (sau trừ), `status=Active`. Không `paymentUrl`.',
-      'Lỗi: thiếu gói/biển; biển không hợp lệ; 404 gói ngừng bán; biển đã có gói Active/PendingPayment; ô không hợp lệ / xe máy không dùng `fixedSlotId`; 409 hết ô cư dân; 401; 400 số dư không đủ (`result` có `paymentMethod`, `walletBalance`, `amount` — không tạo gói); 500.',
+      '**Wallet**: trừ ví ngay. Message `Thanh toán gói bằng ví thành công`. `result`: `subscriptionId`, `paymentId`, `paymentMethod=Wallet`, `amount`, `walletId`, `walletBalance` (sau trừ), `status=Active`. Không `paymentUrl`.',
+      'Lỗi: thiếu gói/biển; biển không hợp lệ; 404 gói ngừng bán; biển đã có gói Active/PendingPayment; ô không hợp lệ / xe máy không dùng `fixedSlotId`; 409 hết ô cư dân; 401; 400 số dư không đủ (`result` có `paymentMethod`, `walletId`, `walletBalance`, `amount` — không tạo gói); 500.',
     ].join('\n\n'),
   })
   @ApiPbmsBodyExample(
@@ -110,7 +110,7 @@ export class MonthlySubscriptionsController {
     description: [
       'JWT bắt buộc. Path `subscriptionId` thuộc user. Body `paymentMethod` tuỳ chọn: `PayOS` (mặc định nếu trống) hoặc `Wallet`. Dùng khi gói chưa `Active` (thường `PendingPayment`).',
       '**PayOS:** tái sử dụng/tạo payment Pending. Message `Tạo thanh toán gói thành công`. `result` có `paymentUrl`, `paymentLinkId`, `orderCode`, `status` hiện tại.',
-      '**Wallet:** trừ ví, kích hoạt. Message `Thanh toán gói bằng ví thành công`. `result`: `walletBalance`, `status=Active`, không `paymentUrl`.',
+      '**Wallet:** trừ ví, kích hoạt. Message `Thanh toán gói bằng ví thành công`. `result`: `walletId`, `walletBalance`, `status=Active`, không `paymentUrl`.',
       'Lỗi: `paymentMethod` không hợp lệ; 404 gói; 403 không phải chủ; `Gói đã được kích hoạt`; 400 số dư ví không đủ; 500.',
     ].join('\n\n'),
   })

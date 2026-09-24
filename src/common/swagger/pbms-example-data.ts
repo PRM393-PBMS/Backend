@@ -28,6 +28,7 @@ export const ids = {
   reservationId: '8f14e45f-ceea-467c-9d74-88e12ab117b2',
   paymentId: '2c5ea4c0-4067-11e9-8bad-9b1deb4d3b7d',
   incidentId: '6ba7b810-9dad-11d1-80b4-00c04fd430c8',
+  walletId: '9c5ea4c0-4067-41e9-8bad-9b1deb4d3b7d',
 };
 
 export const dummyAccessToken =
@@ -58,7 +59,7 @@ export const userExample = {
   roleId: ids.roleUserId,
   roleName: 'customer',
   avatarUrl: 'https://api.example.com/uploads/avatars/9b1deb4d-3b7d-4bad-9bdd-2b0d7b3dcb6d.jpg',
-  walletBalance: 150000,
+  walletId: ids.walletId,
   createdAt: iso.created,
   updatedAt: iso.updated,
 };
@@ -72,6 +73,7 @@ export const loginResultExample = {
     phoneNumber: PBMS_REGISTER_EXAMPLE.phoneNumber,
     roleName: 'customer',
     avatarUrl: 'https://api.example.com/uploads/avatars/9b1deb4d-3b7d-4bad-9bdd-2b0d7b3dcb6d.jpg',
+    walletId: ids.walletId,
   },
   accessToken: dummyAccessToken,
   refreshToken: dummyRefreshToken,
@@ -172,6 +174,7 @@ export const subscriptionWalletPaymentExample = {
   paymentId: ids.paymentId,
   paymentMethod: 'Wallet',
   amount: 300000,
+  walletId: ids.walletId,
   walletBalance: 50000,
   status: 'Active',
 };
@@ -213,12 +216,14 @@ export const walletSpendExample = {
 };
 
 export const walletExample = {
+  walletId: ids.walletId,
   userId: ids.userId,
   walletBalance: 150000,
   transactions: [walletTransactionExample, walletSpendExample],
 };
 
 export const walletTopUpExample = {
+  walletId: ids.walletId,
   paymentId: ids.paymentId,
   paymentMethod: 'PayOS',
   paymentType: 'WalletTopUp',

@@ -78,6 +78,7 @@ export class PbmsAuthService {
           phoneNumber: user.phoneNumber,
           roleName: user.pbmsRole?.roleName ?? 'customer',
           avatarUrl: user.avatarUrl ?? null,
+          walletId: user.wallet?.id ?? null,
         },
         accessToken: tokens.accessToken,
         refreshToken: tokens.refreshToken,
@@ -456,7 +457,7 @@ export class PbmsAuthService {
     }
     return this.prisma.user.findFirst({
       where: { email: { equals: email, mode: 'insensitive' } },
-      include: { pbmsRole: true },
+      include: { pbmsRole: true, wallet: { select: { id: true } } },
     });
   }
 

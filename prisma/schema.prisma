@@ -31,19 +31,17 @@ model User {
   updatedAt       DateTime @updatedAt @map("updated_at") @db.Timestamptz(6)
 
   /// PBMS User.userName (unique). Optional so existing Nest users stay valid.
-  userName      String? @unique @map("user_name") @db.VarChar(50)
+  userName    String? @unique @map("user_name") @db.VarChar(50)
   /// PBMS User.fullName. Additive; firstName/lastName kept for Nest.
-  fullName      String? @map("full_name") @db.VarChar(100)
+  fullName    String? @map("full_name") @db.VarChar(100)
   /// PBMS User.phoneNumber. Optional unique here.
-  phoneNumber   String? @unique @map("phone_number") @db.VarChar(15)
+  phoneNumber String? @unique @map("phone_number") @db.VarChar(15)
   /// PBMS User.status varchar(20) default Active (Active, Inactive, Banned).
-  status        String? @default("Active") @db.VarChar(20)
+  status      String? @default("Active") @db.VarChar(20)
   /// 1=customer, 2=staff, 3=manager, 4=admin. Đăng ký mặc định 1.
-  roleId        Int     @map("role_id") @db.SmallInt
+  roleId      Int     @map("role_id") @db.SmallInt
   /// Public URL/path of the profile picture (uploads/avatars/...).
-  avatarUrl     String? @map("avatar_url") @db.VarChar(2048)
-  /// Số dư ví nội bộ (VND). Nạp qua PayOS; trừ khi mua gói bằng Wallet.
-  walletBalance Decimal @default(0) @map("wallet_balance") @db.Decimal(15, 2)
+  avatarUrl   String? @map("avatar_url") @db.VarChar(2048)
 
   pbmsRole Role? @relation(fields: [roleId], references: [id], onDelete: Restrict)
 
@@ -56,7 +54,7 @@ model User {
   reportedIncidents     IncidentReport[]       @relation("IncidentReporter")
   handledIncidents      IncidentReport[]       @relation("IncidentHandler")
   handledVehicleChanges VehicleChangeRequest[] @relation("VehicleChangeHandler")
-  walletTransactions    WalletTransaction[]
+  wallet                Wallet?
 
   @@index([role, isActive], name: "idx_users_role_is_active")
   @@index([roleId], name: "idx_users_role_id")
@@ -356,9 +354,22 @@ model Payment {
   @@map("payments")
 }
 
+model Wallet {
+  id        String   @id @default(uuid()) @db.Uuid
+  userId    String   @unique @map("user_id") @db.Uuid
+  balance   Decimal  @default(0) @db.Decimal(15, 2)
+  createdAt DateTime @default(now()) @map("created_at") @db.Timestamptz(6)
+  updatedAt DateTime @updatedAt @map("updated_at") @db.Timestamptz(6)
+
+  user         User                @relation(fields: [userId], references: [id], onDelete: Restrict)
+  transactions WalletTransaction[]
+
+  @@map("wallets")
+}
+
 model WalletTransaction {
   id           String   @id @default(uuid()) @db.Uuid
-  userId       String   @map("user_id") @db.Uuid
+  walletId     String   @map("wallet_id") @db.Uuid
   paymentId    String?  @unique @map("payment_id") @db.Uuid
   /// WalletTransactionType: TopUp, SubscriptionFee.
   type         String   @db.VarChar(30)
@@ -367,10 +378,10 @@ model WalletTransaction {
   balanceAfter Decimal  @map("balance_after") @db.Decimal(15, 2)
   createdAt    DateTime @default(now()) @map("created_at") @db.Timestamptz(6)
 
-  user    User     @relation(fields: [userId], references: [id], onDelete: Restrict)
+  wallet  Wallet   @relation(fields: [walletId], references: [id], onDelete: Restrict)
   payment Payment? @relation(fields: [paymentId], references: [id], onDelete: SetNull)
 
-  @@index([userId], name: "idx_wallet_transactions_user_id")
+  @@index([walletId], name: "idx_wallet_transactions_wallet_id")
   @@map("wallet_transactions")
 }
 
