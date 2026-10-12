@@ -1,6 +1,7 @@
 /**
  * Đọc field JSON theo cả camelCase và PascalCase (client PBMS gửi cả hai).
  */
+import { isUUID } from 'class-validator';
 export function pbmsPick(body: object, ...keys: string[]): string {
   const rec = body as Record<string, unknown>;
   for (const key of keys) {
@@ -48,15 +49,14 @@ export function pbmsPickBool(body: object, ...keys: string[]): boolean | undefin
   return undefined;
 }
 
-export function parseRoleId(id: string | number | undefined | null): number | null {
-  if (typeof id === 'number' && Number.isInteger(id) && id > 0) {
-    return id;
+export function parseRoleId(value: unknown): string | null {
+  if (typeof value !== 'string') {
+    return null;
   }
-  if (typeof id === 'string' && /^\d+$/.test(id.trim())) {
-    const n = Number(id.trim());
-    return n > 0 ? n : null;
-  }
-  return null;
+
+  const id = value.trim();
+
+  return isUUID(id) && !isEmptyGuid(id) ? id : null;
 }
 
 export function isEmptyGuid(id: string | undefined | null): boolean {

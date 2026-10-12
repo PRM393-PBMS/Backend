@@ -39,7 +39,7 @@ model User {
   /// PBMS User.status varchar(20) default Active (Active, Inactive, Banned).
   status      String? @default("Active") @db.VarChar(20)
   /// 1=customer, 2=staff, 3=manager, 4=admin. Đăng ký mặc định 1.
-  roleId      Int     @map("role_id") @db.SmallInt
+  roleId String @map("role_id") @db.Uuid
   /// Public URL/path of the profile picture (uploads/avatars/...).
   avatarUrl   String? @map("avatar_url") @db.VarChar(2048)
 
@@ -85,8 +85,7 @@ model RefreshToken {
 }
 
 model Role {
-  /// 1=customer, 2=staff, 3=manager, 4=admin
-  id          Int     @id @db.SmallInt
+  id          String  @id @default(uuid()) @db.Uuid
   roleName    String  @unique @map("role_name") @db.VarChar(50)
   description String? @db.VarChar(255)
 
