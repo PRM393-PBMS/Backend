@@ -187,8 +187,10 @@ export class PbmsAuthService {
     }
 
     const defaultRole = await this.prisma.role.findFirst({
-      where: { OR: [{ id: 1 }, { roleName: { equals: 'customer', mode: 'insensitive' } }] },
-    });
+  where: {
+    roleName: { equals: 'customer', mode: 'insensitive' },
+  },
+});
     if (!defaultRole) {
       return new PbmsResponseDto(
         "Lỗi cấu hình hệ thống: Không tìm thấy quyền 'customer' mặc định",
@@ -402,7 +404,7 @@ export class PbmsAuthService {
     email: string;
     userName: string | null;
     role: UserRole;
-    roleId: number;
+    roleId: string;
     pbmsRole: { roleName: string } | null;
   }): Promise<{ accessToken: string; refreshToken: string }> {
     const accessToken = await this.signAccessToken(user);
@@ -429,7 +431,7 @@ export class PbmsAuthService {
     email: string;
     userName: string | null;
     role: UserRole;
-    roleId: number;
+    roleId: string;
     pbmsRole: { roleName: string } | null;
   }): Promise<string> {
     const pbmsRoleName = user.pbmsRole?.roleName ?? 'customer';
