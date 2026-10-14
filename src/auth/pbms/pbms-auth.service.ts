@@ -145,7 +145,7 @@ export class PbmsAuthService {
 
     const otp = randomInt(100000, 1000000).toString();
     const otpHash = this.hashSha256(otp);
-    this.otpStore.set<CachedRegister>(
+    await this.otpStore.set<CachedRegister>(
       `Register_${email}`,
       { userName, fullName, email, phoneNumber, password, otpHash },
       OTP_TTL_MS,
@@ -168,7 +168,7 @@ export class PbmsAuthService {
     }
 
     const email = this.normalizeEmail(emailRaw);
-    const cached = this.otpStore.get<CachedRegister>(`Register_${email}`);
+    const cached = await this.otpStore.get<CachedRegister>(`Register_${email}`);
     if (!cached) {
       return new PbmsResponseDto('Mã OTP không hợp lệ hoặc đã hết hạn', 400, false);
     }
@@ -187,10 +187,10 @@ export class PbmsAuthService {
     }
 
     const defaultRole = await this.prisma.role.findFirst({
-  where: {
-    roleName: { equals: 'customer', mode: 'insensitive' },
-  },
-});
+      where: {
+        roleName: { equals: 'customer', mode: 'insensitive' },
+      },
+    });
     if (!defaultRole) {
       return new PbmsResponseDto(
         "Lỗi cấu hình hệ thống: Không tìm thấy quyền 'customer' mặc định",
@@ -215,7 +215,7 @@ export class PbmsAuthService {
           roleId: defaultRole.id,
         },
       });
-      this.otpStore.delete(`Register_${email}`);
+      await this.otpStore.delete(`Register_${email}`);
       return new PbmsResponseDto('Đăng ký thành công', 200, true, { userId: newUser.id });
     } catch (error: unknown) {
       if (error instanceof Prisma.PrismaClientKnownRequestError && error.code === 'P2002') {
@@ -246,7 +246,7 @@ export class PbmsAuthService {
     }
 
     const otp = randomInt(100000, 1000000).toString();
-    this.otpStore.set(`Reset_${email}`, this.hashSha256(otp), OTP_TTL_MS);
+    await this.otpStore.set(`Reset_${email}`, this.hashSha256(otp), OTP_TTL_MS);
 
     try {
       await this.mailService.sendOtpEmail(email, otp, 'password-reset');
@@ -275,7 +275,7 @@ export class PbmsAuthService {
     }
 
     const email = this.normalizeEmail(emailRaw);
-    const cachedOtpHash = this.otpStore.get<string>(`Reset_${email}`);
+    const cachedOtpHash = await this.otpStore.get<string>(`Reset_${email}`);
     if (!cachedOtpHash) {
       return new PbmsResponseDto('Mã OTP không hợp lệ hoặc đã hết hạn', 400, false);
     }
@@ -294,7 +294,7 @@ export class PbmsAuthService {
         where: { id: user.id },
         data: { passwordHash },
       });
-      this.otpStore.delete(`Reset_${email}`);
+      await this.otpStore.delete(`Reset_${email}`);
       return new PbmsResponseDto('Đặt lại mật khẩu thành công', 200, true);
     } catch (error: unknown) {
       const message = error instanceof Error ? error.message : 'unknown';
