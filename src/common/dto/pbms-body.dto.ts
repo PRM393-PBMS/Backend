@@ -406,4 +406,24 @@ export class PbmsBodyDto {
   @IsOptional()
   format?: unknown;
   @ApiPropertyOptional() @IsOptional() Format?: unknown;
+
+  @ApiPropertyOptional({ type: Boolean, example: true })
+  @IsOptional()
+  agreed?: unknown;
+  @ApiPropertyOptional() @IsOptional() Agreed?: unknown;
+
+  @ApiPropertyOptional({ type: String, example: 'Nguyễn Văn A' })
+  @IsOptional()
+  signerName?: unknown;
+  @ApiPropertyOptional() @IsOptional() SignerName?: unknown;
+
+  @ApiPropertyOptional({ type: String, example: '3f2a...sha256' })
+  @IsOptional()
+  contentHash?: unknown;
+  @ApiPropertyOptional() @IsOptional() ContentHash?: unknown;
+
+  @ApiPropertyOptional({ type: String, example: 'data:image/png;base64,iVBORw0KGgo...' })
+  @IsOptional()
+  signatureImage?: unknown;
+  @ApiPropertyOptional() @IsOptional() SignatureImage?: unknown;
 }

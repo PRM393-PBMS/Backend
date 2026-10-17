@@ -13,12 +13,15 @@ import {
   toMoney,
 } from '../common/pbms-fields';
 import { isMotorbikeType, isValidLicensePlate, normalizeLicensePlate } from '../common/license-plate';
+import { requiresContract } from '../common/contract-seal';
+import { ContractsService } from './contracts.service';
 
 @Injectable()
 export class MonthlySubscriptionsService {
   constructor(
     private readonly prisma: PrismaService,
     private readonly payos: PayosService,
+    private readonly contracts: ContractsService,
   ) {}
 
   async register(userId: string, dto: object, createPayment: boolean): Promise<PbmsResponseDto> {
@@ -114,7 +117,10 @@ export class MonthlySubscriptionsService {
             status: createPayment ? 'PendingPayment' : 'PendingPayment',
           },
         });
-        const payment = createPayment
+        const contract = requiresContract(pkg.durationMonths)
+          ? await this.contracts.createForSubscription(tx, subscription.id)
+          : null;
+        const payment = createPayment && !contract
           ? await tx.payment.create({
               data: {
                 userId,
@@ -128,8 +134,22 @@ export class MonthlySubscriptionsService {
               },
             })
           : null;
-        return { subscription, payment };
+        return { subscription, payment, contract };
       });
+
+      if (created.contract && createPayment) {
+        return PbmsResponseDto.ok(
+          'Tạo đăng ký gói thành công, vui lòng ký hợp đồng trước khi thanh toán',
+          {
+            subscriptionId: created.subscription.id,
+            requiresContract: true,
+            contractId: created.contract.id,
+            contractNumber: created.contract.contractNumber,
+            amount: toMoney(created.subscription.price),
+          },
+          201,
+        );
+      }
 
       if (!created.payment) {
         return PbmsResponseDto.ok(
@@ -275,6 +295,10 @@ export class MonthlySubscriptionsService {
     if (sameStatus(subscription.status, 'Active')) {
       return PbmsResponseDto.fail('Gói đã được kích hoạt');
     }
+    const contract = await this.prisma.subscriptionContract.findUnique({ where: { subscriptionId } });
+    if (contract && !sameStatus(contract.status, 'Signed')) {
+      return PbmsResponseDto.fail('Vui lòng ký hợp đồng trước khi thanh toán', 409);
+    }
     let payment = await this.prisma.payment.findFirst({
       where: { subscriptionId, paymentStatus: 'Pending', paymentType: 'SubscriptionFee' },
       orderBy: { paymentTime: 'desc' },
@@ -321,6 +345,7 @@ export class MonthlySubscriptionsService {
         vehicleType: true,
         package: true,
         fixedSlot: true,
+        contract: { select: { id: true, status: true, contractNumber: true } },
       },
       orderBy: { startDate: 'desc' },
     });
@@ -330,7 +355,13 @@ export class MonthlySubscriptionsService {
   private loadOne(id: string) {
     return this.prisma.monthlySubscription.findUnique({
       where: { id },
-      include: { user: true, vehicleType: true, package: true, fixedSlot: true },
+      include: {
+        user: true,
+        vehicleType: true,
+        package: true,
+        fixedSlot: true,
+        contract: { select: { id: true, status: true, contractNumber: true } },
+      },
     });
   }
 
@@ -344,8 +375,9 @@ export class MonthlySubscriptionsService {
     status: string;
     user?: { fullName: string | null };
     vehicleType?: { typeName: string };
-    package?: { packageName: string };
+    package?: { packageName: string; durationMonths?: number };
     fixedSlot?: { slotCode: string } | null;
+    contract?: { id: string; status: string; contractNumber: string } | null;
   }) {
     return {
       subscriptionId: item.id,
@@ -359,6 +391,10 @@ export class MonthlySubscriptionsService {
       price: toMoney(item.price),
       status: item.status,
       fixedSlot: item.fixedSlot?.slotCode ?? null,
+      durationMonths: item.package?.durationMonths ?? null,
+      contractId: item.contract?.id ?? null,
+      contractNumber: item.contract?.contractNumber ?? null,
+      contractStatus: item.contract?.status ?? null,
     };
   }
 }
