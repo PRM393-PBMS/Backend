@@ -36,7 +36,7 @@ export class IncidentsService {
     const users = await this.prisma.user.findMany({
       where: {
         status: 'Active',
-        pbmsRole: { roleName: { in: ['staff', 'manager'] } },
+        pbmsRole: { roleName: { in: ['Staff', 'Manager'] } },
       },
       include: { pbmsRole: true },
     });

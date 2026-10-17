@@ -23,7 +23,7 @@ model User {
   passwordHash    String   @map("password_hash") @db.VarChar(255)
   firstName       String?  @map("first_name") @db.VarChar(100)
   lastName        String?  @map("last_name") @db.VarChar(100)
-  /// Enum Nest nội bộ. JWT/API PBMS đọc Role.roleName.
+  /// Nest `/auth/*` only. PBMS JSON uses pbmsRole.roleName.
   role            UserRole @default(USER)
   isActive        Boolean  @default(true) @map("is_active")
   isEmailVerified Boolean  @default(false) @map("is_email_verified")
@@ -38,12 +38,10 @@ model User {
   phoneNumber String? @unique @map("phone_number") @db.VarChar(15)
   /// PBMS User.status varchar(20) default Active (Active, Inactive, Banned).
   status      String? @default("Active") @db.VarChar(20)
-  /// 1=customer, 2=staff, 3=manager, 4=admin. Đăng ký mặc định 1.
-  roleId String @map("role_id") @db.Uuid
-  /// Public URL/path of the profile picture (uploads/avatars/...).
-  avatarUrl   String? @map("avatar_url") @db.VarChar(2048)
+  /// PBMS User.roleId. Optional for Nest-only rows until a Role seed exists.
+  pbmsRoleId  String? @map("pbms_role_id") @db.Uuid
 
-  pbmsRole Role? @relation(fields: [roleId], references: [id], onDelete: Restrict)
+  pbmsRole Role? @relation(fields: [pbmsRoleId], references: [id], onDelete: Restrict)
 
   refreshTokens         RefreshToken[]
   assignedParkingSlots  ParkingSlot[]
@@ -57,7 +55,7 @@ model User {
   wallet                Wallet?
 
   @@index([role, isActive], name: "idx_users_role_is_active")
-  @@index([roleId], name: "idx_users_role_id")
+  @@index([pbmsRoleId], name: "idx_users_pbms_role_id")
   @@index([status], name: "idx_users_status")
   @@map("users")
 }
@@ -185,8 +183,6 @@ model SubscriptionPackage {
   packageName      String  @map("package_name") @db.VarChar(100)
   vehicleTypeId    String  @map("vehicle_type_id") @db.Uuid
   durationMonths   Int     @map("duration_months")
-  /// Số ngày gói; backfill duration_months * 30. Dùng cho end_date.
-  durationDays     Int     @default(30) @map("duration_days")
   price            Decimal @db.Decimal(15, 2)
   requireFixedSlot Boolean @default(false) @map("require_fixed_slot")
   description      String? @db.VarChar(500)
@@ -201,20 +197,17 @@ model SubscriptionPackage {
 }
 
 model MonthlySubscription {
-  id            String    @id @default(uuid()) @db.Uuid
-  userId        String    @map("user_id") @db.Uuid
-  vehicleTypeId String    @map("vehicle_type_id") @db.Uuid
-  licensePlate  String    @map("license_plate") @db.VarChar(15)
-  packageId     String    @map("package_id") @db.Uuid
-  startDate     DateTime  @map("start_date") @db.Timestamptz(6)
-  endDate       DateTime  @map("end_date") @db.Timestamptz(6)
-  price         Decimal   @db.Decimal(15, 2)
-  fixedSlotId   String?   @map("fixed_slot_id") @db.Uuid
+  id            String   @id @default(uuid()) @db.Uuid
+  userId        String   @map("user_id") @db.Uuid
+  vehicleTypeId String   @map("vehicle_type_id") @db.Uuid
+  licensePlate  String   @map("license_plate") @db.VarChar(15)
+  packageId     String   @map("package_id") @db.Uuid
+  startDate     DateTime @map("start_date") @db.Timestamptz(6)
+  endDate       DateTime @map("end_date") @db.Timestamptz(6)
+  price         Decimal  @db.Decimal(15, 2)
+  fixedSlotId   String?  @map("fixed_slot_id") @db.Uuid
   /// MonthlySubscriptionStatus: PendingPayment, Active, Cancelled, Expired. Default Active. varchar(30).
-  status        String    @default("Active") @db.VarChar(30)
-  /// false = hết hạn không tạo renew (cron). Không loại gói khỏi trạng thái đang hiệu lực theo ngày.
-  autoRenew     Boolean   @default(true) @map("auto_renew")
-  cancelledAt   DateTime? @map("cancelled_at") @db.Timestamptz(6)
+  status        String   @default("Active") @db.VarChar(30)
 
   user                  User                   @relation(fields: [userId], references: [id], onDelete: Restrict)
   vehicleType           VehicleType            @relation(fields: [vehicleTypeId], references: [id], onDelete: Restrict)
@@ -304,6 +297,10 @@ model ParkingSession {
   actualSlotId        String?   @map("actual_slot_id") @db.Uuid
   /// SessionStatus: Active, Completed, Exception. Default Active. varchar(15).
   status              String    @default("Active") @db.VarChar(15)
+  /// Thời điểm khách thanh toán trước trên app (PrepaidCheckout thành công).
+  prepaidAt           DateTime? @map("prepaid_at") @db.Timestamptz(6)
+  /// Mã ra cổng sinh sau khi thanh toán trước; hết hiệu lực khi phiên đóng.
+  exitPassCode        String?   @map("exit_pass_code") @db.VarChar(12)
 
   reservation     Reservation?     @relation(fields: [reservationId], references: [id], onDelete: SetNull)
   driverUser      User?            @relation("SessionDriver", fields: [driverUserId], references: [id], onDelete: SetNull)
@@ -331,18 +328,18 @@ model Payment {
   amount               Decimal  @db.Decimal(15, 2)
   /// PaymentMethod: PayOS, Cash, Wallet. required varchar(20).
   paymentMethod        String   @map("payment_method") @db.VarChar(20)
-  /// PaymentType: Deposit, CheckoutFee, SubscriptionFee, SubscriptionRenewal, WalletTopUp. varchar(30) nullable.
+  /// PaymentType: Deposit, CheckoutFee, SubscriptionFee, SubscriptionRenewal, WalletTopUp, PrepaidCheckout. varchar(30) nullable.
   paymentType          String?  @map("payment_type") @db.VarChar(30)
   paymentTime          DateTime @map("payment_time") @db.Timestamptz(6)
   /// PaymentStatus: Pending, Success, Failed. Default Pending. varchar(10).
   paymentStatus        String   @default("Pending") @map("payment_status") @db.VarChar(10)
   transactionReference String?  @map("transaction_reference") @db.VarChar(100)
 
-  user               User?                @relation(fields: [userId], references: [id], onDelete: SetNull)
-  session            ParkingSession?      @relation(fields: [sessionId], references: [id], onDelete: SetNull)
-  reservation        Reservation?         @relation(fields: [reservationId], references: [id], onDelete: SetNull)
-  subscription       MonthlySubscription? @relation(fields: [subscriptionId], references: [id], onDelete: SetNull)
-  walletTransactions WalletTransaction[]
+  user         User?                @relation(fields: [userId], references: [id], onDelete: SetNull)
+  session      ParkingSession?      @relation(fields: [sessionId], references: [id], onDelete: SetNull)
+  reservation  Reservation?         @relation(fields: [reservationId], references: [id], onDelete: SetNull)
+  subscription MonthlySubscription? @relation(fields: [subscriptionId], references: [id], onDelete: SetNull)
+  walletTransaction WalletTransaction?
 
   @@index([userId], name: "idx_payments_user_id")
   @@index([sessionId], name: "idx_payments_session_id")
@@ -351,37 +348,6 @@ model Payment {
   @@index([transactionReference], name: "idx_payments_transaction_reference")
   @@index([paymentStatus], name: "idx_payments_payment_status")
   @@map("payments")
-}
-
-model Wallet {
-  id        String   @id @default(uuid()) @db.Uuid
-  userId    String   @unique @map("user_id") @db.Uuid
-  balance   Decimal  @default(0) @db.Decimal(15, 2)
-  createdAt DateTime @default(now()) @map("created_at") @db.Timestamptz(6)
-  updatedAt DateTime @updatedAt @map("updated_at") @db.Timestamptz(6)
-
-  user         User                @relation(fields: [userId], references: [id], onDelete: Restrict)
-  transactions WalletTransaction[]
-
-  @@map("wallets")
-}
-
-model WalletTransaction {
-  id           String   @id @default(uuid()) @db.Uuid
-  walletId     String   @map("wallet_id") @db.Uuid
-  paymentId    String?  @unique @map("payment_id") @db.Uuid
-  /// WalletTransactionType: TopUp, SubscriptionFee.
-  type         String   @db.VarChar(30)
-  /// Dương = cộng ví, âm = trừ ví.
-  amount       Decimal  @db.Decimal(15, 2)
-  balanceAfter Decimal  @map("balance_after") @db.Decimal(15, 2)
-  createdAt    DateTime @default(now()) @map("created_at") @db.Timestamptz(6)
-
-  wallet  Wallet   @relation(fields: [walletId], references: [id], onDelete: Restrict)
-  payment Payment? @relation(fields: [paymentId], references: [id], onDelete: SetNull)
-
-  @@index([walletId], name: "idx_wallet_transactions_wallet_id")
-  @@map("wallet_transactions")
 }
 
 model IncidentReport {
@@ -406,4 +372,37 @@ model IncidentReport {
   @@index([sessionId], name: "idx_incident_reports_session_id")
   @@index([status], name: "idx_incident_reports_status")
   @@map("incident_reports")
+}
+
+/// Ví trả trước của khách hàng: nạp qua PayOS, dùng để thanh toán phí gửi xe.
+model Wallet {
+  id        String   @id @default(uuid()) @db.Uuid
+  userId    String   @unique @map("user_id") @db.Uuid
+  balance   Decimal  @default(0) @db.Decimal(15, 2)
+  createdAt DateTime @default(now()) @map("created_at") @db.Timestamptz(6)
+  updatedAt DateTime @updatedAt @map("updated_at") @db.Timestamptz(6)
+
+  user         User                @relation(fields: [userId], references: [id], onDelete: Cascade)
+  transactions WalletTransaction[]
+
+  @@map("wallets")
+}
+
+model WalletTransaction {
+  id           String   @id @default(uuid()) @db.Uuid
+  walletId     String   @map("wallet_id") @db.Uuid
+  /// WalletTransactionType: TopUp, Payment. varchar(15).
+  type         String   @db.VarChar(15)
+  /// Số tiền dương; chiều cộng/trừ theo `type`.
+  amount       Decimal  @db.Decimal(15, 2)
+  balanceAfter Decimal  @map("balance_after") @db.Decimal(15, 2)
+  paymentId    String?  @unique @map("payment_id") @db.Uuid
+  description  String?  @db.VarChar(255)
+  createdAt    DateTime @default(now()) @map("created_at") @db.Timestamptz(6)
+
+  wallet  Wallet   @relation(fields: [walletId], references: [id], onDelete: Cascade)
+  payment Payment? @relation(fields: [paymentId], references: [id], onDelete: SetNull)
+
+  @@index([walletId, createdAt], name: "idx_wallet_transactions_wallet_created")
+  @@map("wallet_transactions")
 }

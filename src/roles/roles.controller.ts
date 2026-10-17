@@ -12,7 +12,7 @@ import { RolesService } from './roles.service';
 @ApiTags('PBMS Role')
 @ApiBearerAuth('JWT-auth')
 @UseGuards(PbmsRolesGuard)
-@PbmsRoles('admin')
+@PbmsRoles('Admin', 'admin')
 @UseInterceptors(PbmsStatusInterceptor)
 @Controller('api/Role')
 export class RolesController {

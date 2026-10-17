@@ -13,17 +13,29 @@ import {
   toMoney,
 } from '../common/pbms-fields';
 import { isMotorbikeType } from '../common/license-plate';
-import { WalletsService } from '../wallets/wallets.service';
+import { PayosService } from '../integrations/payos-files.service';
+import { issueExitPass } from '../common/exit-pass';
+import { WalletService } from './wallet.service';
 
 const METHODS = ['PayOS', 'Cash', 'Wallet'];
 const STATUSES = ['Pending', 'Success', 'Failed'];
-const TYPES = ['Deposit', 'CheckoutFee', 'SubscriptionFee', 'SubscriptionRenewal', 'WalletTopUp'];
+const TYPES = [
+  'Deposit',
+  'CheckoutFee',
+  'SubscriptionFee',
+  'SubscriptionRenewal',
+  'WalletTopUp',
+  'PrepaidCheckout',
+];
+/** Loại thanh toán tạo ra tiền/quyền ra bãi: chỉ tin trạng thái tra trực tiếp từ PayOS. */
+const VERIFIED_TYPES = ['WalletTopUp', 'PrepaidCheckout'];
 
 @Injectable()
 export class PaymentsService {
   constructor(
     private readonly prisma: PrismaService,
-    private readonly wallets: WalletsService,
+    private readonly payos: PayosService,
+    private readonly wallet: WalletService,
   ) {}
 
   mapPayment(payment: {
@@ -182,23 +194,58 @@ export class PaymentsService {
     if (!payment || !sameStatus(payment.paymentStatus, 'Pending')) {
       return;
     }
+    if (VERIFIED_TYPES.some((t) => sameStatus(payment.paymentType ?? '', t))) {
+      // Webhook không có chữ ký được kiểm tra: hỏi lại PayOS trước khi cộng tiền/cấp mã ra.
+      await this.syncPayosPayment(payment.id);
+      return;
+    }
     const code = String(body.code ?? body.Code ?? '');
     const success = code === '00';
-    const marked = await this.prisma.payment.updateMany({
-      where: { id: payment.id, paymentStatus: 'Pending' },
+    await this.prisma.payment.update({
+      where: { id: payment.id },
       data: {
         paymentStatus: success ? 'Success' : 'Failed',
         paymentTime: new Date(),
       },
     });
-    if (marked.count !== 1) {
-      return;
-    }
     if (success) {
       await this.dispatchPayment(payment.id);
     } else {
       await this.restoreCheckoutSession(payment.sessionId);
     }
+  }
+
+  /**
+   * Đồng bộ một thanh toán PayOS đang chờ bằng cách tra cứu trực tiếp PayOS.
+   * Dùng cho nút "Tôi đã thanh toán" trên app (webhook có thể chưa tới).
+   */
+  async syncPayosPayment(paymentId: string): Promise<string> {
+    const payment = await this.prisma.payment.findUnique({ where: { id: paymentId } });
+    if (!payment) {
+      return 'Failed';
+    }
+    if (
+      !sameStatus(payment.paymentStatus, 'Pending') ||
+      !sameStatus(payment.paymentMethod, 'PayOS') ||
+      !payment.transactionReference
+    ) {
+      return payment.paymentStatus;
+    }
+    const remote = await this.payos.getPaymentStatus(payment.transactionReference);
+    const paid = remote.status === 'PAID' && remote.amountPaid >= Number(payment.amount);
+    const closed = remote.status === 'CANCELLED' || remote.status === 'EXPIRED';
+    if (!paid && !closed) {
+      return 'Pending';
+    }
+    // Chuyển trạng thái có điều kiện: webhook và nút kiểm tra chạy song song chỉ xử lý một lần.
+    const moved = await this.prisma.payment.updateMany({
+      where: { id: payment.id, paymentStatus: 'Pending' },
+      data: { paymentStatus: paid ? 'Success' : 'Failed', paymentTime: new Date() },
+    });
+    if (moved.count === 1 && paid) {
+      await this.dispatchPayment(payment.id);
+    }
+    return paid ? 'Success' : 'Failed';
   }
 
   async dispatchPayment(paymentId: string): Promise<void> {
@@ -242,12 +289,14 @@ export class PaymentsService {
       return;
     }
     if (sameStatus(type, 'WalletTopUp')) {
-      if (!payment.userId) {
-        throw new Error(`Không thể cộng ví cho thanh toán ${payment.id}: thiếu UserId.`);
+      await this.wallet.creditTopUp(payment);
+      return;
+    }
+    if (sameStatus(type, 'PrepaidCheckout')) {
+      if (!payment.sessionId) {
+        throw new Error(`Thanh toán trước ${payment.id} thiếu SessionId.`);
       }
-      await this.prisma.$transaction(async (tx) => {
-        await this.wallets.creditFromPayment(tx, payment);
-      });
+      await issueExitPass(this.prisma, payment.sessionId);
       return;
     }
     throw new Error(`Không có luồng xử lý cho loại thanh toán '${payment.paymentType}'.`);
@@ -304,12 +353,21 @@ export class PaymentsService {
 
     const start = new Date();
     const end = new Date(start);
-    end.setUTCDate(end.getUTCDate() + subscription.package.durationDays);
+    end.setUTCMonth(end.getUTCMonth() + subscription.package.durationMonths);
+    const customerRole = await this.prisma.role.findFirst({
+      where: { roleName: { equals: 'Customer', mode: 'insensitive' } },
+    });
     await this.prisma.$transaction(async (tx) => {
       await tx.monthlySubscription.update({
         where: { id: subscriptionId },
-        data: { status: 'Active', startDate: start, endDate: end, autoRenew: true },
+        data: { status: 'Active', startDate: start, endDate: end },
       });
+      if (subscription.user.pbmsRole?.roleName === 'User' && customerRole) {
+        await tx.user.update({
+          where: { id: subscription.userId },
+          data: { pbmsRoleId: customerRole.id },
+        });
+      }
     });
   }
 
@@ -337,7 +395,7 @@ export class PaymentsService {
     const oldEnd = subscription.endDate;
     const start = oldEnd < new Date() ? new Date() : oldEnd;
     const newEnd = new Date(start);
-    newEnd.setUTCDate(newEnd.getUTCDate() + pkg.durationDays);
+    newEnd.setUTCMonth(newEnd.getUTCMonth() + pkg.durationMonths);
     await this.prisma.$transaction([
       this.prisma.monthlySubscription.update({
         where: { id: subscription.id },
@@ -443,7 +501,7 @@ export class PaymentsService {
     if (sameStatus(normalizedType, 'Deposit') && !reservationId) {
       return this.invalid('Thanh toán đặt cọc cần ReservationId');
     }
-    if (sameStatus(normalizedType, 'CheckoutFee') && !sessionId) {
+    if ((sameStatus(normalizedType, 'CheckoutFee') || sameStatus(normalizedType, 'PrepaidCheckout')) && !sessionId) {
       return this.invalid('Thanh toán checkout cần SessionId');
     }
     if (

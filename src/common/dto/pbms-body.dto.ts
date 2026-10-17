@@ -12,7 +12,7 @@ export class PbmsBodyDto {
   roleId?: unknown;
   @ApiPropertyOptional() @IsOptional() RoleId?: unknown;
 
-  @ApiPropertyOptional({ type: String, example: 'staff' })
+  @ApiPropertyOptional({ type: String, example: 'Staff' })
   @IsOptional()
   roleName?: unknown;
   @ApiPropertyOptional() @IsOptional() RoleName?: unknown;

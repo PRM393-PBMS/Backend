@@ -12,7 +12,7 @@ import { UsersService } from './users.service';
 @ApiTags('PBMS User')
 @ApiBearerAuth('JWT-auth')
 @UseGuards(PbmsRolesGuard)
-@PbmsRoles('admin', 'manager')
+@PbmsRoles('Admin', 'Manager')
 @UseInterceptors(PbmsStatusInterceptor)
 @Controller('api/User')
 export class UsersController {

@@ -31,11 +31,7 @@ export class PaymentsController {
   @Public()
   @Post('payos-webhook')
   @HttpCode(200)
-  @ApiOperation({
-    summary: 'Webhook PayOS (thành công: HTTP 200 body rỗng)',
-    description:
-      'Public (không JWT) — chỉ PayOS gọi. Xác nhận thanh toán: nạp ví (`WalletTopUp` cộng `wallets.balance` + ghi Credit) hoặc gói tháng/gia hạn. Thành công: HTTP 200, body rỗng (không envelope PBMS). Lỗi xử lý: HTTP 500 JSON `{ statusCode, message, isSuccess: false }`. FE không gọi API này; FE poll ví/gói hoặc đợi redirect PayOS rồi GET lại.',
-  })
+  @ApiOperation({ summary: 'Webhook PayOS (thành công: HTTP 200 body rỗng)' })
   async webhook(@Body() body: Record<string, unknown>, @Res() res: Response): Promise<void> {
     try {
       await this.payments.handleWebhook(body ?? {});
@@ -55,7 +51,7 @@ export class PaymentsController {
 
   @ApiBearerAuth('JWT-auth')
   @UseGuards(PbmsRolesGuard)
-  @PbmsRoles('manager')
+  @PbmsRoles('Manager')
   @UseInterceptors(PbmsStatusInterceptor)
   @Get()
   @ApiOperation({ summary: 'Danh sách thanh toán' })
@@ -66,7 +62,7 @@ export class PaymentsController {
 
   @ApiBearerAuth('JWT-auth')
   @UseGuards(PbmsRolesGuard)
-  @PbmsRoles('manager')
+  @PbmsRoles('Manager')
   @UseInterceptors(PbmsStatusInterceptor)
   @Get(':id')
   @ApiOperation({ summary: 'Chi tiết thanh toán' })
@@ -77,7 +73,7 @@ export class PaymentsController {
 
   @ApiBearerAuth('JWT-auth')
   @UseGuards(PbmsRolesGuard)
-  @PbmsRoles('manager')
+  @PbmsRoles('Manager')
   @UseInterceptors(PbmsStatusInterceptor)
   @Post()
   @ApiOperation({ summary: 'Tạo thanh toán' })
@@ -98,7 +94,7 @@ export class PaymentsController {
 
   @ApiBearerAuth('JWT-auth')
   @UseGuards(PbmsRolesGuard)
-  @PbmsRoles('manager')
+  @PbmsRoles('Manager')
   @UseInterceptors(PbmsStatusInterceptor)
   @Put()
   @ApiOperation({ summary: 'Cập nhật thanh toán' })
@@ -115,7 +111,7 @@ export class PaymentsController {
 
   @ApiBearerAuth('JWT-auth')
   @UseGuards(PbmsRolesGuard)
-  @PbmsRoles('manager')
+  @PbmsRoles('Manager')
   @UseInterceptors(PbmsStatusInterceptor)
   @Delete(':id')
   @ApiOperation({ summary: 'Xóa thanh toán' })

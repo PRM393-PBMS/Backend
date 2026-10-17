@@ -1,31 +1,22 @@
 import { Injectable } from '@nestjs/common';
 import { Prisma, UserRole } from '@prisma/client';
-import { extname } from 'path';
 import { PrismaService } from '../prisma/prisma.service';
 import { HashingService } from '../auth/services/hashing.service';
 import { PbmsResponseDto } from '../common/dto/pbms-response.dto';
-import {isEmptyGuid,parseRoleId,pbmsPick,pbmsPickGuid,} from '../common/pbms-fields';
-import { FilesService } from '../integrations/payos-files.service';
-import type { UploadedImage } from '../common/uploaded-image';
-
-const userPublicInclude = { pbmsRole: true, wallet: { select: { id: true } } } as const;
+import { isEmptyGuid, pbmsPick, pbmsPickGuid } from '../common/pbms-fields';
 
 const EMAIL_RE = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
-const AVATAR_MAX_BYTES = 5 * 1024 * 1024;
-const AVATAR_MIME = new Set(['image/jpeg', 'image/png', 'image/webp']);
-const AVATAR_EXT = new Set(['.jpg', '.jpeg', '.png', '.webp']);
 
 @Injectable()
 export class UsersService {
   constructor(
     private readonly prisma: PrismaService,
     private readonly hashing: HashingService,
-    private readonly files: FilesService,
   ) {}
 
   async getAll(): Promise<PbmsResponseDto> {
     const users = await this.prisma.user.findMany({
-      include: userPublicInclude,
+      include: { pbmsRole: true },
       orderBy: { createdAt: 'desc' },
       take: 1000,
     });
@@ -41,7 +32,7 @@ export class UsersService {
     }
     const user = await this.prisma.user.findUnique({
       where: { id },
-      include: userPublicInclude,
+      include: { pbmsRole: true },
     });
     if (!user) {
       return PbmsResponseDto.fail('Không tìm thấy người dùng', 404);
@@ -55,7 +46,7 @@ export class UsersService {
     }
     const user = await this.prisma.user.findUnique({
       where: { id: userId },
-      include: userPublicInclude,
+      include: { pbmsRole: true },
     });
     if (!user) {
       return PbmsResponseDto.fail('Không tìm thấy người dùng', 404);
@@ -69,7 +60,7 @@ export class UsersService {
     }
     const user = await this.prisma.user.findUnique({
       where: { id: userId },
-      include: userPublicInclude,
+      include: { pbmsRole: true },
     });
     if (!user) {
       return PbmsResponseDto.fail('Không tìm thấy người dùng', 404);
@@ -113,7 +104,7 @@ export class UsersService {
       const updated = await this.prisma.user.update({
         where: { id: userId },
         data,
-        include: userPublicInclude,
+        include: { pbmsRole: true },
       });
       return PbmsResponseDto.ok('Cập nhật thông tin cá nhân thành công', this.mapUser(updated));
     } catch (error: unknown) {
@@ -122,39 +113,6 @@ export class UsersService {
       }
       const message = error instanceof Error ? error.message : 'unknown';
       return PbmsResponseDto.fail(`Lỗi cập nhật thông tin cá nhân: ${message}`, 500);
-    }
-  }
-
-  async updateAvatar(
-    userId: string,
-    file: UploadedImage | undefined,
-    requestBaseUrl: string,
-  ): Promise<PbmsResponseDto> {
-    if (isEmptyGuid(userId)) {
-      return PbmsResponseDto.fail('Vui lòng đăng nhập', 401);
-    }
-    const imageErr = this.validateAvatarFile(file);
-    if (imageErr || !file) {
-      return imageErr ?? PbmsResponseDto.fail('Vui lòng gửi file ảnh');
-    }
-    const user = await this.prisma.user.findUnique({
-      where: { id: userId },
-      include: userPublicInclude,
-    });
-    if (!user) {
-      return PbmsResponseDto.fail('Không tìm thấy người dùng', 404);
-    }
-    try {
-      const upload = await this.files.saveUpload(file, requestBaseUrl, 'avatars');
-      const updated = await this.prisma.user.update({
-        where: { id: userId },
-        data: { avatarUrl: upload.imageUrl },
-        include: userPublicInclude,
-      });
-      return PbmsResponseDto.ok('Cập nhật ảnh đại diện thành công', this.mapUser(updated));
-    } catch (error: unknown) {
-      const message = error instanceof Error ? error.message : 'unknown';
-      return PbmsResponseDto.fail(`Lỗi cập nhật ảnh đại diện: ${message}`, 500);
     }
   }
 
@@ -188,8 +146,8 @@ export class UsersService {
       return PbmsResponseDto.fail('Vui lòng nhập mật khẩu');
     }
     const roleRes = await this.resolveAssignableRole(
-    pbmsPickGuid(dto, 'roleId', 'RoleId'),
-    pbmsPick(dto, 'roleName', 'RoleName'),
+      pbmsPickGuid(dto, 'roleId', 'RoleId'),
+      pbmsPick(dto, 'roleName', 'RoleName'),
     );
     if (roleRes.error) {
       return roleRes.error;
@@ -210,10 +168,10 @@ export class UsersService {
           phoneNumber,
           status: 'Active',
           isActive: true,
-          roleId: roleRes.role!.id,
+          pbmsRoleId: roleRes.role!.id,
           role: this.nestRole(roleRes.role!.roleName),
         },
-        include: userPublicInclude,
+        include: { pbmsRole: true },
       });
       return PbmsResponseDto.ok('Tạo người dùng thành công', this.mapUser(user), 201);
     } catch (error: unknown) {
@@ -234,7 +192,7 @@ export class UsersService {
     }
     const user = await this.prisma.user.findUnique({
       where: { id: userId },
-      include: userPublicInclude,
+      include: { pbmsRole: true },
     });
     if (!user) {
       return PbmsResponseDto.fail('Không tìm thấy người dùng', 404);
@@ -269,11 +227,11 @@ export class UsersService {
           email,
           fullName: pbmsPick(dto, 'fullName', 'FullName').trim() || 'Chưa đặt tên',
           phoneNumber,
-          roleId: roleRes.role!.id,
+          pbmsRoleId: roleRes.role!.id,
           role: this.nestRole(roleRes.role!.roleName),
           ...(password ? { passwordHash: await this.hashing.hash(password) } : {}),
         },
-        include: userPublicInclude,
+        include: { pbmsRole: true },
       });
       return PbmsResponseDto.ok('Cập nhật người dùng thành công', this.mapUser(updated));
     } catch (error: unknown) {
@@ -301,7 +259,7 @@ export class UsersService {
     }
     const user = await this.prisma.user.findUnique({
       where: { id },
-      include: userPublicInclude,
+      include: { pbmsRole: true },
     });
     if (!user) {
       return PbmsResponseDto.fail('Không tìm thấy người dùng', 404);
@@ -312,7 +270,7 @@ export class UsersService {
     const updated = await this.prisma.user.update({
       where: { id },
       data: { status: normalized, isActive: normalized === 'Active' },
-      include: userPublicInclude,
+      include: { pbmsRole: true },
     });
     return PbmsResponseDto.ok('Cập nhật trạng thái người dùng thành công', this.mapUser(updated));
   }
@@ -323,7 +281,7 @@ export class UsersService {
     }
     const user = await this.prisma.user.findUnique({
       where: { id },
-      include: userPublicInclude,
+      include: { pbmsRole: true },
     });
     if (!user) {
       return PbmsResponseDto.fail('Không tìm thấy người dùng', 404);
@@ -334,7 +292,7 @@ export class UsersService {
     const updated = await this.prisma.user.update({
       where: { id },
       data: { status: 'Inactive', isActive: false },
-      include: userPublicInclude,
+      include: { pbmsRole: true },
     });
     return PbmsResponseDto.ok('Xóa người dùng thành công', this.mapUser(updated));
   }
@@ -346,9 +304,7 @@ export class UsersService {
     fullName: string | null;
     phoneNumber: string | null;
     status: string | null;
-    roleId: string;
-    avatarUrl: string | null;
-    wallet?: { id: string } | null;
+    pbmsRoleId: string | null;
     pbmsRole: { roleName: string } | null;
     createdAt: Date;
     updatedAt: Date;
@@ -360,27 +316,11 @@ export class UsersService {
       fullName: user.fullName ?? '',
       phoneNumber: user.phoneNumber,
       status: user.status ?? 'Active',
-      roleId: user.roleId,
-      avatarUrl: user.avatarUrl ?? null,
-      walletId: user.wallet?.id ?? null,
+      roleId: user.pbmsRoleId ?? '00000000-0000-0000-0000-000000000000',
+      roleName: user.pbmsRole?.roleName ?? 'Chưa phân quyền',
       createdAt: user.createdAt,
       updatedAt: user.updatedAt,
     };
-  }
-
-  private validateAvatarFile(file: UploadedImage | undefined): PbmsResponseDto | null {
-    if (!file?.buffer?.length) {
-      return PbmsResponseDto.fail('Vui lòng gửi file ảnh');
-    }
-    if (file.buffer.length > AVATAR_MAX_BYTES) {
-      return PbmsResponseDto.fail('Ảnh đại diện không được vượt quá 5MB');
-    }
-    const ext = extname(file.originalname || '').toLowerCase();
-    const mime = (file.mimetype ?? '').toLowerCase();
-    if (!AVATAR_EXT.has(ext) || !AVATAR_MIME.has(mime)) {
-      return PbmsResponseDto.fail('Ảnh đại diện chỉ nhận JPEG, PNG hoặc WebP');
-    }
-    return null;
   }
 
   private validateUserFields(userName: string, email: string): PbmsResponseDto | null {
@@ -396,51 +336,23 @@ export class UsersService {
     return null;
   }
 
-private async resolveAssignableRole(roleId: string, roleName: string) {
-  const rawId = roleId.trim();
-  const name = roleName.trim();
-
-  if (!rawId && !name) {
-    return {
-      role: null,
-      error: PbmsResponseDto.fail('Vui lòng chọn quyền cho người dùng'),
-    };
+  private async resolveAssignableRole(roleId: string, roleName: string) {
+    if (isEmptyGuid(roleId) && !roleName.trim()) {
+      return { role: null, error: PbmsResponseDto.fail('Vui lòng chọn quyền cho người dùng') };
+    }
+    const role = !isEmptyGuid(roleId)
+      ? await this.prisma.role.findUnique({ where: { id: roleId } })
+      : await this.prisma.role.findFirst({
+          where: { roleName: { equals: roleName.trim(), mode: 'insensitive' } },
+        });
+    if (!role) {
+      return { role: null, error: PbmsResponseDto.fail('Quyền người dùng không tồn tại', 404) };
+    }
+    if (this.isAdmin(role.roleName)) {
+      return { role: null, error: PbmsResponseDto.fail('Không được tạo hoặc gán quyền admin') };
+    }
+    return { role, error: null };
   }
-
-  const id = parseRoleId(rawId);
-
-  if (rawId && !id) {
-    return {
-      role: null,
-      error: PbmsResponseDto.fail('RoleId phải là UUID hợp lệ'),
-    };
-  }
-
-  const role = id
-    ? await this.prisma.role.findUnique({
-        where: { id },
-      })
-    : await this.prisma.role.findFirst({
-        where: {
-          roleName: { equals: name, mode: 'insensitive' },
-        },
-      });
-
-  if (!role) {
-    return {
-      role: null,
-      error: PbmsResponseDto.fail('Quyền người dùng không tồn tại', 404),
-    };
-  }
-  if (this.isAdmin(role.roleName)) {
-    return {
-      role: null,
-      error: PbmsResponseDto.fail('Không được tạo hoặc gán quyền admin'),
-    };
-  }
-
-  return { role, error: null };
-}
 
   private async validateDuplicates(
     userName: string,

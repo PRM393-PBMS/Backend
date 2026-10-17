@@ -56,14 +56,13 @@ export class PayosService {
     const returnUrl = process.env.PAYOS_RETURN_URL ?? 'http://localhost:5173/payment-success';
     const cancelUrl = process.env.PAYOS_CANCEL_URL ?? 'http://localhost:5173/payment-cancel';
     const amount = Math.round(Number(payment.amount));
-    const prefix =
-      payment.paymentType === 'CheckoutFee'
-        ? 'PARK'
-        : payment.paymentType === 'Deposit'
-          ? 'RES'
-          : payment.paymentType === 'WalletTopUp'
-            ? 'WAL'
-            : 'SUB';
+    const prefixes: Record<string, string> = {
+      CheckoutFee: 'PARK',
+      PrepaidCheckout: 'EXIT',
+      Deposit: 'RES',
+      WalletTopUp: 'WAL',
+    };
+    const prefix = prefixes[payment.paymentType ?? ''] ?? 'SUB';
     const description = `${prefix}-${payment.id.replace(/-/g, '').slice(0, 8)}`.slice(0, 25);
     const signature = this.signCreate(checksumKey, {
       amount,
@@ -150,6 +149,31 @@ export class PayosService {
       paymentLinkId,
       qrCode: json.data?.qrCode ?? '',
       orderCode,
+    };
+  }
+
+  /**
+   * Hỏi trực tiếp PayOS trạng thái đơn (không tin body webhook).
+   * status: PENDING | PROCESSING | PAID | CANCELLED | EXPIRED.
+   */
+  async getPaymentStatus(orderCode: string): Promise<{ status: string; amount: number; amountPaid: number }> {
+    const { clientId, apiKey } = this.requireConfig();
+    const response = await fetch(
+      `https://api-merchant.payos.vn/v2/payment-requests/${encodeURIComponent(orderCode)}`,
+      { headers: { 'x-client-id': clientId, 'x-api-key': apiKey } },
+    );
+    const json = (await response.json()) as {
+      code?: string;
+      desc?: string;
+      data?: { status?: string; amount?: number; amountPaid?: number };
+    };
+    if (!response.ok || json.code !== '00' || !json.data) {
+      throw new Error(json.desc || 'Không tra cứu được trạng thái thanh toán PayOS');
+    }
+    return {
+      status: String(json.data.status ?? 'PENDING').toUpperCase(),
+      amount: Number(json.data.amount ?? 0),
+      amountPaid: Number(json.data.amountPaid ?? 0),
     };
   }
 

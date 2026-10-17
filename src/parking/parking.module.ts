@@ -1,11 +1,12 @@
 import { Module } from '@nestjs/common';
 import { AuthModule } from '../auth/auth.module';
+import { PaymentsModule } from '../payments/payments.module';
 import { ParkingOperationsController, ParkingSessionsController } from './parking.controllers';
 import { ParkingOperationsService } from './parking-operations.service';
 import { ParkingSessionsService } from './parking-sessions.service';
 
 @Module({
-  imports: [AuthModule],
+  imports: [AuthModule, PaymentsModule],
   controllers: [ParkingSessionsController, ParkingOperationsController],
   providers: [ParkingSessionsService, ParkingOperationsService],
 })

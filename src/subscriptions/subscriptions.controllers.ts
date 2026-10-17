@@ -9,7 +9,7 @@ import {
   UseGuards,
   UseInterceptors,
 } from '@nestjs/common';
-import { ApiBearerAuth, ApiOperation, ApiParam, ApiTags } from '@nestjs/swagger';
+import { ApiBearerAuth, ApiOperation, ApiTags } from '@nestjs/swagger';
 import { GetPbmsRole } from '../auth/common/decorators/get-pbms-role.decorator';
 import { GetPbmsUserId } from '../auth/common/decorators/get-pbms-user-id.decorator';
 import { PbmsRoles } from '../auth/common/decorators/pbms-roles.decorator';
@@ -38,33 +38,20 @@ export class MonthlySubscriptionsController {
   constructor(private readonly subscriptions: MonthlySubscriptionsService) {}
 
   @Post('register')
-  @ApiOperation({
-    summary: 'Đăng ký gói tháng: paymentMethod PayOS (mặc định) hoặc Wallet',
-    description: [
-      'JWT bắt buộc. Body: `packageId`, `licensePlate` (4–15 chữ/số) bắt buộc; `vehicleTypeId` tuỳ chọn; `fixedSlotId` khi gói ô tô `requireFixedSlot`; `paymentMethod` `PayOS` (mặc định nếu trống) hoặc `Wallet`. Khác hai giá trị → `Phương thức thanh toán gói chỉ được là PayOS hoặc Wallet`.',
-      '**PayOS** (example Swagger): gói `PendingPayment`. Message `Tạo đăng ký gói thành công`. `result`: `subscriptionId`, `paymentId`, `paymentMethod=PayOS`, `orderCode`, `amount`, `paymentLinkId`, `paymentUrl`, `status=PendingPayment`. FE mở `paymentUrl`; `Active` sau webhook.',
-      '**Wallet**: trừ ví ngay. Message `Thanh toán gói bằng ví thành công`. `result`: `subscriptionId`, `paymentId`, `paymentMethod=Wallet`, `amount`, `walletId`, `walletBalance` (sau trừ), `status=Active`. Không `paymentUrl`.',
-      'Lỗi: thiếu gói/biển; biển không hợp lệ; 404 gói ngừng bán; biển đã có gói Active/PendingPayment; ô không hợp lệ / xe máy không dùng `fixedSlotId`; 409 hết ô cư dân; 401; 400 số dư không đủ (`result` có `paymentMethod`, `walletId`, `walletBalance`, `amount` — không tạo gói); 500.',
-    ].join('\n\n'),
+  @ApiOperation({ summary: 'Đăng ký gói tháng (tạo thanh toán PayOS)' })
+  @ApiPbmsBodyExample(PbmsBodyDto, {
+    packageId: ids.packageId,
+    licensePlate: '59A12345',
+    vehicleTypeId: ids.vehicleTypeId,
+    fixedSlotId: ids.slotId,
   })
-  @ApiPbmsBodyExample(
-    PbmsBodyDto,
-    {
-      packageId: ids.packageId,
-      licensePlate: '59A12345',
-      vehicleTypeId: ids.vehicleTypeId,
-      fixedSlotId: ids.slotId,
-      paymentMethod: 'PayOS',
-    },
-    '`packageId`, `licensePlate` bắt buộc. `vehicleTypeId`/`fixedSlotId` theo loại gói. `paymentMethod` tùy chọn: `PayOS` | `Wallet`.',
-  )
   @ApiPbmsOkResponse('Tạo đăng ký gói thành công', subscriptionPaymentExample, 201)
   register(@GetPbmsUserId() userId: string, @Body() dto: PbmsBodyDto): Promise<PbmsResponseDto> {
     return this.subscriptions.register(userId, dto, true);
   }
 
   @Post()
-  @PbmsRoles('manager')
+  @PbmsRoles('Manager')
   @ApiOperation({ summary: 'Manager tạo gói tháng' })
   @ApiPbmsBodyExample(PbmsBodyDto, {
     userId: ids.userId,
@@ -85,7 +72,7 @@ export class MonthlySubscriptionsController {
   }
 
   @Get('user/:userId')
-  @PbmsRoles('manager')
+  @PbmsRoles('Manager')
   @ApiOperation({ summary: 'Gói tháng theo người dùng' })
   @ApiPbmsOkResponse('Lấy gói tháng theo người dùng thành công', [subscriptionExample])
   getByUser(@Param('userId') userId: string): Promise<PbmsResponseDto> {
@@ -93,7 +80,7 @@ export class MonthlySubscriptionsController {
   }
 
   @Get()
-  @PbmsRoles('manager')
+  @PbmsRoles('Manager')
   @ApiOperation({ summary: 'Danh sách gói tháng' })
   @ApiPbmsOkResponse('Lấy danh sách gói tháng thành công', [subscriptionExample])
   getAll(): Promise<PbmsResponseDto> {
@@ -101,31 +88,13 @@ export class MonthlySubscriptionsController {
   }
 
   @Post('payment/:subscriptionId')
-  @ApiParam({
-    name: 'subscriptionId',
-    description: 'UUID gói tháng (thường đang PendingPayment) thuộc user hiện tại',
-  })
-  @ApiOperation({
-    summary: 'Tạo lại thanh toán gói tháng: paymentMethod PayOS hoặc Wallet',
-    description: [
-      'JWT bắt buộc. Path `subscriptionId` thuộc user. Body `paymentMethod` tuỳ chọn: `PayOS` (mặc định nếu trống) hoặc `Wallet`. Dùng khi gói chưa `Active` (thường `PendingPayment`).',
-      '**PayOS:** tái sử dụng/tạo payment Pending. Message `Tạo thanh toán gói thành công`. `result` có `paymentUrl`, `paymentLinkId`, `orderCode`, `status` hiện tại.',
-      '**Wallet:** trừ ví, kích hoạt. Message `Thanh toán gói bằng ví thành công`. `result`: `walletId`, `walletBalance`, `status=Active`, không `paymentUrl`.',
-      'Lỗi: `paymentMethod` không hợp lệ; 404 gói; 403 không phải chủ; `Gói đã được kích hoạt`; 400 số dư ví không đủ; 500.',
-    ].join('\n\n'),
-  })
-  @ApiPbmsBodyExample(
-    PbmsBodyDto,
-    { paymentMethod: 'Wallet' },
-    '`paymentMethod` tùy chọn: `PayOS` | `Wallet`. Ví dụ thanh toán bằng số dư ví.',
-  )
+  @ApiOperation({ summary: 'Tạo lại thanh toán gói tháng' })
   @ApiPbmsOkResponse('Tạo thanh toán gói thành công', subscriptionPaymentExample)
   createPayment(
     @Param('subscriptionId') subscriptionId: string,
     @GetPbmsUserId() userId: string,
-    @Body() dto: PbmsBodyDto,
   ): Promise<PbmsResponseDto> {
-    return this.subscriptions.createPayment(subscriptionId, userId, dto);
+    return this.subscriptions.createPayment(subscriptionId, userId);
   }
 
   @Get(':id')
@@ -151,7 +120,7 @@ export class MonthlySubscriptionsController {
   }
 
   @Put(':id')
-  @PbmsRoles('manager')
+  @PbmsRoles('Manager')
   @ApiOperation({ summary: 'Cập nhật gói tháng' })
   @ApiPbmsBodyExample(PbmsBodyDto, {
     licensePlate: '59A12345',
@@ -166,7 +135,7 @@ export class MonthlySubscriptionsController {
   }
 
   @Delete(':id')
-  @PbmsRoles('manager')
+  @PbmsRoles('Manager')
   @ApiOperation({ summary: 'Xóa gói tháng' })
   @ApiPbmsOkResponse('Xóa gói tháng thành công', null)
   remove(@Param('id') id: string): Promise<PbmsResponseDto> {
@@ -183,7 +152,7 @@ export class SubscriptionRenewalsController {
   constructor(private readonly renewals: SubscriptionRenewalsService) {}
 
   @Post('direct-renew')
-  @PbmsRoles('manager')
+  @PbmsRoles('Manager')
   @ApiOperation({ summary: 'Gia hạn trực tiếp' })
   @ApiPbmsBodyExample(PbmsBodyDto, {
     subscriptionId: ids.subscriptionId,
@@ -219,7 +188,7 @@ export class SubscriptionRenewalsController {
   }
 
   @Get()
-  @PbmsRoles('manager')
+  @PbmsRoles('Manager')
   @ApiOperation({ summary: 'Danh sách gia hạn' })
   @ApiPbmsOkResponse('Lấy danh sách gia hạn thành công', [renewalExample])
   getAll(): Promise<PbmsResponseDto> {
@@ -238,7 +207,7 @@ export class SubscriptionRenewalsController {
   }
 
   @Put()
-  @PbmsRoles('manager')
+  @PbmsRoles('Manager')
   @ApiOperation({ summary: 'Cập nhật gia hạn' })
   @ApiPbmsBodyExample(PbmsBodyDto, {
     renewalId: ids.renewalId,
@@ -251,7 +220,7 @@ export class SubscriptionRenewalsController {
   }
 
   @Delete(':id')
-  @PbmsRoles('manager')
+  @PbmsRoles('Manager')
   @ApiOperation({ summary: 'Xóa gia hạn' })
   @ApiPbmsOkResponse('Xóa gia hạn thành công', null)
   remove(@Param('id') id: string): Promise<PbmsResponseDto> {
@@ -268,7 +237,7 @@ export class VehicleChangeRequestsController {
   constructor(private readonly requests: VehicleChangeRequestsService) {}
 
   @Post('change-vehicle')
-  @PbmsRoles('customer')
+  @PbmsRoles('Customer', 'User')
   @ApiOperation({ summary: 'Gửi yêu cầu đổi biển số' })
   @ApiPbmsBodyExample(PbmsBodyDto, {
     subscriptionId: ids.subscriptionId,
@@ -281,7 +250,7 @@ export class VehicleChangeRequestsController {
   }
 
   @Get('my-requests')
-  @PbmsRoles('customer')
+  @PbmsRoles('Customer', 'User')
   @ApiOperation({ summary: 'Yêu cầu đổi biển số của tôi' })
   @ApiPbmsOkResponse('Lấy yêu cầu đổi xe của tôi thành công', [vehicleChangeExample])
   getMine(@GetPbmsUserId() userId: string): Promise<PbmsResponseDto> {
@@ -289,7 +258,7 @@ export class VehicleChangeRequestsController {
   }
 
   @Get('change-vehicle')
-  @PbmsRoles('manager')
+  @PbmsRoles('Manager')
   @ApiOperation({ summary: 'Danh sách yêu cầu đổi biển số' })
   @ApiPbmsOkResponse('Lấy danh sách yêu cầu đổi xe thành công', [vehicleChangeExample])
   getAll(): Promise<PbmsResponseDto> {
@@ -297,7 +266,7 @@ export class VehicleChangeRequestsController {
   }
 
   @Put('change-vehicle/:id/approve')
-  @PbmsRoles('manager')
+  @PbmsRoles('Manager')
   @ApiOperation({ summary: 'Duyệt đổi biển số' })
   @ApiPbmsOkResponse('Duyệt yêu cầu đổi xe thành công', { ...vehicleChangeExample, status: 'Approved' })
   approve(@Param('id') id: string, @GetPbmsUserId() staffId: string): Promise<PbmsResponseDto> {
@@ -305,7 +274,7 @@ export class VehicleChangeRequestsController {
   }
 
   @Put('change-vehicle/:id/reject')
-  @PbmsRoles('manager')
+  @PbmsRoles('Manager')
   @ApiOperation({ summary: 'Từ chối đổi biển số' })
   @ApiPbmsBodyExample(PbmsBodyDto, { reason: 'Biển số không khớp giấy tờ' })
   @ApiPbmsOkResponse('Từ chối yêu cầu đổi xe thành công', {
@@ -333,7 +302,7 @@ export class VehicleChangeRequestsController {
   }
 
   @Put('change-vehicle/:id')
-  @PbmsRoles('customer')
+  @PbmsRoles('Customer', 'User')
   @ApiOperation({ summary: 'Cập nhật yêu cầu đổi biển số' })
   @ApiPbmsBodyExample(PbmsBodyDto, { newLicensePlate: '59B67890', reason: 'Đổi xe mới' })
   @ApiPbmsOkResponse('Cập nhật yêu cầu đổi xe thành công', vehicleChangeExample)
@@ -346,7 +315,7 @@ export class VehicleChangeRequestsController {
   }
 
   @Delete('change-vehicle/:id')
-  @PbmsRoles('customer')
+  @PbmsRoles('Customer', 'User')
   @ApiOperation({ summary: 'Xóa yêu cầu đổi biển số' })
   @ApiPbmsOkResponse('Xóa yêu cầu đổi xe thành công', null)
   remove(@Param('id') id: string, @GetPbmsUserId() userId: string): Promise<PbmsResponseDto> {

@@ -38,13 +38,14 @@ export class CreateUserDto {
 
   @ApiPropertyOptional() @IsOptional() @IsString() PhoneNumber?: string;
 
-  @ApiPropertyOptional({ type: Number, example: 2 })
+  @ApiPropertyOptional({ type: String, format: 'uuid', example: ids.roleStaffId })
   @IsOptional()
-  roleId?: number;
+  @IsString()
+  roleId?: string;
 
-  @ApiPropertyOptional() @IsOptional() RoleId?: number | string;
+  @ApiPropertyOptional() @IsOptional() @IsString() RoleId?: string;
 
-  @ApiPropertyOptional({ type: String, example: 'staff' })
+  @ApiPropertyOptional({ type: String, example: 'Staff' })
   @IsOptional()
   @IsString()
   roleName?: string;

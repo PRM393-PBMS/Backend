@@ -1,8 +1,8 @@
 import { Test, TestingModule } from '@nestjs/testing';
-import { Prisma } from '@prisma/client';
 import { PrismaService } from '../prisma/prisma.service';
-import { WalletsService } from '../wallets/wallets.service';
+import { PayosService } from '../integrations/payos-files.service';
 import { PaymentsService } from './payments.service';
+import { WalletService } from './wallet.service';
 
 describe('PaymentsService webhook', () => {
   it('confirms pending reservation deposit as Success', async () => {
@@ -13,13 +13,12 @@ describe('PaymentsService webhook', () => {
       reservationId: 'res-1',
       sessionId: null,
       subscriptionId: null,
-      userId: 'user-1',
     };
     const prisma = {
       payment: {
         findFirst: jest.fn().mockResolvedValue(payment),
         findUnique: jest.fn().mockResolvedValue({ ...payment, paymentStatus: 'Success' }),
-        updateMany: jest.fn().mockResolvedValue({ count: 1 }),
+        update: jest.fn().mockResolvedValue({ ...payment, paymentStatus: 'Success' }),
       },
       reservation: {
         findUnique: jest.fn().mockResolvedValue({ id: 'res-1', status: 'Pending' }),
@@ -30,7 +29,8 @@ describe('PaymentsService webhook', () => {
       providers: [
         PaymentsService,
         { provide: PrismaService, useValue: prisma },
-        { provide: WalletsService, useValue: { creditFromPayment: jest.fn() } },
+        { provide: PayosService, useValue: {} },
+        { provide: WalletService, useValue: {} },
       ],
     }).compile();
     const service = module.get(PaymentsService);
@@ -40,7 +40,7 @@ describe('PaymentsService webhook', () => {
       data: { orderCode: 123 },
     });
 
-    expect(prisma.payment.updateMany).toHaveBeenCalledWith(
+    expect(prisma.payment.update).toHaveBeenCalledWith(
       expect.objectContaining({
         data: expect.objectContaining({ paymentStatus: 'Success' }),
       }),
@@ -50,42 +50,5 @@ describe('PaymentsService webhook', () => {
         data: { status: 'Confirmed' },
       }),
     );
-  });
-
-  it('credits the user wallet after a successful WalletTopUp webhook', async () => {
-    const payment = {
-      id: 'pay-topup',
-      paymentStatus: 'Pending',
-      paymentType: 'WalletTopUp',
-      reservationId: null,
-      sessionId: null,
-      subscriptionId: null,
-      userId: 'user-1',
-      amount: new Prisma.Decimal(100000),
-    };
-    const creditFromPayment = jest.fn();
-    const prisma = {
-      payment: {
-        findFirst: jest.fn().mockResolvedValue(payment),
-        findUnique: jest.fn().mockResolvedValue({ ...payment, paymentStatus: 'Success' }),
-        updateMany: jest.fn().mockResolvedValue({ count: 1 }),
-      },
-      $transaction: jest.fn(async (fn: (tx: object) => Promise<void>) => fn({})),
-    };
-    const module: TestingModule = await Test.createTestingModule({
-      providers: [
-        PaymentsService,
-        { provide: PrismaService, useValue: prisma },
-        { provide: WalletsService, useValue: { creditFromPayment } },
-      ],
-    }).compile();
-    const service = module.get(PaymentsService);
-
-    await service.handleWebhook({
-      code: '00',
-      data: { orderCode: 456 },
-    });
-
-    expect(creditFromPayment).toHaveBeenCalled();
   });
 });

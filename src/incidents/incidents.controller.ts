@@ -37,7 +37,7 @@ export class IncidentsController {
   ) {}
 
   @UseGuards(PbmsRolesGuard)
-  @PbmsRoles('manager', 'staff')
+  @PbmsRoles('Manager', 'Staff')
   @UseInterceptors(PbmsStatusInterceptor)
   @Get()
   @ApiOperation({ summary: 'Danh sách sự cố' })
@@ -47,12 +47,12 @@ export class IncidentsController {
   }
 
   @UseGuards(PbmsRolesGuard)
-  @PbmsRoles('manager')
+  @PbmsRoles('Manager')
   @UseInterceptors(PbmsStatusInterceptor)
   @Get('assignees')
   @ApiOperation({ summary: 'Danh sách người có thể gán xử lý' })
   @ApiPbmsOkResponse('Lấy danh sách người xử lý thành công', [
-    { userId: userExample.userId, fullName: userExample.fullName, roleName: 'staff' },
+    { userId: userExample.userId, fullName: userExample.fullName, roleName: 'Staff' },
   ])
   getAssignees(): Promise<PbmsResponseDto> {
     return this.incidents.getAssignees();
@@ -110,7 +110,7 @@ export class IncidentsController {
   }
 
   @UseGuards(PbmsRolesGuard)
-  @PbmsRoles('manager')
+  @PbmsRoles('Manager')
   @UseInterceptors(PbmsStatusInterceptor)
   @Put()
   @ApiOperation({ summary: 'Cập nhật sự cố' })
@@ -126,7 +126,7 @@ export class IncidentsController {
   }
 
   @UseGuards(PbmsRolesGuard)
-  @PbmsRoles('staff', 'manager')
+  @PbmsRoles('Staff', 'Manager')
   @UseInterceptors(PbmsStatusInterceptor)
   @Put(':id/assign/:staffId')
   @ApiOperation({ summary: 'Gán nhân viên xử lý sự cố' })
@@ -140,7 +140,7 @@ export class IncidentsController {
   }
 
   @UseGuards(PbmsRolesGuard)
-  @PbmsRoles('staff', 'manager')
+  @PbmsRoles('Staff', 'Manager')
   @UseInterceptors(PbmsStatusInterceptor)
   @Put(':id/resolve/:staffId')
   @ApiOperation({ summary: 'Đánh dấu sự cố đã xử lý' })
@@ -161,7 +161,7 @@ export class IncidentsController {
   }
 
   @UseGuards(PbmsRolesGuard)
-  @PbmsRoles('manager')
+  @PbmsRoles('Manager')
   @UseInterceptors(PbmsStatusInterceptor)
   @Delete(':id')
   @ApiOperation({ summary: 'Xóa sự cố' })

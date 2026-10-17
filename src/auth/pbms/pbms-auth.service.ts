@@ -76,9 +76,7 @@ export class PbmsAuthService {
           email: user.email,
           fullName: user.fullName,
           phoneNumber: user.phoneNumber,
-          roleName: user.pbmsRole?.roleName ?? 'customer',
-          avatarUrl: user.avatarUrl ?? null,
-          walletId: user.wallet?.id ?? null,
+          roleName: user.pbmsRole?.roleName ?? 'User',
         },
         accessToken: tokens.accessToken,
         refreshToken: tokens.refreshToken,
@@ -145,7 +143,7 @@ export class PbmsAuthService {
 
     const otp = randomInt(100000, 1000000).toString();
     const otpHash = this.hashSha256(otp);
-    await this.otpStore.set<CachedRegister>(
+    this.otpStore.set<CachedRegister>(
       `Register_${email}`,
       { userName, fullName, email, phoneNumber, password, otpHash },
       OTP_TTL_MS,
@@ -168,7 +166,7 @@ export class PbmsAuthService {
     }
 
     const email = this.normalizeEmail(emailRaw);
-    const cached = await this.otpStore.get<CachedRegister>(`Register_${email}`);
+    const cached = this.otpStore.get<CachedRegister>(`Register_${email}`);
     if (!cached) {
       return new PbmsResponseDto('Mã OTP không hợp lệ hoặc đã hết hạn', 400, false);
     }
@@ -187,13 +185,11 @@ export class PbmsAuthService {
     }
 
     const defaultRole = await this.prisma.role.findFirst({
-      where: {
-        roleName: { equals: 'customer', mode: 'insensitive' },
-      },
+      where: { roleName: { equals: 'User', mode: 'insensitive' } },
     });
     if (!defaultRole) {
       return new PbmsResponseDto(
-        "Lỗi cấu hình hệ thống: Không tìm thấy quyền 'customer' mặc định",
+        "Lỗi cấu hình hệ thống: Không tìm thấy quyền 'User' mặc định",
         500,
         false,
       );
@@ -212,10 +208,10 @@ export class PbmsAuthService {
           isActive: true,
           isEmailVerified: true,
           role: UserRole.USER,
-          roleId: defaultRole.id,
+          pbmsRoleId: defaultRole.id,
         },
       });
-      await this.otpStore.delete(`Register_${email}`);
+      this.otpStore.delete(`Register_${email}`);
       return new PbmsResponseDto('Đăng ký thành công', 200, true, { userId: newUser.id });
     } catch (error: unknown) {
       if (error instanceof Prisma.PrismaClientKnownRequestError && error.code === 'P2002') {
@@ -246,7 +242,7 @@ export class PbmsAuthService {
     }
 
     const otp = randomInt(100000, 1000000).toString();
-    await this.otpStore.set(`Reset_${email}`, this.hashSha256(otp), OTP_TTL_MS);
+    this.otpStore.set(`Reset_${email}`, this.hashSha256(otp), OTP_TTL_MS);
 
     try {
       await this.mailService.sendOtpEmail(email, otp, 'password-reset');
@@ -275,7 +271,7 @@ export class PbmsAuthService {
     }
 
     const email = this.normalizeEmail(emailRaw);
-    const cachedOtpHash = await this.otpStore.get<string>(`Reset_${email}`);
+    const cachedOtpHash = this.otpStore.get<string>(`Reset_${email}`);
     if (!cachedOtpHash) {
       return new PbmsResponseDto('Mã OTP không hợp lệ hoặc đã hết hạn', 400, false);
     }
@@ -294,7 +290,7 @@ export class PbmsAuthService {
         where: { id: user.id },
         data: { passwordHash },
       });
-      await this.otpStore.delete(`Reset_${email}`);
+      this.otpStore.delete(`Reset_${email}`);
       return new PbmsResponseDto('Đặt lại mật khẩu thành công', 200, true);
     } catch (error: unknown) {
       const message = error instanceof Error ? error.message : 'unknown';
@@ -404,7 +400,7 @@ export class PbmsAuthService {
     email: string;
     userName: string | null;
     role: UserRole;
-    roleId: string;
+    pbmsRoleId: string | null;
     pbmsRole: { roleName: string } | null;
   }): Promise<{ accessToken: string; refreshToken: string }> {
     const accessToken = await this.signAccessToken(user);
@@ -431,10 +427,10 @@ export class PbmsAuthService {
     email: string;
     userName: string | null;
     role: UserRole;
-    roleId: string;
+    pbmsRoleId: string | null;
     pbmsRole: { roleName: string } | null;
   }): Promise<string> {
-    const pbmsRoleName = user.pbmsRole?.roleName ?? 'customer';
+    const pbmsRoleName = user.pbmsRole?.roleName ?? 'User';
     return this.jwtService.signAsync(
       {
         sub: user.id,
@@ -444,7 +440,7 @@ export class PbmsAuthService {
         UserId: user.id,
         UserName: user.userName ?? '',
         Email: user.email,
-        RoleId: user.roleId,
+        RoleId: user.pbmsRoleId ?? '',
       },
       {
         secret: this.accessSecret(),
@@ -459,7 +455,7 @@ export class PbmsAuthService {
     }
     return this.prisma.user.findFirst({
       where: { email: { equals: email, mode: 'insensitive' } },
-      include: { pbmsRole: true, wallet: { select: { id: true } } },
+      include: { pbmsRole: true },
     });
   }
 

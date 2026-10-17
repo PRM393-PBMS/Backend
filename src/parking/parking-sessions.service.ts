@@ -11,6 +11,7 @@ import {
   sameStatus,
   toMoney,
 } from '../common/pbms-fields';
+import { mapExitPass } from '../common/exit-pass';
 import { createTicket } from '../common/qr.util';
 
 @Injectable()
@@ -179,6 +180,8 @@ export class ParkingSessionsService {
     actualSlotId: string | null;
     actualSlot: { slotCode: string } | null;
     status: string;
+    prepaidAt?: Date | null;
+    exitPassCode?: string | null;
     payments: Array<{
       amount: Prisma.Decimal;
       paymentStatus: string;
@@ -216,6 +219,13 @@ export class ParkingSessionsService {
       paymentMethod: payment?.paymentMethod ?? null,
       paymentTime: payment?.paymentTime ?? null,
       ticket: sameStatus(item.status, 'Active') ? await createTicket(item.id) : null,
+      prepaidAt: item.prepaidAt ?? null,
+      exitPass: await mapExitPass({
+        id: item.id,
+        status: item.status,
+        prepaidAt: item.prepaidAt ?? null,
+        exitPassCode: item.exitPassCode ?? null,
+      }),
     };
   }
 }
