@@ -30,6 +30,20 @@ export class PbmsLoginDto {
   @IsOptional()
   @IsString()
   Password?: string;
+
+  @ApiPropertyOptional({
+    type: String,
+    description: 'Tên đăng nhập (thay cho email). Field email cũng nhận tên đăng nhập.',
+    example: PBMS_REGISTER_EXAMPLE.userName,
+  })
+  @IsOptional()
+  @IsString()
+  userName?: string;
+
+  @ApiPropertyOptional()
+  @IsOptional()
+  @IsString()
+  UserName?: string;
 }
 
 /** Body đăng ký OTP. */

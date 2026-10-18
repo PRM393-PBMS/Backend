@@ -99,3 +99,20 @@ export class UpdateProfileDto {
 
   @ApiPropertyOptional() @IsOptional() @IsString() Password?: string;
 }
+
+/** Đổi mật khẩu: phải nhập đúng mật khẩu hiện tại. */
+export class ChangePasswordBodyDto {
+  @ApiPropertyOptional({ type: String, example: 'MatKhauCu@123' })
+  @IsOptional()
+  @IsString()
+  currentPassword?: string;
+
+  @ApiPropertyOptional() @IsOptional() @IsString() CurrentPassword?: string;
+
+  @ApiPropertyOptional({ type: String, example: 'MatKhauMoi@456' })
+  @IsOptional()
+  @IsString()
+  newPassword?: string;
+
+  @ApiPropertyOptional() @IsOptional() @IsString() NewPassword?: string;
+}

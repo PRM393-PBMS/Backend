@@ -63,6 +63,43 @@ export class UsersService {
     return PbmsResponseDto.ok('Lấy thông tin cá nhân thành công', this.mapUser(user));
   }
 
+  /** Đổi mật khẩu của chính mình, xác minh mật khẩu hiện tại trước. */
+  async changePassword(userId: string, dto: object): Promise<PbmsResponseDto> {
+    if (isEmptyGuid(userId)) {
+      return PbmsResponseDto.fail('Vui lòng đăng nhập', 401);
+    }
+    const current = pbmsPick(dto, 'currentPassword', 'CurrentPassword');
+    const next = pbmsPick(dto, 'newPassword', 'NewPassword');
+    if (!current || !next) {
+      return PbmsResponseDto.fail('Vui lòng nhập mật khẩu hiện tại và mật khẩu mới');
+    }
+    if (next.length < 6 || next.length > 72) {
+      return PbmsResponseDto.fail('Mật khẩu mới phải từ 6 đến 72 ký tự');
+    }
+    if (next === current) {
+      return PbmsResponseDto.fail('Mật khẩu mới phải khác mật khẩu hiện tại');
+    }
+    const user = await this.prisma.user.findUnique({
+      where: { id: userId },
+      select: { id: true, passwordHash: true },
+    });
+    if (!user) {
+      return PbmsResponseDto.fail('Không tìm thấy người dùng', 404);
+    }
+    if (!(await this.hashing.compare(current, user.passwordHash))) {
+      return PbmsResponseDto.fail('Mật khẩu hiện tại không đúng');
+    }
+    await this.prisma.$transaction([
+      this.prisma.user.update({
+        where: { id: userId },
+        data: { passwordHash: await this.hashing.hash(next) },
+      }),
+      // Đăng xuất các thiết bị khác: phiên làm mới cũ không dùng được nữa.
+      this.prisma.refreshToken.deleteMany({ where: { userId } }),
+    ]);
+    return PbmsResponseDto.ok('Đổi mật khẩu thành công');
+  }
+
   async updateProfile(userId: string, dto: object): Promise<PbmsResponseDto> {
     if (isEmptyGuid(userId)) {
       return PbmsResponseDto.fail('Vui lòng đăng nhập', 401);
