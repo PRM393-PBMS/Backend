@@ -1,9 +1,10 @@
-import { Injectable } from '@nestjs/common';
+import { Injectable, Optional } from '@nestjs/common';
 import { Prisma } from '@prisma/client';
 import { randomBytes } from 'crypto';
 import { PrismaService } from '../prisma/prisma.service';
 import { PbmsResponseDto } from '../common/dto/pbms-response.dto';
 import { isEmptyGuid, pbmsPick, sameStatus } from '../common/pbms-fields';
+import { NotificationsService } from '../notifications/notifications.service';
 import {
   decodeSignaturePng,
   loadSealKey,
@@ -29,7 +30,10 @@ const vnMoney = (n: number) => `${Math.round(n).toLocaleString('vi-VN')} đồng
 
 @Injectable()
 export class ContractsService {
-  constructor(private readonly prisma: PrismaService) {}
+  constructor(
+    private readonly prisma: PrismaService,
+    @Optional() private readonly notifications?: NotificationsService,
+  ) {}
 
   /** Tạo hợp đồng chờ ký cho một đăng ký vé dài hạn (gọi trong giao dịch đăng ký). */
   async createForSubscription(tx: Tx, subscriptionId: string) {
@@ -248,6 +252,14 @@ export class ContractsService {
       },
     });
     const fresh = await this.prisma.subscriptionContract.findUniqueOrThrow({ where: { id: c.id } });
+    if (moved.count === 1) {
+      await this.notifications?.notify(userId, {
+        title: 'Đã ký hợp đồng vé tháng',
+        message: `Hợp đồng ${c.contractNumber} đã được ký và niêm phong số. Thanh toán để kích hoạt vé.`,
+        type: 'subscription',
+        metadata: { contractId: c.id, subscriptionId: c.subscriptionId },
+      });
+    }
     return PbmsResponseDto.ok(
       moved.count === 1 ? 'Ký hợp đồng thành công' : 'Hợp đồng đã được ký trước đó',
       this.map(fresh),

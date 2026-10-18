@@ -54,6 +54,7 @@ model User {
   reportedIncidents     IncidentReport[]       @relation("IncidentReporter")
   handledIncidents      IncidentReport[]       @relation("IncidentHandler")
   handledVehicleChanges VehicleChangeRequest[] @relation("VehicleChangeHandler")
+  notifications         Notification[]
   wallet                Wallet?
 
   @@index([role, isActive], name: "idx_users_role_is_active")
@@ -491,4 +492,21 @@ model SubscriptionContract {
 
   @@index([userId], name: "idx_subscription_contracts_user_id")
   @@map("subscription_contracts")
+}
+
+/// Thông báo trong app của khách (đặt chỗ, thanh toán, ví, vé tháng, lượt gửi xe).
+model Notification {
+  id        String   @id @default(uuid()) @db.Uuid
+  userId    String   @map("user_id") @db.Uuid
+  title     String   @db.VarChar(120)
+  message   String   @db.VarChar(500)
+  type      String   @default("system") @db.VarChar(30)
+  isRead    Boolean  @default(false) @map("is_read")
+  metadata  Json?
+  createdAt DateTime @default(now()) @map("created_at") @db.Timestamptz(6)
+
+  user User @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@index([userId, createdAt(sort: Desc)], name: "idx_notifications_user_created")
+  @@map("notifications")
 }

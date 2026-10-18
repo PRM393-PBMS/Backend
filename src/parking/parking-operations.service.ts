@@ -1,4 +1,4 @@
-import { Injectable } from '@nestjs/common';
+import { Injectable, Optional } from '@nestjs/common';
 import { Prisma } from '@prisma/client';
 import jsQR from 'jsqr';
 import sharp from 'sharp';
@@ -20,6 +20,7 @@ import { ParkingSessionsService } from './parking-sessions.service';
 import { exitPassPayload, issueExitPass, mapExitPass } from '../common/exit-pass';
 import { PaymentsService } from '../payments/payments.service';
 import { InsufficientWalletFundsError, WalletsService } from '../wallets/wallets.service';
+import { NotificationsService, formatTime, formatVnd } from '../notifications/notifications.service';
 
 @Injectable()
 export class ParkingOperationsService {
@@ -30,6 +31,7 @@ export class ParkingOperationsService {
     private readonly sessions: ParkingSessionsService,
     private readonly payments: PaymentsService,
     private readonly wallets: WalletsService,
+    @Optional() private readonly notifications?: NotificationsService,
   ) {}
 
   async checkIn(dto: object): Promise<PbmsResponseDto> {
@@ -287,6 +289,12 @@ export class ParkingOperationsService {
         });
       }
       await issueExitPass(this.prisma, session.id);
+      await this.notifications?.notify(userId, {
+        title: 'Đã thanh toán trước bằng ví',
+        message: `Đã trừ ${formatVnd(fee.amount)} từ ví PBMS. Mã ra cổng dùng được tới khi xe rời bãi.`,
+        type: 'payment',
+        metadata: { sessionId: session.id, paymentId: paid.id },
+      });
       return PbmsResponseDto.ok('Đã thanh toán bằng ví và cấp mã ra cổng', {
         Payment: this.mapPayment(paid),
         Fee: fee,
@@ -782,7 +790,7 @@ export class ParkingOperationsService {
     dto: object;
     vehicleId?: string | null;
   }) {
-    return this.prisma.parkingSession.create({
+    const created = await this.prisma.parkingSession.create({
       data: {
         vehicleId: input.vehicleId ?? null,
         licensePlateIn: input.licensePlate,
@@ -796,6 +804,13 @@ export class ParkingOperationsService {
         status: 'Active',
       },
     });
+    await this.notifications?.notifyPlateOwner(created.licensePlateIn, {
+      title: 'Xe đã vào bãi',
+      message: `Xe ${created.licensePlateIn} vào bãi lúc ${formatTime(created.entryTime)}. Thanh toán trước trên app để ra cổng nhanh.`,
+      type: 'parking',
+      metadata: { sessionId: created.id },
+    });
+    return created;
   }
 
   private async findGuestSlot(vehicleTypeId: string, floorId: string) {
@@ -837,6 +852,17 @@ export class ParkingOperationsService {
         where: { id: session.reservationId },
         data: { status: 'Completed' },
       });
+    }
+    const note = {
+      title: 'Xe đã rời bãi',
+      message: `Xe ${session.licensePlateIn} đã ra khỏi bãi lúc ${formatTime(session.exitTime ?? new Date())}.`,
+      type: 'parking' as const,
+      metadata: { sessionId: session.id },
+    };
+    if (session.vehicle?.userId) {
+      await this.notifications?.notify(session.vehicle.userId, note);
+    } else {
+      await this.notifications?.notifyPlateOwner(session.licensePlateIn, note);
     }
   }
 

@@ -1,4 +1,4 @@
-import { Injectable } from '@nestjs/common';
+import { Injectable, Optional } from '@nestjs/common';
 import { Prisma } from '@prisma/client';
 import { PrismaService } from '../prisma/prisma.service';
 import { PbmsResponseDto } from '../common/dto/pbms-response.dto';
@@ -16,6 +16,7 @@ import { isMotorbikeType } from '../common/license-plate';
 import { WalletsService } from '../wallets/wallets.service';
 import { PayosService } from '../integrations/payos-files.service';
 import { issueExitPass } from '../common/exit-pass';
+import { NotificationsService, formatTime, formatVnd } from '../notifications/notifications.service';
 
 const METHODS = ['PayOS', 'Cash', 'Wallet'];
 const STATUSES = ['Pending', 'Success', 'Failed'];
@@ -36,6 +37,7 @@ export class PaymentsService {
     private readonly prisma: PrismaService,
     private readonly wallets: WalletsService,
     private readonly payos: PayosService,
+    @Optional() private readonly notifications?: NotificationsService,
   ) {}
 
   mapPayment(payment: {
@@ -275,7 +277,45 @@ export class PaymentsService {
     }
   }
 
+  /** Áp dụng một thanh toán đã thành công rồi báo cho khách. */
   async dispatchPayment(paymentId: string): Promise<void> {
+    await this.applyPaidPayment(paymentId);
+    await this.notifyPaid(paymentId);
+  }
+
+  private async notifyPaid(paymentId: string): Promise<void> {
+    if (!this.notifications) return;
+    const payment = await this.prisma.payment.findUnique({
+      where: { id: paymentId },
+      include: { session: { select: { licensePlateIn: true } } },
+    });
+    if (!payment || !sameStatus(payment.paymentStatus, 'Success')) return;
+    const amount = formatVnd(toMoney(payment.amount));
+    const type = payment.paymentType ?? '';
+    const note = sameStatus(type, 'Deposit')
+      ? { title: 'Đặt chỗ đã được xác nhận', message: `Đã nhận tiền cọc ${amount}. Chỗ ô tô của bạn được giữ tới giờ hẹn.`, type: 'reservation' as const }
+      : sameStatus(type, 'SubscriptionFee')
+        ? { title: 'Vé tháng đã kích hoạt', message: `Đã thanh toán ${amount}. Vé tháng của bạn đã được kích hoạt.`, type: 'subscription' as const }
+        : sameStatus(type, 'SubscriptionRenewal')
+          ? { title: 'Đã gia hạn vé tháng', message: `Đã thanh toán ${amount} để gia hạn vé tháng.`, type: 'subscription' as const }
+          : sameStatus(type, 'WalletTopUp')
+            ? { title: 'Nạp ví thành công', message: `Đã cộng ${amount} vào ví PBMS.`, type: 'wallet' as const }
+            : sameStatus(type, 'PrepaidCheckout')
+              ? { title: 'Đã thanh toán trước', message: `Đã nhận ${amount}. Mã ra cổng đã sẵn sàng, dùng được tới khi xe rời bãi.`, type: 'payment' as const }
+              : sameStatus(type, 'CheckoutFee')
+                ? { title: 'Đã thanh toán phí gửi xe', message: `Đã nhận ${amount}. Cảm ơn bạn đã gửi xe tại PBMS.`, type: 'payment' as const }
+                : null;
+    if (!note) return;
+    const metadata = { paymentId: payment.id, paymentType: type };
+    if (payment.userId) {
+      await this.notifications.notify(payment.userId, { ...note, metadata });
+    } else {
+      // Thanh toán tại cổng của xe đã đăng ký nhưng không gắn tài khoản: báo cho chủ xe.
+      await this.notifications.notifyPlateOwner(payment.session?.licensePlateIn, { ...note, metadata });
+    }
+  }
+
+  private async applyPaidPayment(paymentId: string): Promise<void> {
     const payment = await this.prisma.payment.findUnique({ where: { id: paymentId } });
     if (!payment || !sameStatus(payment.paymentStatus, 'Success')) {
       return;

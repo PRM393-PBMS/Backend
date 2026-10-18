@@ -1,4 +1,4 @@
-import { Injectable } from '@nestjs/common';
+import { Injectable, Optional } from '@nestjs/common';
 import { Prisma } from '@prisma/client';
 import { PrismaService } from '../prisma/prisma.service';
 import { PayosService } from '../integrations/payos-files.service';
@@ -16,6 +16,7 @@ import { isMotorbikeType } from '../common/license-plate';
 import { InsufficientWalletFundsError, WalletsService } from '../wallets/wallets.service';
 import { requiresContract } from '../common/contract-seal';
 import { ContractsService } from './contracts.service';
+import { NotificationsService, formatTime, formatVnd } from '../notifications/notifications.service';
 
 type CustomerPaymentMethod = 'PayOS' | 'Wallet';
 
@@ -26,7 +27,17 @@ export class MonthlySubscriptionsService {
     private readonly payos: PayosService,
     private readonly wallets: WalletsService,
     private readonly contracts: ContractsService,
+    @Optional() private readonly notifications?: NotificationsService,
   ) {}
+
+  private notifyWalletActivation(userId: string, subscriptionId: string, amount: Prisma.Decimal) {
+    return this.notifications?.notify(userId, {
+      title: 'Vé tháng đã kích hoạt',
+      message: `Đã trừ ${formatVnd(toMoney(amount))} từ ví PBMS. Vé tháng của bạn đã được kích hoạt.`,
+      type: 'subscription',
+      metadata: { subscriptionId },
+    });
+  }
 
   async register(userId: string, dto: object, createPayment: boolean): Promise<PbmsResponseDto> {
     if (isEmptyGuid(userId)) {
@@ -413,6 +424,7 @@ export class MonthlySubscriptionsService {
         });
         return { subscription, payment, debit };
       });
+      await this.notifyWalletActivation(userId, created.subscription.id, created.payment.amount);
       return PbmsResponseDto.ok(
         'Thanh toán gói bằng ví thành công',
         {
@@ -497,6 +509,7 @@ export class MonthlySubscriptionsService {
         });
         return { payment, debit };
       });
+      await this.notifyWalletActivation(userId, subscription.id, paid.payment.amount);
       return PbmsResponseDto.ok('Thanh toán gói bằng ví thành công', {
         subscriptionId: subscription.id,
         paymentId: paid.payment.id,
