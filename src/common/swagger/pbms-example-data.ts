@@ -19,6 +19,8 @@ export const ids = {
   gateEntryId: '7c9e6679-7425-40de-944b-e07fc1f90ae7',
   gateExitId: '11111111-2222-4333-8444-555555555555',
   slotId: 'f47ac10b-58cc-4372-a567-0e02b2c3d479',
+  parkingId: 'c56a4180-65aa-42ec-a945-5fd21dec0538',
+  vehicleId: 'a52c7c13-5f2c-47ce-aeb2-1da63a5f9c68',
   policyId: '3fa85f64-5717-4562-b3fc-2c963f66afa6',
   packageId: '1b4e28ba-2fa1-11d2-883f-0016d3cca427',
   subscriptionId: '21ec2020-3aea-4069-a3dd-80aa0c99e3e0',
@@ -58,7 +60,8 @@ export const userExample = {
   status: 'Active',
   roleId: ids.roleUserId,
   roleName: 'customer',
-  avatarUrl: 'https://api.example.com/uploads/avatars/9b1deb4d-3b7d-4bad-9bdd-2b0d7b3dcb6d.jpg',
+  avatarUrl:
+    'https://api.example.com/uploads/avatars/9b1deb4d-3b7d-4bad-9bdd-2b0d7b3dcb6d.jpg',
   walletId: ids.walletId,
   createdAt: iso.created,
   updatedAt: iso.updated,
@@ -72,7 +75,8 @@ export const loginResultExample = {
     fullName: PBMS_REGISTER_EXAMPLE.fullName,
     phoneNumber: PBMS_REGISTER_EXAMPLE.phoneNumber,
     roleName: 'customer',
-    avatarUrl: 'https://api.example.com/uploads/avatars/9b1deb4d-3b7d-4bad-9bdd-2b0d7b3dcb6d.jpg',
+    avatarUrl:
+      'https://api.example.com/uploads/avatars/9b1deb4d-3b7d-4bad-9bdd-2b0d7b3dcb6d.jpg',
     walletId: ids.walletId,
   },
   accessToken: dummyAccessToken,
@@ -93,6 +97,8 @@ export const vehicleTypeExample = {
 
 export const floorExample = {
   floorId: ids.floorId,
+  parkingId: ids.parkingId,
+  parkingName: 'Bãi đỗ trung tâm',
   floorName: 'Tầng B1',
   dedicatedVehicleTypeId: ids.vehicleTypeId,
   dedicatedVehicleTypeName: 'Xe máy',
@@ -110,6 +116,7 @@ export const gateExample = {
 
 export const slotExample = {
   slotId: ids.slotId,
+  parkingId: ids.parkingId,
   floorId: ids.floorId,
   floorName: 'Tầng B1',
   slotCode: 'B1-A12',
@@ -268,8 +275,9 @@ const ticketExample = {
 export const sessionExample = {
   sessionId: ids.sessionId,
   reservationId: ids.reservationId,
-  driverUserId: ids.userId,
-  driverFullName: PBMS_REGISTER_EXAMPLE.fullName,
+  vehicleId: ids.vehicleId,
+  vehicleOwnerId: ids.userId,
+  vehicleOwnerFullName: PBMS_REGISTER_EXAMPLE.fullName,
   licensePlateIn: '59A12345',
   licensePlateOut: null,
   entryImageUrl: 'https://api.example.com/uploads/entry-59A12345.jpg',
@@ -349,7 +357,8 @@ export const reportTypesExample = [
   {
     key: 'full',
     name: 'Báo cáo thống kê đầy đủ',
-    description: 'Gộp tổng quan, doanh thu và vận hành bãi xe trong cùng một file PDF.',
+    description:
+      'Gộp tổng quan, doanh thu và vận hành bãi xe trong cùng một file PDF.',
     supportedFormats: ['pdf'],
   },
 ];
@@ -362,11 +371,26 @@ export const reportSummaryExample = {
     vehicleTypeId: ids.vehicleTypeId,
   },
   metrics: [
-    { key: 'totalRevenue', name: 'Tổng doanh thu', value: 12500000, unit: 'VND' },
-    { key: 'successfulPayments', name: 'Số thanh toán thành công', value: 48, unit: 'lần' },
+    {
+      key: 'totalRevenue',
+      name: 'Tổng doanh thu',
+      value: 12500000,
+      unit: 'VND',
+    },
+    {
+      key: 'successfulPayments',
+      name: 'Số thanh toán thành công',
+      value: 48,
+      unit: 'lần',
+    },
     { key: 'entries', name: 'Lượt xe vào', value: 210, unit: 'lượt' },
     { key: 'exits', name: 'Lượt xe ra', value: 198, unit: 'lượt' },
-    { key: 'slotUtilizationRate', name: 'Tỷ lệ sử dụng chỗ đỗ', value: 72.5, unit: '%' },
+    {
+      key: 'slotUtilizationRate',
+      name: 'Tỷ lệ sử dụng chỗ đỗ',
+      value: 72.5,
+      unit: '%',
+    },
   ],
   revenueSeries: [{ period: '2026-09-17', amount: 450000 }],
   revenueByPaymentType: [{ key: 'CheckoutFee', amount: 320000 }],

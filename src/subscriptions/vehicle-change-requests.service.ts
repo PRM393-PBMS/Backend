@@ -25,14 +25,14 @@ export class VehicleChangeRequestsService {
     if (pending) {
       return PbmsResponseDto.fail('Gói vé tháng này hiện đang có một yêu cầu đổi biển số chờ xử lý', 409);
     }
-    if (validation.subscription!.licensePlate === newPlate) {
+    if (validation.subscription!.vehicle?.licensePlate === newPlate) {
       return PbmsResponseDto.fail('Biển số mới không được trùng với biển số hiện tại');
     }
     try {
       const request = await this.prisma.vehicleChangeRequest.create({
         data: {
           subscriptionId,
-          oldLicensePlate: validation.subscription!.licensePlate,
+          oldLicensePlate: validation.subscription!.vehicle!.licensePlate,
           newLicensePlate: newPlate,
           reason: reason || null,
           status: 'Pending',
@@ -84,20 +84,20 @@ export class VehicleChangeRequestsService {
     if (!sameStatus(item.status, 'Pending')) {
       return PbmsResponseDto.fail('Chỉ yêu cầu đang chờ mới được duyệt');
     }
-    await this.prisma.$transaction([
-      this.prisma.vehicleChangeRequest.update({
+    await this.prisma.$transaction(async (tx) => {
+      await tx.vehicleChangeRequest.update({
         where: { id },
         data: {
           status: 'Approved',
           processedAt: new Date(),
           handledByStaffId: staffId,
         },
-      }),
-      this.prisma.monthlySubscription.update({
-        where: { id: item.subscriptionId },
+      });
+      await tx.vehicle.update({
+        where: { id: item.subscription.vehicleId! },
         data: { licensePlate: item.newLicensePlate },
-      }),
-    ]);
+      });
+    });
     return PbmsResponseDto.ok('Duyệt yêu cầu đổi xe thành công', await this.loadOne(id));
   }
 
@@ -172,7 +172,10 @@ export class VehicleChangeRequestsService {
     if (!isValidLicensePlate(newPlate)) {
       return { subscription: null, error: PbmsResponseDto.fail('Biển số phải gồm 4-15 chữ cái và chữ số') };
     }
-    const subscription = await this.prisma.monthlySubscription.findUnique({ where: { id: subscriptionId } });
+    const subscription = await this.prisma.monthlySubscription.findUnique({
+      where: { id: subscriptionId },
+      include: { vehicle: true },
+    });
     if (!subscription) {
       return { subscription: null, error: PbmsResponseDto.fail('Không tìm thấy gói tháng', 404) };
     }
@@ -182,12 +185,15 @@ export class VehicleChangeRequestsService {
     if (!sameStatus(subscription.status, 'Active')) {
       return { subscription: null, error: PbmsResponseDto.fail('Chỉ gói đang hiệu lực mới được đổi biển số') };
     }
+    if (!subscription.vehicle) {
+      return { subscription: null, error: PbmsResponseDto.fail('Gói tháng chưa được liên kết với xe', 409) };
+    }
     return { subscription, error: null };
   }
 
   private include() {
     return {
-      subscription: { include: { user: true, package: true } },
+      subscription: { include: { user: true, vehicle: true, package: true } },
       handledByStaff: true,
     } as const;
   }

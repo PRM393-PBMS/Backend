@@ -4,28 +4,27 @@ import {
   OnModuleDestroy,
   OnModuleInit,
 } from '@nestjs/common';
-import { createClient } from 'redis';
+import { createClient, type RedisClientType } from 'redis';
 
 @Injectable()
 export class OtpStoreService implements OnModuleInit, OnModuleDestroy {
   private readonly logger = new Logger(OtpStoreService.name);
-
-  private readonly client = createClient({
-    url: process.env.REDIS_URL ?? 'redis://localhost:6379',
-  });
-
-  constructor() {
-    this.client.on('error', (error: Error) => {
-      this.logger.error(error.message);
-    });
-  }
+  private client!: RedisClientType;
 
   async onModuleInit(): Promise<void> {
+    const url = process.env.REDIS_URL?.trim();
+    if (!url) {
+      throw new Error('Thiếu REDIS_URL: Redis là bắt buộc để lưu OTP');
+    }
+    this.client = createClient({ url });
+    this.client.on('error', (error: Error) => {
+      this.logger.error(`Redis OTP error: ${error.message}`);
+    });
     await this.client.connect();
   }
 
   async onModuleDestroy(): Promise<void> {
-    if (this.client.isOpen) {
+    if (this.client?.isOpen) {
       await this.client.quit();
     }
   }
@@ -37,9 +36,17 @@ export class OtpStoreService implements OnModuleInit, OnModuleDestroy {
   }
 
   async get<T>(key: string): Promise<T | undefined> {
-    const value = await this.client.get(`pbms:otp:${key}`);
-
-    return value === null ? undefined : (JSON.parse(value) as T);
+    const redisKey = `pbms:otp:${key}`;
+    const value = await this.client.get(redisKey);
+    if (value === null) {
+      return undefined;
+    }
+    try {
+      return JSON.parse(value) as T;
+    } catch {
+      await this.client.del(redisKey);
+      return undefined;
+    }
   }
 
   async delete(key: string): Promise<void> {

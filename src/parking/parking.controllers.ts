@@ -97,9 +97,9 @@ export class ParkingSessionsController {
   @ApiOperation({ summary: 'Tạo phiên gửi xe' })
   @ApiPbmsBodyExample(PbmsBodyDto, {
     licensePlateIn: '59A12345',
+    vehicleId: ids.vehicleId,
     vehicleTypeId: ids.vehicleTypeId,
     entryGateId: ids.gateEntryId,
-    driverUserId: ids.userId,
     assignedSlotId: ids.slotId,
     entryTime: '2026-09-17T08:15:00.000Z',
   })

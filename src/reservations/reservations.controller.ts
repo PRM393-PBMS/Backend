@@ -32,7 +32,7 @@ export class ReservationsController {
   @Post()
   @ApiOperation({ summary: 'Tạo đặt chỗ và thanh toán đặt cọc' })
   @ApiPbmsBodyExample(PbmsBodyDto, {
-    vehicleTypeId: ids.vehicleTypeId,
+    vehicleId: ids.vehicleId,
     expectedEntryTime: '2026-09-18T09:00:00.000Z',
   })
   @ApiPbmsOkResponse('Reservation created successfully', {

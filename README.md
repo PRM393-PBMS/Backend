@@ -67,6 +67,7 @@ Gói Render free **có thể ngủ khi idle** và cold start khi có request. Up
 |---|---|---|
 | PostgreSQL | Do môi trường (local hoặc Supabase) | UUID, index, foreign key |
 | Prisma CLI + Client | `6.4.1` | Schema, migration, query có kiểu |
+| Redis | Redis 7 + package `redis` | OTP TTL dùng chung giữa các instance |
 | Passport + Nest Passport + passport-jwt | `^0.7.0` / `^12.0.0` / `^4.0.1` | Strategy JWT |
 | Nest JWT | `^12.0.1` | Access / refresh token |
 | bcrypt | `^6.0.0` | Hash mật khẩu và refresh token |
@@ -185,6 +186,7 @@ Database đã có bảng/dữ liệu: kiểm tra lịch sử migration trước 
 | Server | `NODE_ENV`, `PORT`, `CORS_ORIGIN`, `PUBLIC_API_URL` |
 | PayOS | `PAYOS_CLIENT_ID`, `PAYOS_API_KEY`, `PAYOS_CHECKSUM_KEY`, `PAYOS_RETURN_URL`, `PAYOS_CANCEL_URL` |
 | Email / Resend | `RESEND_API_KEY`, `MAIL_FROM`, `MAIL_SENDER_NAME`, `MAIL_REPLY_TO`, `MAIL_BRAND_COLOR` |
+| Redis / OTP | `REDIS_URL` |
 | OCR | `PLATE_RECOGNIZER_API_KEY`, `PLATE_RECOGNIZER_ENDPOINT`, `PLATE_RECOGNIZER_REGIONS`, `PLATE_RECOGNIZER_MINIMUM_CONFIDENCE` |
 | Files | `UPLOAD_DIR` |
 
@@ -228,10 +230,20 @@ Render chạy backend và Swagger **cùng một** Web Service. Supabase PostgreS
 
 Chi tiết: [ENV & deploy](docs/huong-dan-env-va-deploy.md), [health check](docs/render-health-check.md), [uptime Render](docs/render-uptime.md). Không chạy `migrate dev`, reset hay seed tự động lúc startup production.
 
+### Docker local
+
+Docker Compose chạy API và Redis; database vẫn là Supabase theo `DATABASE_URL` trong `.env`.
+
+```bash
+docker compose up --build
+# Nếu cần migration, chạy riêng sau khi review:
+docker compose run --rm api npx --no-install prisma migrate deploy
+```
+
 <details>
 <summary><strong>📌 Phạm vi vận hành hiện tại</strong></summary>
 
-- OTP lưu trong **Redis** (xem `REDIS_URL` trong `.env.example`); cần Redis chạy khi dùng OTP.
+- OTP lưu Redis theo TTL 10 phút: không mất khi app restart và dùng chung giữa nhiều instance. `REDIS_URL` là bắt buộc.
 - OTP đăng ký/reset gửi HTML qua **Resend**; cần `RESEND_API_KEY` + `MAIL_FROM` và inbox thật sau deploy. Xem [Resend setup](docs/resend-setup.md).
 - Upload filesystem: cần disk bền nếu muốn giữ file sau redeploy (Render free thường không có).
 - Cron chạy trong process app; nhiều instance cần đánh giá điều phối.

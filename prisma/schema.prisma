@@ -46,9 +46,9 @@ model User {
   pbmsRole Role? @relation(fields: [roleId], references: [id], onDelete: Restrict)
 
   refreshTokens         RefreshToken[]
+  vehicles              Vehicle[]
   assignedParkingSlots  ParkingSlot[]
   monthlySubscriptions  MonthlySubscription[]
-  parkingSessions       ParkingSession[]       @relation("SessionDriver")
   payments              Payment[]
   reservations          Reservation[]
   reportedIncidents     IncidentReport[]       @relation("IncidentReporter")
@@ -103,25 +103,48 @@ model VehicleType {
   parkingSlots         ParkingSlot[]
   pricingPolicies      PricingPolicy[]
   subscriptionPackages SubscriptionPackage[]
-  monthlySubscriptions MonthlySubscription[]
-  reservations         Reservation[]
   parkingSessions      ParkingSession[]
+  vehicles             Vehicle[]
 
   @@map("vehicle_types")
 }
 
+/// Phương tiện được đăng ký bởi một người dùng. Biển số là duy nhất trong hệ thống.
+model Vehicle {
+  id            String   @id @default(uuid()) @db.Uuid
+  userId        String   @map("user_id") @db.Uuid
+  vehicleTypeId String   @map("vehicle_type_id") @db.Uuid
+  licensePlate  String   @unique @map("license_plate") @db.VarChar(15)
+  createdAt     DateTime @default(now()) @map("created_at") @db.Timestamptz(6)
+  updatedAt     DateTime @updatedAt @map("updated_at") @db.Timestamptz(6)
+
+  user                 User                  @relation(fields: [userId], references: [id], onDelete: Restrict)
+  vehicleType          VehicleType           @relation(fields: [vehicleTypeId], references: [id], onDelete: Restrict)
+  monthlySubscriptions MonthlySubscription[]
+  reservations         Reservation[]
+  parkingSessions      ParkingSession[]
+
+  @@unique([id, userId], map: "vehicles_id_user_id_key")
+  @@index([userId], name: "idx_vehicles_user_id")
+  @@index([vehicleTypeId], name: "idx_vehicles_vehicle_type_id")
+  @@map("vehicles")
+}
+
 model Floor {
   id                     String  @id @default(uuid()) @db.Uuid
+  parkingId              String  @map("parking_id") @db.Uuid
   floorName              String  @unique @map("floor_name") @db.VarChar(50)
   dedicatedVehicleTypeId String? @map("dedicated_vehicle_type_id") @db.Uuid
   totalCapacity          Int     @map("total_capacity")
   isResident             Boolean @default(false) @map("is_resident")
 
+  parking              Parking       @relation(fields: [parkingId], references: [id], onDelete: Restrict)
   dedicatedVehicleType VehicleType?  @relation(fields: [dedicatedVehicleTypeId], references: [id], onDelete: SetNull)
   gates                Gate[]
   parkingSlots         ParkingSlot[]
 
   @@index([dedicatedVehicleTypeId], name: "idx_floors_vehicle_type_id")
+  @@index([parkingId], name: "idx_floors_parking_id")
   @@map("floors")
 }
 
@@ -140,15 +163,30 @@ model Gate {
   @@map("gates")
 }
 
+model Parking {
+  id        String   @id @default(uuid()) @db.Uuid
+  name      String   @unique @db.VarChar(255)
+  location  String   @db.VarChar(500)
+  createdAt DateTime @default(now()) @map("created_at") @db.Timestamptz(6)
+  updatedAt DateTime @updatedAt @map("updated_at") @db.Timestamptz(6)
+
+  floors Floor[]
+  slots  ParkingSlot[]
+
+  @@map("parkings")
+}
+
 model ParkingSlot {
   id             String  @id @default(uuid()) @db.Uuid
+  parkingId      String  @map("parking_id") @db.Uuid
   floorId        String  @map("floor_id") @db.Uuid
-  slotCode       String  @unique @map("slot_code") @db.VarChar(15)
+  slotCode       String  @map("slot_code") @db.VarChar(15)
   vehicleTypeId  String  @map("vehicle_type_id") @db.Uuid
   /// ParkingSlotStatus: Available, Occupied, Assigned, Maintenance, Locked. Default Available.
   status         String  @default("Available") @db.VarChar(20)
   assignedUserId String? @map("assigned_user_id") @db.Uuid
 
+  parking                 Parking               @relation(fields: [parkingId], references: [id], onDelete: Restrict)
   floor                   Floor                 @relation(fields: [floorId], references: [id], onDelete: Restrict)
   vehicleType             VehicleType           @relation(fields: [vehicleTypeId], references: [id], onDelete: Restrict)
   assignedUser            User?                 @relation(fields: [assignedUserId], references: [id], onDelete: SetNull)
@@ -156,6 +194,8 @@ model ParkingSlot {
   assignedParkingSessions ParkingSession[]      @relation("SessionAssignedSlot")
   actualParkingSessions   ParkingSession[]      @relation("SessionActualSlot")
 
+  @@unique([parkingId, slotCode], map: "parking_slots_parking_id_slot_code_key")
+  @@index([parkingId], name: "idx_parking_slots_parking_id")
   @@index([floorId], name: "idx_parking_slots_floor_id")
   @@index([vehicleTypeId], name: "idx_parking_slots_vehicle_type_id")
   @@index([assignedUserId], name: "idx_parking_slots_assigned_user_id")
@@ -201,23 +241,23 @@ model SubscriptionPackage {
 }
 
 model MonthlySubscription {
-  id            String    @id @default(uuid()) @db.Uuid
-  userId        String    @map("user_id") @db.Uuid
-  vehicleTypeId String    @map("vehicle_type_id") @db.Uuid
-  licensePlate  String    @map("license_plate") @db.VarChar(15)
-  packageId     String    @map("package_id") @db.Uuid
-  startDate     DateTime  @map("start_date") @db.Timestamptz(6)
-  endDate       DateTime  @map("end_date") @db.Timestamptz(6)
-  price         Decimal   @db.Decimal(15, 2)
-  fixedSlotId   String?   @map("fixed_slot_id") @db.Uuid
+  id          String    @id @default(uuid()) @db.Uuid
+  userId      String    @map("user_id") @db.Uuid
+  /// Xe đăng ký gói. Loại xe, biển số và chủ xe được lấy qua Vehicle.
+  vehicleId   String    @map("vehicle_id") @db.Uuid
+  packageId   String    @map("package_id") @db.Uuid
+  startDate   DateTime  @map("start_date") @db.Timestamptz(6)
+  endDate     DateTime  @map("end_date") @db.Timestamptz(6)
+  price       Decimal   @db.Decimal(15, 2)
+  fixedSlotId String?   @map("fixed_slot_id") @db.Uuid
   /// MonthlySubscriptionStatus: PendingPayment, Active, Cancelled, Expired. Default Active. varchar(30).
-  status        String    @default("Active") @db.VarChar(30)
+  status      String    @default("Active") @db.VarChar(30)
   /// false = hết hạn không tạo renew (cron). Không loại gói khỏi trạng thái đang hiệu lực theo ngày.
-  autoRenew     Boolean   @default(true) @map("auto_renew")
-  cancelledAt   DateTime? @map("cancelled_at") @db.Timestamptz(6)
+  autoRenew   Boolean   @default(true) @map("auto_renew")
+  cancelledAt DateTime? @map("cancelled_at") @db.Timestamptz(6)
 
   user                  User                   @relation(fields: [userId], references: [id], onDelete: Restrict)
-  vehicleType           VehicleType            @relation(fields: [vehicleTypeId], references: [id], onDelete: Restrict)
+  vehicle               Vehicle                @relation(fields: [vehicleId], references: [id], onDelete: Restrict)
   package               SubscriptionPackage    @relation(fields: [packageId], references: [id], onDelete: Restrict)
   fixedSlot             ParkingSlot?           @relation(fields: [fixedSlotId], references: [id], onDelete: SetNull)
   payments              Payment[]
@@ -225,7 +265,7 @@ model MonthlySubscription {
   vehicleChangeRequests VehicleChangeRequest[]
 
   @@index([userId], name: "idx_monthly_subscriptions_user_id")
-  @@index([licensePlate], name: "idx_monthly_subscriptions_license_plate")
+  @@index([vehicleId], name: "idx_monthly_subscriptions_vehicle_id")
   @@index([status], name: "idx_monthly_subscriptions_status")
   @@map("monthly_subscriptions")
 }
@@ -268,18 +308,20 @@ model VehicleChangeRequest {
 model Reservation {
   id                String    @id @default(uuid()) @db.Uuid
   userId            String    @map("user_id") @db.Uuid
-  vehicleTypeId     String    @map("vehicle_type_id") @db.Uuid
+  /// Xe đã chọn khi đặt chỗ. Loại xe và chủ xe được lấy qua Vehicle.
+  vehicleId         String    @map("vehicle_id") @db.Uuid
   expectedEntryTime DateTime  @map("expected_entry_time") @db.Timestamptz(6)
   /// ReservationStatus: Pending, Confirmed, Modified, CheckedIn, Completed, Cancelled, NoShow. Default Pending. varchar(15).
   status            String    @default("Pending") @db.VarChar(15)
   createdAt         DateTime? @default(now()) @map("created_at") @db.Timestamptz(6)
 
   user            User             @relation(fields: [userId], references: [id], onDelete: Restrict)
-  vehicleType     VehicleType      @relation(fields: [vehicleTypeId], references: [id], onDelete: Restrict)
+  vehicle         Vehicle          @relation(fields: [vehicleId], references: [id], onDelete: Restrict)
   parkingSessions ParkingSession[]
   payments        Payment[]
 
   @@index([userId], name: "idx_reservations_user_id")
+  @@index([vehicleId], name: "idx_reservations_vehicle_id")
   @@index([status], name: "idx_reservations_status")
   @@index([expectedEntryTime], name: "idx_reservations_expected_entry_time")
   @@map("reservations")
@@ -288,7 +330,8 @@ model Reservation {
 model ParkingSession {
   id                  String    @id @default(uuid()) @db.Uuid
   reservationId       String?   @map("reservation_id") @db.Uuid
-  driverUserId        String?   @map("driver_user_id") @db.Uuid
+  /// Null cho khách vãng lai chưa có tài khoản/xe đã đăng ký.
+  vehicleId           String?   @map("vehicle_id") @db.Uuid
   licensePlateIn      String    @map("license_plate_in") @db.VarChar(15)
   licensePlateOut     String?   @map("license_plate_out") @db.VarChar(15)
   entryImageUrl       String?   @map("entry_image_url")
@@ -306,7 +349,7 @@ model ParkingSession {
   status              String    @default("Active") @db.VarChar(15)
 
   reservation     Reservation?     @relation(fields: [reservationId], references: [id], onDelete: SetNull)
-  driverUser      User?            @relation("SessionDriver", fields: [driverUserId], references: [id], onDelete: SetNull)
+  vehicle         Vehicle?         @relation(fields: [vehicleId], references: [id], onDelete: SetNull)
   vehicleType     VehicleType      @relation(fields: [vehicleTypeId], references: [id], onDelete: Restrict)
   entryGate       Gate             @relation("SessionEntryGate", fields: [entryGateId], references: [id], onDelete: Restrict)
   exitGate        Gate?            @relation("SessionExitGate", fields: [exitGateId], references: [id], onDelete: SetNull)
@@ -315,7 +358,7 @@ model ParkingSession {
   incidentReports IncidentReport[]
   payments        Payment[]
 
-  @@index([driverUserId], name: "idx_parking_sessions_driver_user_id")
+  @@index([vehicleId], name: "idx_parking_sessions_vehicle_id")
   @@index([licensePlateIn], name: "idx_parking_sessions_license_plate_in")
   @@index([status], name: "idx_parking_sessions_status")
   @@index([reservationId], name: "idx_parking_sessions_reservation_id")

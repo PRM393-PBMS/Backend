@@ -12,7 +12,7 @@ import {
   sameStatus,
   toMoney,
 } from '../common/pbms-fields';
-import { isMotorbikeType, isValidLicensePlate, normalizeLicensePlate } from '../common/license-plate';
+import { isMotorbikeType } from '../common/license-plate';
 import { InsufficientWalletFundsError, WalletsService } from '../wallets/wallets.service';
 
 type CustomerPaymentMethod = 'PayOS' | 'Wallet';
@@ -30,16 +30,13 @@ export class MonthlySubscriptionsService {
       return PbmsResponseDto.fail('Vui lòng đăng nhập để đăng ký gói', 401);
     }
     const packageId = pbmsPickGuid(dto, 'packageId', 'PackageId');
-    const licensePlate = normalizeLicensePlate(pbmsPick(dto, 'licensePlate', 'LicensePlate'));
+    const vehicleId = pbmsPickGuid(dto, 'vehicleId', 'VehicleId');
     const fixedSlotId = pbmsPickGuid(dto, 'fixedSlotId', 'FixedSlotId') || null;
     if (isEmptyGuid(packageId)) {
       return PbmsResponseDto.fail('Vui lòng chọn gói');
     }
-    if (!licensePlate) {
-      return PbmsResponseDto.fail('Vui lòng nhập biển số xe');
-    }
-    if (!isValidLicensePlate(licensePlate)) {
-      return PbmsResponseDto.fail('Biển số phải gồm 4-15 chữ cái và chữ số');
+    if (isEmptyGuid(vehicleId)) {
+      return PbmsResponseDto.fail('Vui lòng chọn xe đã đăng ký');
     }
     const pkg = await this.prisma.subscriptionPackage.findUnique({
       where: { id: packageId },
@@ -48,9 +45,19 @@ export class MonthlySubscriptionsService {
     if (!pkg || !sameStatus(pkg.status, 'Active')) {
       return PbmsResponseDto.fail('Gói không tồn tại hoặc đã ngừng bán', 404);
     }
+    const vehicle = await this.prisma.vehicle.findFirst({
+      where: { id: vehicleId, userId },
+      include: { vehicleType: true },
+    });
+    if (!vehicle) {
+      return PbmsResponseDto.fail('Không tìm thấy xe hoặc xe không thuộc tài khoản của bạn', 404);
+    }
+    if (vehicle.vehicleTypeId !== pkg.vehicleTypeId) {
+      return PbmsResponseDto.fail('Loại xe không phù hợp với gói tháng đã chọn');
+    }
     const plateExists = await this.prisma.monthlySubscription.findFirst({
       where: {
-        licensePlate,
+        vehicleId,
         status: { in: ['PendingPayment', 'Active'] },
       },
     });
@@ -109,7 +116,7 @@ export class MonthlySubscriptionsService {
         return method.error;
       }
       if (method.value === 'Wallet') {
-        return this.registerWithWallet(userId, pkg, licensePlate, selectedSlot, start, end);
+        return this.registerWithWallet(userId, pkg, vehicle, selectedSlot, start, end);
       }
     }
 
@@ -118,8 +125,7 @@ export class MonthlySubscriptionsService {
         const subscription = await tx.monthlySubscription.create({
           data: {
             userId,
-            vehicleTypeId: pkg.vehicleTypeId,
-            licensePlate,
+            vehicleId,
             packageId: pkg.id,
             startDate: start,
             endDate: end,
@@ -152,7 +158,7 @@ export class MonthlySubscriptionsService {
           this.mapSubscription({
             ...created.subscription,
             user: { fullName: null },
-            vehicleType: pkg.vehicleType,
+            vehicle,
             package: pkg,
             fixedSlot: selectedSlot,
           }),
@@ -223,15 +229,9 @@ export class MonthlySubscriptionsService {
     if (!existing) {
       return PbmsResponseDto.fail('Không tìm thấy gói tháng', 404);
     }
-    const licensePlateRaw = pbmsPick(dto, 'licensePlate', 'LicensePlate').trim();
-    const licensePlate = licensePlateRaw ? normalizeLicensePlate(licensePlateRaw) : existing.licensePlate;
-    if (licensePlateRaw && !isValidLicensePlate(licensePlate)) {
-      return PbmsResponseDto.fail('Biển số phải gồm 4-15 chữ cái và chữ số');
-    }
     const updated = await this.prisma.monthlySubscription.update({
       where: { id },
       data: {
-        licensePlate,
         startDate: pbmsPickDate(dto, 'startDate', 'StartDate') ?? existing.startDate,
         endDate: pbmsPickDate(dto, 'endDate', 'EndDate') ?? existing.endDate,
         status: pbmsPick(dto, 'status', 'Status').trim() || existing.status,
@@ -286,7 +286,7 @@ export class MonthlySubscriptionsService {
     }
     const subscription = await this.prisma.monthlySubscription.findUnique({
       where: { id: subscriptionId },
-      include: { package: true, vehicleType: true },
+      include: { package: true, vehicle: { include: { vehicleType: true } } },
     });
     if (!subscription) {
       return PbmsResponseDto.fail('Không tìm thấy gói tháng', 404);
@@ -344,12 +344,10 @@ export class MonthlySubscriptionsService {
     userId: string,
     pkg: {
       id: string;
-      vehicleTypeId: string;
       price: Prisma.Decimal;
       durationDays: number;
-      vehicleType: { typeName: string };
     },
-    licensePlate: string,
+    vehicle: { id: string; licensePlate: string; vehicleTypeId: string; vehicleType: { typeName: string } },
     selectedSlot: { id: string; slotCode: string } | null,
     start: Date,
     end: Date,
@@ -359,8 +357,7 @@ export class MonthlySubscriptionsService {
         const subscription = await tx.monthlySubscription.create({
           data: {
             userId,
-            vehicleTypeId: pkg.vehicleTypeId,
-            licensePlate,
+            vehicleId: vehicle.id,
             packageId: pkg.id,
             startDate: start,
             endDate: end,
@@ -386,7 +383,7 @@ export class MonthlySubscriptionsService {
         await this.activateSubscriptionInTx(tx, {
           ...subscription,
           package: pkg,
-          vehicleType: pkg.vehicleType,
+          vehicle,
         });
         return { subscription, payment, debit };
       });
@@ -415,11 +412,10 @@ export class MonthlySubscriptionsService {
     subscription: {
       id: string;
       userId: string;
-      vehicleTypeId: string;
       fixedSlotId: string | null;
       price: Prisma.Decimal;
       package: { durationDays: number } | null;
-      vehicleType: { typeName: string };
+      vehicle: { vehicleTypeId: string; vehicleType: { typeName: string } };
     },
     userId: string,
   ): Promise<PbmsResponseDto> {
@@ -469,10 +465,9 @@ export class MonthlySubscriptionsService {
         await this.activateSubscriptionInTx(tx, {
           id: subscription.id,
           userId: subscription.userId,
-          vehicleTypeId: subscription.vehicleTypeId,
           fixedSlotId: subscription.fixedSlotId,
           package: subscription.package,
-          vehicleType: subscription.vehicleType,
+          vehicle: subscription.vehicle,
         });
         return { payment, debit };
       });
@@ -498,17 +493,16 @@ export class MonthlySubscriptionsService {
     subscription: {
       id: string;
       userId: string;
-      vehicleTypeId: string;
       fixedSlotId: string | null;
       package: { durationDays: number } | null;
-      vehicleType: { typeName: string };
+      vehicle: { vehicleTypeId: string; vehicleType: { typeName: string } };
     },
   ): Promise<void> {
     if (!subscription.package) {
       throw new Error(`Không thể kích hoạt gói tháng ${subscription.id}: không tìm thấy thông tin gói đăng ký.`);
     }
     let assignedSlotId = subscription.fixedSlotId;
-    if (!isMotorbikeType(subscription.vehicleType.typeName)) {
+    if (!isMotorbikeType(subscription.vehicle.vehicleType.typeName)) {
       let slot = subscription.fixedSlotId
         ? await tx.parkingSlot.findUnique({
             where: { id: subscription.fixedSlotId },
@@ -518,7 +512,7 @@ export class MonthlySubscriptionsService {
       if (!slot) {
         const available = await tx.parkingSlot.findMany({
           where: {
-            vehicleTypeId: subscription.vehicleTypeId,
+            vehicleTypeId: subscription.vehicle.vehicleTypeId,
             status: 'Available',
             floor: { isResident: true },
           },
@@ -531,7 +525,7 @@ export class MonthlySubscriptionsService {
         }
         slot = available[Math.floor(Math.random() * available.length)];
       }
-      if (!slot || slot.vehicleTypeId !== subscription.vehicleTypeId || !slot.floor.isResident) {
+      if (!slot || slot.vehicleTypeId !== subscription.vehicle.vehicleTypeId || !slot.floor.isResident) {
         throw new Error(
           `Không thể kích hoạt gói tháng ${subscription.id}: slot cố định không tồn tại hoặc không còn hợp lệ.`,
         );
@@ -588,7 +582,7 @@ export class MonthlySubscriptionsService {
       where,
       include: {
         user: true,
-        vehicleType: true,
+        vehicle: { include: { vehicleType: true } },
         package: true,
         fixedSlot: true,
       },
@@ -600,29 +594,30 @@ export class MonthlySubscriptionsService {
   private loadOne(id: string) {
     return this.prisma.monthlySubscription.findUnique({
       where: { id },
-      include: { user: true, vehicleType: true, package: true, fixedSlot: true },
+      include: { user: true, vehicle: { include: { vehicleType: true } }, package: true, fixedSlot: true },
     });
   }
 
   private mapSubscription(item: {
     id: string;
     userId: string;
-    licensePlate: string;
+    vehicleId: string;
     startDate: Date;
     endDate: Date;
     price: Prisma.Decimal;
     status: string;
     user?: { fullName: string | null };
-    vehicleType?: { typeName: string };
+    vehicle?: { licensePlate: string; vehicleType: { typeName: string } };
     package?: { packageName: string };
     fixedSlot?: { slotCode: string } | null;
   }) {
     return {
       subscriptionId: item.id,
       userId: item.userId,
+      vehicleId: item.vehicleId,
       fullName: item.user?.fullName ?? null,
-      licensePlate: item.licensePlate,
-      vehicleType: item.vehicleType?.typeName ?? null,
+      licensePlate: item.vehicle?.licensePlate ?? null,
+      vehicleType: item.vehicle?.vehicleType.typeName ?? null,
       packageName: item.package?.packageName ?? null,
       startDate: item.startDate,
       endDate: item.endDate,

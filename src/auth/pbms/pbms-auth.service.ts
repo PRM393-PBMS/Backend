@@ -51,7 +51,10 @@ export class PbmsAuthService {
       return new PbmsResponseDto('Không tìm thấy người dùng', 400, false);
     }
 
-    const isPasswordValid = await this.hashingService.compare(password, user.passwordHash);
+    const isPasswordValid = await this.hashingService.compare(
+      password,
+      user.passwordHash,
+    );
     if (!isPasswordValid) {
       return new PbmsResponseDto('Sai mật khẩu', 400, false);
     }
@@ -84,7 +87,11 @@ export class PbmsAuthService {
         refreshToken: tokens.refreshToken,
       });
     } catch {
-      return new PbmsResponseDto('Lỗi lưu refresh token vào cơ sở dữ liệu', 500, false);
+      return new PbmsResponseDto(
+        'Lỗi lưu refresh token vào cơ sở dữ liệu',
+        500,
+        false,
+      );
     }
   }
 
@@ -94,7 +101,11 @@ export class PbmsAuthService {
       return new PbmsResponseDto('Vui lòng nhập UserName', 400, false);
     }
     if (userName.length > 50) {
-      return new PbmsResponseDto('UserName không được vượt quá 50 ký tự', 400, false);
+      return new PbmsResponseDto(
+        'UserName không được vượt quá 50 ký tự',
+        400,
+        false,
+      );
     }
     if (await this.prisma.user.findUnique({ where: { userName } })) {
       return new PbmsResponseDto('UserName đã tồn tại', 409, false);
@@ -109,7 +120,11 @@ export class PbmsAuthService {
     }
     const email = this.normalizeEmail(rawEmail);
     if (email.length > 100) {
-      return new PbmsResponseDto('Email không được vượt quá 100 ký tự', 400, false);
+      return new PbmsResponseDto(
+        'Email không được vượt quá 100 ký tự',
+        400,
+        false,
+      );
     }
     if (await this.findUserByEmail(email)) {
       return new PbmsResponseDto('Email đã được đăng ký.', 400, false);
@@ -129,7 +144,11 @@ export class PbmsAuthService {
       return new PbmsResponseDto('Vui lòng nhập tên đầy đủ', 400, false);
     }
     if (fullName.length > 100) {
-      return new PbmsResponseDto('Tên đầy đủ không được vượt quá 100 ký tự', 400, false);
+      return new PbmsResponseDto(
+        'Tên đầy đủ không được vượt quá 100 ký tự',
+        400,
+        false,
+      );
     }
 
     let phoneNumber = pbmsPick(dto, 'phoneNumber', 'PhoneNumber').trim();
@@ -153,14 +172,24 @@ export class PbmsAuthService {
 
     try {
       await this.mailService.sendOtpEmail(email, otp, 'registration');
-      return new PbmsResponseDto('Nếu email tồn tại, OTP đã được gửi', 200, true);
+      return new PbmsResponseDto(
+        'Nếu email tồn tại, OTP đã được gửi',
+        200,
+        true,
+      );
     } catch (error: unknown) {
       const message = error instanceof Error ? error.message : 'unknown';
-      return new PbmsResponseDto(`Đã xảy ra lỗi khi gửi OTP đăng ký: ${message}`, 500, false);
+      return new PbmsResponseDto(
+        `Đã xảy ra lỗi khi gửi OTP đăng ký: ${message}`,
+        500,
+        false,
+      );
     }
   }
 
-  async verifyRegisterOtp(dto: PbmsVerifyRegisterOtpDto): Promise<PbmsResponseDto> {
+  async verifyRegisterOtp(
+    dto: PbmsVerifyRegisterOtpDto,
+  ): Promise<PbmsResponseDto> {
     const emailRaw = pbmsPick(dto, 'email', 'Email');
     const otp = pbmsPick(dto, 'otp', 'Otp');
     if (!emailRaw.trim() || !otp.trim()) {
@@ -170,20 +199,44 @@ export class PbmsAuthService {
     const email = this.normalizeEmail(emailRaw);
     const cached = await this.otpStore.get<CachedRegister>(`Register_${email}`);
     if (!cached) {
-      return new PbmsResponseDto('Mã OTP không hợp lệ hoặc đã hết hạn', 400, false);
+      return new PbmsResponseDto(
+        'Mã OTP không hợp lệ hoặc đã hết hạn',
+        400,
+        false,
+      );
     }
     if (this.hashSha256(otp) !== cached.otpHash) {
       return new PbmsResponseDto('Mã OTP không đúng', 400, false);
     }
 
     if (await this.findUserByEmail(cached.email)) {
-      return new PbmsResponseDto('Email đã được đăng ký bởi người khác.', 400, false);
+      return new PbmsResponseDto(
+        'Email đã được đăng ký bởi người khác.',
+        400,
+        false,
+      );
     }
-    if (await this.prisma.user.findUnique({ where: { userName: cached.userName } })) {
-      return new PbmsResponseDto('UserName đã được đăng ký bởi người khác.', 409, false);
+    if (
+      await this.prisma.user.findUnique({
+        where: { userName: cached.userName },
+      })
+    ) {
+      return new PbmsResponseDto(
+        'UserName đã được đăng ký bởi người khác.',
+        409,
+        false,
+      );
     }
-    if (await this.prisma.user.findUnique({ where: { phoneNumber: cached.phoneNumber } })) {
-      return new PbmsResponseDto('Số điện thoại đã được đăng ký bởi người khác.', 409, false);
+    if (
+      await this.prisma.user.findUnique({
+        where: { phoneNumber: cached.phoneNumber },
+      })
+    ) {
+      return new PbmsResponseDto(
+        'Số điện thoại đã được đăng ký bởi người khác.',
+        409,
+        false,
+      );
     }
 
     const defaultRole = await this.prisma.role.findFirst({
@@ -216,9 +269,14 @@ export class PbmsAuthService {
         },
       });
       await this.otpStore.delete(`Register_${email}`);
-      return new PbmsResponseDto('Đăng ký thành công', 200, true, { userId: newUser.id });
+      return new PbmsResponseDto('Đăng ký thành công', 200, true, {
+        userId: newUser.id,
+      });
     } catch (error: unknown) {
-      if (error instanceof Prisma.PrismaClientKnownRequestError && error.code === 'P2002') {
+      if (
+        error instanceof Prisma.PrismaClientKnownRequestError &&
+        error.code === 'P2002'
+      ) {
         return new PbmsResponseDto(
           'Email, UserName hoặc số điện thoại vừa được tài khoản khác sử dụng. Vui lòng kiểm tra lại.',
           409,
@@ -233,7 +291,9 @@ export class PbmsAuthService {
     }
   }
 
-  async requestResetPasswordOtp(dto: PbmsRequestOtpDto): Promise<PbmsResponseDto> {
+  async requestResetPasswordOtp(
+    dto: PbmsRequestOtpDto,
+  ): Promise<PbmsResponseDto> {
     const rawEmail = pbmsPick(dto, 'email', 'Email');
     if (!rawEmail.trim()) {
       return new PbmsResponseDto('Vui lòng nhập Email', 400, false);
@@ -242,7 +302,11 @@ export class PbmsAuthService {
     const email = this.normalizeEmail(rawEmail);
     const user = await this.findUserByEmail(email);
     if (!user) {
-      return new PbmsResponseDto('Nếu email tồn tại, OTP đã được gửi', 200, true);
+      return new PbmsResponseDto(
+        'Nếu email tồn tại, OTP đã được gửi',
+        200,
+        true,
+      );
     }
 
     const otp = randomInt(100000, 1000000).toString();
@@ -250,7 +314,11 @@ export class PbmsAuthService {
 
     try {
       await this.mailService.sendOtpEmail(email, otp, 'password-reset');
-      return new PbmsResponseDto('Nếu email tồn tại, OTP đã được gửi', 200, true);
+      return new PbmsResponseDto(
+        'Nếu email tồn tại, OTP đã được gửi',
+        200,
+        true,
+      );
     } catch (error: unknown) {
       const message = error instanceof Error ? error.message : 'unknown';
       return new PbmsResponseDto(
@@ -261,7 +329,9 @@ export class PbmsAuthService {
     }
   }
 
-  async verifyResetPasswordOtp(dto: PbmsVerifyResetPasswordOtpDto): Promise<PbmsResponseDto> {
+  async verifyResetPasswordOtp(
+    dto: PbmsVerifyResetPasswordOtpDto,
+  ): Promise<PbmsResponseDto> {
     const emailRaw = pbmsPick(dto, 'email', 'Email');
     const otp = pbmsPick(dto, 'otp', 'Otp');
     const newPassword = pbmsPick(dto, 'newPassword', 'NewPassword');
@@ -277,7 +347,11 @@ export class PbmsAuthService {
     const email = this.normalizeEmail(emailRaw);
     const cachedOtpHash = await this.otpStore.get<string>(`Reset_${email}`);
     if (!cachedOtpHash) {
-      return new PbmsResponseDto('Mã OTP không hợp lệ hoặc đã hết hạn', 400, false);
+      return new PbmsResponseDto(
+        'Mã OTP không hợp lệ hoặc đã hết hạn',
+        400,
+        false,
+      );
     }
     if (this.hashSha256(otp) !== cachedOtpHash) {
       return new PbmsResponseDto('Mã OTP không đúng', 400, false);
@@ -285,7 +359,11 @@ export class PbmsAuthService {
 
     const user = await this.findUserByEmail(email);
     if (!user) {
-      return new PbmsResponseDto('Người dùng không tồn tại trên hệ thống', 404, false);
+      return new PbmsResponseDto(
+        'Người dùng không tồn tại trên hệ thống',
+        404,
+        false,
+      );
     }
 
     try {
@@ -314,15 +392,26 @@ export class PbmsAuthService {
 
     let userId: string;
     try {
-      const payload = await this.jwtService.verifyAsync<{ sub?: string }>(rawToken, {
-        secret: this.refreshSecret(),
-      });
+      const payload = await this.jwtService.verifyAsync<{ sub?: string }>(
+        rawToken,
+        {
+          secret: this.refreshSecret(),
+        },
+      );
       if (!payload.sub) {
-        return new PbmsResponseDto('Token không chứa thông tin định danh hợp lệ', 401, false);
+        return new PbmsResponseDto(
+          'Token không chứa thông tin định danh hợp lệ',
+          401,
+          false,
+        );
       }
       userId = payload.sub;
     } catch {
-      return new PbmsResponseDto('Refresh token không hợp lệ hoặc hết hạn', 401, false);
+      return new PbmsResponseDto(
+        'Refresh token không hợp lệ hoặc hết hạn',
+        401,
+        false,
+      );
     }
 
     const sessions = await this.prisma.refreshToken.findMany({
@@ -348,7 +437,11 @@ export class PbmsAuthService {
       include: { pbmsRole: true },
     });
     if (!user) {
-      return new PbmsResponseDto('Người dùng không tồn tại trên hệ thống', 404, false);
+      return new PbmsResponseDto(
+        'Người dùng không tồn tại trên hệ thống',
+        404,
+        false,
+      );
     }
     if (!this.isPbmsActive(user.status, user.isActive)) {
       return new PbmsResponseDto(
@@ -359,7 +452,9 @@ export class PbmsAuthService {
     }
 
     const accessToken = await this.signAccessToken(user);
-    return new PbmsResponseDto('Cấp token mới thành công', 200, true, { accessToken });
+    return new PbmsResponseDto('Cấp token mới thành công', 200, true, {
+      accessToken,
+    });
   }
 
   async logout(dto: PbmsRefreshTokenDto): Promise<PbmsResponseDto> {
@@ -370,10 +465,13 @@ export class PbmsAuthService {
 
     let userId: string | undefined;
     try {
-      const payload = await this.jwtService.verifyAsync<{ sub?: string }>(rawToken, {
-        secret: this.refreshSecret(),
-        ignoreExpiration: true,
-      });
+      const payload = await this.jwtService.verifyAsync<{ sub?: string }>(
+        rawToken,
+        {
+          secret: this.refreshSecret(),
+          ignoreExpiration: true,
+        },
+      );
       userId = payload.sub;
     } catch {
       userId = undefined;
@@ -484,10 +582,16 @@ export class PbmsAuthService {
   }
 
   private accessSecret(): string {
-    return process.env.JWT_ACCESS_SECRET || 'prm393_enterprise_access_secret_key_2026';
+    return (
+      process.env.JWT_ACCESS_SECRET ||
+      'prm393_enterprise_access_secret_key_2026'
+    );
   }
 
   private refreshSecret(): string {
-    return process.env.JWT_REFRESH_SECRET || 'prm393_enterprise_refresh_secret_key_2026';
+    return (
+      process.env.JWT_REFRESH_SECRET ||
+      'prm393_enterprise_refresh_secret_key_2026'
+    );
   }
 }

@@ -1,9 +1,20 @@
 import { Injectable } from '@nestjs/common';
 import { PrismaService } from '../prisma/prisma.service';
 import { PbmsResponseDto } from '../common/dto/pbms-response.dto';
-import { errorMessage, isEmptyGuid, pbmsPick, pbmsPickGuid } from '../common/pbms-fields';
+import {
+  errorMessage,
+  isEmptyGuid,
+  pbmsPick,
+  pbmsPickGuid,
+} from '../common/pbms-fields';
 
-const SLOT_STATUSES = ['Available', 'Occupied', 'Assigned', 'Maintenance', 'Locked'];
+const SLOT_STATUSES = [
+  'Available',
+  'Occupied',
+  'Assigned',
+  'Maintenance',
+  'Locked',
+];
 
 @Injectable()
 export class ParkingSlotsService {
@@ -17,7 +28,10 @@ export class ParkingSlotsService {
     if (slots.length === 0) {
       return PbmsResponseDto.fail('Không tìm thấy ô đỗ nào', 404);
     }
-    return PbmsResponseDto.ok('Lấy danh sách ô đỗ thành công', slots.map((s) => this.map(s)));
+    return PbmsResponseDto.ok(
+      'Lấy danh sách ô đỗ thành công',
+      slots.map((s) => this.map(s)),
+    );
   }
 
   async getById(id: string): Promise<PbmsResponseDto> {
@@ -37,21 +51,36 @@ export class ParkingSlotsService {
   async create(dto: object): Promise<PbmsResponseDto> {
     const floorId = pbmsPickGuid(dto, 'floorId', 'FloorId');
     const vehicleTypeId = pbmsPickGuid(dto, 'vehicleTypeId', 'VehicleTypeId');
+    const parkingId = pbmsPickGuid(dto, 'parkingId', 'ParkingId');
     const slotCode = pbmsPick(dto, 'slotCode', 'SlotCode').trim();
-    if (isEmptyGuid(floorId) || isEmptyGuid(vehicleTypeId) || !slotCode) {
+    if (
+      isEmptyGuid(floorId) ||
+      isEmptyGuid(vehicleTypeId) ||
+      isEmptyGuid(parkingId) ||
+      !slotCode
+    ) {
       return PbmsResponseDto.fail('Dữ liệu không hợp lệ');
     }
-    const refs = await this.validateRefs(floorId, vehicleTypeId, slotCode, null);
+    const refs = await this.validateRefs(
+      floorId,
+      vehicleTypeId,
+      slotCode,
+      parkingId,
+      null,
+    );
     if (refs.error) {
       return refs.error;
     }
     try {
       const slot = await this.prisma.parkingSlot.create({
         data: {
+          parkingId,
           floorId,
           vehicleTypeId,
           slotCode,
-          status: this.normalizeStatus(pbmsPick(dto, 'status', 'Status')) || 'Available',
+          status:
+            this.normalizeStatus(pbmsPick(dto, 'status', 'Status')) ||
+            'Available',
         },
         include: { floor: true, vehicleType: true },
       });
@@ -62,18 +91,37 @@ export class ParkingSlotsService {
   }
 
   async update(dto: object): Promise<PbmsResponseDto> {
-    const id = pbmsPickGuid(dto, 'slotId', 'SlotId', 'parkingSlotId', 'ParkingSlotId');
+    const id = pbmsPickGuid(
+      dto,
+      'slotId',
+      'SlotId',
+      'parkingSlotId',
+      'ParkingSlotId',
+    );
     if (isEmptyGuid(id)) {
       return PbmsResponseDto.fail('Dữ liệu cập nhật không hợp lệ');
     }
-    const existing = await this.prisma.parkingSlot.findUnique({ where: { id } });
+    const existing = await this.prisma.parkingSlot.findUnique({
+      where: { id },
+    });
     if (!existing) {
       return PbmsResponseDto.fail('Không tìm thấy ô đỗ', 404);
     }
     const floorId = pbmsPickGuid(dto, 'floorId', 'FloorId') || existing.floorId;
-    const vehicleTypeId = pbmsPickGuid(dto, 'vehicleTypeId', 'VehicleTypeId') || existing.vehicleTypeId;
-    const slotCode = pbmsPick(dto, 'slotCode', 'SlotCode').trim() || existing.slotCode;
-    const refs = await this.validateRefs(floorId, vehicleTypeId, slotCode, id);
+    const vehicleTypeId =
+      pbmsPickGuid(dto, 'vehicleTypeId', 'VehicleTypeId') ||
+      existing.vehicleTypeId;
+    const parkingId =
+      pbmsPickGuid(dto, 'parkingId', 'ParkingId') || existing.parkingId;
+    const slotCode =
+      pbmsPick(dto, 'slotCode', 'SlotCode').trim() || existing.slotCode;
+    const refs = await this.validateRefs(
+      floorId,
+      vehicleTypeId,
+      slotCode,
+      parkingId,
+      id,
+    );
     if (refs.error) {
       return refs.error;
     }
@@ -81,16 +129,22 @@ export class ParkingSlotsService {
       const slot = await this.prisma.parkingSlot.update({
         where: { id },
         data: {
+          parkingId,
           floorId,
           vehicleTypeId,
           slotCode,
-          status: this.normalizeStatus(pbmsPick(dto, 'status', 'Status')) || existing.status,
+          status:
+            this.normalizeStatus(pbmsPick(dto, 'status', 'Status')) ||
+            existing.status,
         },
         include: { floor: true, vehicleType: true },
       });
       return PbmsResponseDto.ok('Cập nhật ô đỗ thành công', this.map(slot));
     } catch (error: unknown) {
-      return PbmsResponseDto.fail(`Lỗi cập nhật ô đỗ: ${errorMessage(error)}`, 500);
+      return PbmsResponseDto.fail(
+        `Lỗi cập nhật ô đỗ: ${errorMessage(error)}`,
+        500,
+      );
     }
   }
 
@@ -114,14 +168,19 @@ export class ParkingSlotsService {
       data: { status },
       include: { floor: true, vehicleType: true },
     });
-    return PbmsResponseDto.ok('Cập nhật trạng thái ô đỗ thành công', this.map(slot));
+    return PbmsResponseDto.ok(
+      'Cập nhật trạng thái ô đỗ thành công',
+      this.map(slot),
+    );
   }
 
   async remove(id: string): Promise<PbmsResponseDto> {
     if (isEmptyGuid(id)) {
       return PbmsResponseDto.fail('Vui lòng nhập ParkingSlotId');
     }
-    const existing = await this.prisma.parkingSlot.findUnique({ where: { id } });
+    const existing = await this.prisma.parkingSlot.findUnique({
+      where: { id },
+    });
     if (!existing) {
       return PbmsResponseDto.fail('Không tìm thấy ô đỗ', 404);
     }
@@ -134,7 +193,9 @@ export class ParkingSlotsService {
   }
 
   private normalizeStatus(value: string): string {
-    const match = SLOT_STATUSES.find((item) => item.toLowerCase() === value.trim().toLowerCase());
+    const match = SLOT_STATUSES.find(
+      (item) => item.toLowerCase() === value.trim().toLowerCase(),
+    );
     return match ?? '';
   }
 
@@ -142,18 +203,33 @@ export class ParkingSlotsService {
     floorId: string,
     vehicleTypeId: string,
     slotCode: string,
+    parkingId: string,
     currentId: string | null,
   ) {
-    const floor = await this.prisma.floor.findUnique({ where: { id: floorId } });
+    const parking = await this.prisma.parking.findUnique({
+      where: { id: parkingId },
+    });
+    if (!parking) {
+      return { error: PbmsResponseDto.fail('Bãi đỗ không tồn tại', 404) };
+    }
+    const floor = await this.prisma.floor.findUnique({
+      where: { id: floorId },
+    });
     if (!floor) {
       return { error: PbmsResponseDto.fail('Tầng không tồn tại') };
     }
-    const vehicleType = await this.prisma.vehicleType.findUnique({ where: { id: vehicleTypeId } });
+    if (floor.parkingId !== parkingId) {
+      return { error: PbmsResponseDto.fail('Tầng không thuộc bãi đỗ đã chọn') };
+    }
+    const vehicleType = await this.prisma.vehicleType.findUnique({
+      where: { id: vehicleTypeId },
+    });
     if (!vehicleType) {
       return { error: PbmsResponseDto.fail('Loại phương tiện không tồn tại') };
     }
     const dup = await this.prisma.parkingSlot.findFirst({
       where: {
+        parkingId,
         slotCode: { equals: slotCode, mode: 'insensitive' },
         ...(currentId ? { NOT: { id: currentId } } : {}),
       },
@@ -166,6 +242,7 @@ export class ParkingSlotsService {
 
   private map(slot: {
     id: string;
+    parkingId: string;
     floorId: string;
     vehicleTypeId: string;
     slotCode: string;
@@ -175,6 +252,7 @@ export class ParkingSlotsService {
   }) {
     return {
       slotId: slot.id,
+      parkingId: slot.parkingId,
       floorId: slot.floorId,
       floorName: slot.floor.floorName,
       slotCode: slot.slotCode,

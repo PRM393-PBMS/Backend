@@ -27,6 +27,7 @@ export class SubscriptionRenewalsService {
     }
     const subscription = await this.prisma.monthlySubscription.findUnique({
       where: { id: subscriptionId },
+      include: { vehicle: true },
     });
     if (!subscription) {
       return PbmsResponseDto.fail('Không tìm thấy gói tháng', 404);
@@ -41,7 +42,7 @@ export class SubscriptionRenewalsService {
     if (!pkg || !sameStatus(pkg.status, 'Active')) {
       return PbmsResponseDto.fail('Gói cước gia hạn không tồn tại hoặc đã ngừng áp dụng');
     }
-    if (subscription.vehicleTypeId !== pkg.vehicleTypeId) {
+    if (subscription.vehicle.vehicleTypeId !== pkg.vehicleTypeId) {
       return PbmsResponseDto.fail('Gói cước mới không phù hợp với loại xe hiện tại');
     }
     try {

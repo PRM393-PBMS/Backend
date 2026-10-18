@@ -256,7 +256,7 @@ export class PaymentsService {
   private async activateSubscription(subscriptionId: string): Promise<void> {
     const subscription = await this.prisma.monthlySubscription.findUnique({
       where: { id: subscriptionId },
-      include: { package: true, vehicleType: true, user: { include: { pbmsRole: true } } },
+      include: { package: true, vehicle: { include: { vehicleType: true } }, user: { include: { pbmsRole: true } } },
     });
     if (!subscription) {
       throw new Error(`Thanh toán thành công nhưng không tìm thấy đăng ký gói tháng ${subscriptionId}.`);
@@ -264,7 +264,7 @@ export class PaymentsService {
     if (!subscription.package) {
       throw new Error(`Không thể kích hoạt gói tháng ${subscriptionId}: không tìm thấy thông tin gói đăng ký.`);
     }
-    if (!isMotorbikeType(subscription.vehicleType.typeName)) {
+    if (!isMotorbikeType(subscription.vehicle.vehicleType.typeName)) {
       let slot = subscription.fixedSlotId
         ? await this.prisma.parkingSlot.findUnique({
             where: { id: subscription.fixedSlotId },
@@ -274,7 +274,7 @@ export class PaymentsService {
       if (!slot) {
         const available = await this.prisma.parkingSlot.findMany({
           where: {
-            vehicleTypeId: subscription.vehicleTypeId,
+            vehicleTypeId: subscription.vehicle.vehicleTypeId,
             status: 'Available',
             floor: { isResident: true },
           },
@@ -287,7 +287,7 @@ export class PaymentsService {
         }
         slot = available[Math.floor(Math.random() * available.length)];
       }
-      if (!slot || slot.vehicleTypeId !== subscription.vehicleTypeId || !slot.floor.isResident) {
+      if (!slot || slot.vehicleTypeId !== subscription.vehicle.vehicleTypeId || !slot.floor.isResident) {
         throw new Error(
           `Không thể kích hoạt gói tháng ${subscriptionId}: slot cố định không tồn tại hoặc không còn hợp lệ.`,
         );

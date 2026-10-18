@@ -3,6 +3,9 @@ dist
 .git
 .agents
 .cursor
+.tmp
+docs
+test
 .env
 .env.*
 !.env.example

@@ -10,7 +10,7 @@ export class FloorsService {
 
   async getAll(): Promise<PbmsResponseDto> {
     const floors = await this.prisma.floor.findMany({
-      include: { dedicatedVehicleType: true },
+      include: { parking: true, dedicatedVehicleType: true },
       orderBy: { floorName: 'asc' },
     });
     if (floors.length === 0) {
@@ -25,7 +25,7 @@ export class FloorsService {
     }
     const floor = await this.prisma.floor.findUnique({
       where: { id },
-      include: { dedicatedVehicleType: true },
+      include: { parking: true, dedicatedVehicleType: true },
     });
     if (!floor) {
       return PbmsResponseDto.fail('Không tìm thấy tầng', 404);
@@ -36,6 +36,7 @@ export class FloorsService {
   async create(dto: object): Promise<PbmsResponseDto> {
     const validation = await this.validate(
       pbmsPick(dto, 'floorName', 'FloorName'),
+      pbmsPickGuid(dto, 'parkingId', 'ParkingId'),
       pbmsPickGuid(dto, 'dedicatedVehicleTypeId', 'DedicatedVehicleTypeId'),
       null,
     );
@@ -45,12 +46,13 @@ export class FloorsService {
     try {
       const floor = await this.prisma.floor.create({
         data: {
+          parkingId: validation.parkingId,
           floorName: pbmsPick(dto, 'floorName', 'FloorName').trim(),
           dedicatedVehicleTypeId: validation.vehicleTypeId,
           totalCapacity: pbmsPickNumber(dto, 'totalCapacity', 'TotalCapacity') ?? 0,
           isResident: pbmsPickBool(dto, 'isResident', 'IsResident') ?? false,
         },
-        include: { dedicatedVehicleType: true },
+        include: { parking: true, dedicatedVehicleType: true },
       });
       return PbmsResponseDto.ok('Tạo tầng thành công', this.map(floor), 201);
     } catch (error: unknown) {
@@ -73,6 +75,7 @@ export class FloorsService {
     }
     const validation = await this.validate(
       pbmsPick(dto, 'floorName', 'FloorName'),
+      pbmsPickGuid(dto, 'parkingId', 'ParkingId') || existing.parkingId,
       pbmsPickGuid(dto, 'dedicatedVehicleTypeId', 'DedicatedVehicleTypeId'),
       id,
     );
@@ -83,12 +86,13 @@ export class FloorsService {
       const floor = await this.prisma.floor.update({
         where: { id },
         data: {
+          parkingId: validation.parkingId,
           floorName: pbmsPick(dto, 'floorName', 'FloorName').trim(),
           dedicatedVehicleTypeId: validation.vehicleTypeId,
           totalCapacity: pbmsPickNumber(dto, 'totalCapacity', 'TotalCapacity') ?? existing.totalCapacity,
           isResident: pbmsPickBool(dto, 'isResident', 'IsResident') ?? existing.isResident,
         },
-        include: { dedicatedVehicleType: true },
+        include: { parking: true, dedicatedVehicleType: true },
       });
       return PbmsResponseDto.ok('Cập nhật tầng thành công', this.map(floor));
     } catch (error: unknown) {
@@ -119,6 +123,8 @@ export class FloorsService {
 
   private map(floor: {
     id: string;
+    parkingId: string;
+    parking: { name: string };
     floorName: string;
     dedicatedVehicleTypeId: string | null;
     dedicatedVehicleType: { typeName: string } | null;
@@ -127,6 +133,8 @@ export class FloorsService {
   }) {
     return {
       floorId: floor.id,
+      parkingId: floor.parkingId,
+      parkingName: floor.parking.name,
       floorName: floor.floorName,
       dedicatedVehicleTypeId: floor.dedicatedVehicleTypeId,
       dedicatedVehicleTypeName: floor.dedicatedVehicleType?.typeName ?? null,
@@ -135,10 +143,19 @@ export class FloorsService {
     };
   }
 
-  private async validate(floorName: string, vehicleTypeId: string, currentId: string | null) {
+  private async validate(
+    floorName: string,
+    parkingId: string,
+    vehicleTypeId: string,
+    currentId: string | null,
+  ) {
     const trimmed = floorName.trim();
     if (!trimmed) {
-      return { vehicleTypeId: null as string | null, error: PbmsResponseDto.fail('Vui lòng nhập tên tầng') };
+      return {
+        parkingId: null as string | null,
+        vehicleTypeId: null as string | null,
+        error: PbmsResponseDto.fail('Vui lòng nhập tên tầng'),
+      };
     }
     const dup = await this.prisma.floor.findFirst({
       where: {
@@ -147,18 +164,38 @@ export class FloorsService {
       },
     });
     if (dup) {
-      return { vehicleTypeId: null as string | null, error: PbmsResponseDto.fail('Tên tầng đã tồn tại') };
+      return {
+        parkingId: null as string | null,
+        vehicleTypeId: null as string | null,
+        error: PbmsResponseDto.fail('Tên tầng đã tồn tại'),
+      };
+    }
+    if (isEmptyGuid(parkingId)) {
+      return {
+        parkingId: null as string | null,
+        vehicleTypeId: null as string | null,
+        error: PbmsResponseDto.fail('Vui lòng nhập ParkingId'),
+      };
+    }
+    const parking = await this.prisma.parking.findUnique({ where: { id: parkingId } });
+    if (!parking) {
+      return {
+        parkingId: null as string | null,
+        vehicleTypeId: null as string | null,
+        error: PbmsResponseDto.fail('Bãi đỗ không tồn tại'),
+      };
     }
     if (!isEmptyGuid(vehicleTypeId)) {
       const vt = await this.prisma.vehicleType.findUnique({ where: { id: vehicleTypeId } });
       if (!vt) {
         return {
+          parkingId: null as string | null,
           vehicleTypeId: null as string | null,
           error: PbmsResponseDto.fail('Loại phương tiện chuyên dụng không tồn tại'),
         };
       }
-      return { vehicleTypeId, error: null };
+      return { parkingId, vehicleTypeId, error: null };
     }
-    return { vehicleTypeId: null as string | null, error: null };
+    return { parkingId, vehicleTypeId: null as string | null, error: null };
   }
 }

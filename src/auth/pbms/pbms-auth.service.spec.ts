@@ -26,6 +26,7 @@ describe('PbmsAuthService', () => {
   let hashingService: { compare: jest.Mock; hash: jest.Mock };
   let jwtService: { signAsync: jest.Mock; verifyAsync: jest.Mock };
   let mailService: { sendOtpEmail: jest.Mock };
+  let otpStore: { set: jest.Mock; get: jest.Mock; delete: jest.Mock };
 
   const activeUser = {
     id: 'user-1',
@@ -65,11 +66,16 @@ describe('PbmsAuthService', () => {
       verifyAsync: jest.fn(),
     };
     mailService = { sendOtpEmail: jest.fn().mockResolvedValue(undefined) };
+    otpStore = {
+      set: jest.fn().mockResolvedValue(undefined),
+      get: jest.fn().mockResolvedValue(undefined),
+      delete: jest.fn().mockResolvedValue(undefined),
+    };
 
     const module: TestingModule = await Test.createTestingModule({
       providers: [
         PbmsAuthService,
-        OtpStoreService,
+        { provide: OtpStoreService, useValue: otpStore },
         { provide: PrismaService, useValue: prisma },
         { provide: HashingService, useValue: hashingService },
         { provide: JwtService, useValue: jwtService },
@@ -84,7 +90,10 @@ describe('PbmsAuthService', () => {
     it('returns 400 when the user is missing', async () => {
       prisma.user.findFirst.mockResolvedValue(null);
 
-      const result = await service.login({ email: 'missing@example.com', password: 'x' });
+      const result = await service.login({
+        email: 'missing@example.com',
+        password: 'x',
+      });
 
       expect(result.statusCode).toBe(400);
       expect(result.isSuccess).toBe(false);
@@ -95,7 +104,10 @@ describe('PbmsAuthService', () => {
       prisma.user.findFirst.mockResolvedValue(activeUser);
       hashingService.compare.mockResolvedValue(false);
 
-      const result = await service.login({ Email: 'a@example.com', Password: 'bad' });
+      const result = await service.login({
+        Email: 'a@example.com',
+        Password: 'bad',
+      });
 
       expect(result.statusCode).toBe(400);
       expect(result.message).toBe('Sai mật khẩu');
@@ -109,7 +121,10 @@ describe('PbmsAuthService', () => {
       });
       hashingService.compare.mockResolvedValue(true);
 
-      const result = await service.login({ email: 'a@example.com', password: 'ok' });
+      const result = await service.login({
+        email: 'a@example.com',
+        password: 'ok',
+      });
 
       expect(result.statusCode).toBe(403);
       expect(result.message).toBe('Tài khoản của bạn đã bị khóa');
@@ -120,7 +135,10 @@ describe('PbmsAuthService', () => {
       hashingService.compare.mockResolvedValue(true);
       prisma.refreshToken.create.mockResolvedValue({ id: 'rt-1' });
 
-      const result = await service.login({ email: 'a@example.com', password: 'ok' });
+      const result = await service.login({
+        email: 'a@example.com',
+        password: 'ok',
+      });
 
       expect(result.statusCode).toBe(200);
       expect(result.isSuccess).toBe(true);
