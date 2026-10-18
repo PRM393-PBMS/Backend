@@ -91,7 +91,12 @@ export class ParkingOperationsService {
       },
     });
 
-    const subscription = await this.activeSubscription(session.licensePlateIn, session.vehicleTypeId, exitTime);
+    const subscription = await this.activeSubscription(
+      session.licensePlateIn,
+      session.vehicleTypeId,
+      exitTime,
+      gate.gate.floor.parkingId,
+    );
     if (session.prepaidAt && session.exitPassCode) {
       // Khách đã thanh toán trước trên app: mã ra cổng có hiệu lực tới khi xe ra.
       await this.closeSession(session.id, subscription?.fixedSlotId ?? null);
@@ -174,7 +179,12 @@ export class ParkingOperationsService {
       where: { sessionId, paymentType: 'CheckoutFee', paymentStatus: 'Pending' },
     });
     const calculatedAt = pending?.paymentTime ?? new Date();
-    const subscription = await this.activeSubscription(session.licensePlateIn, session.vehicleTypeId, calculatedAt);
+    const subscription = await this.activeSubscription(
+      session.licensePlateIn,
+      session.vehicleTypeId,
+      calculatedAt,
+      await this.parkingOfGate(session.entryGateId),
+    );
     const totalHours = Math.max(0, (calculatedAt.getTime() - session.entryTime.getTime()) / 36e5);
     const billedHours = Math.max(1, Math.ceil(totalHours));
     if (!session.reservationId && subscription) {
@@ -229,7 +239,12 @@ export class ParkingOperationsService {
       );
     }
     const now = new Date();
-    const subscription = await this.activeSubscription(session.licensePlateIn, session.vehicleTypeId, now);
+    const subscription = await this.activeSubscription(
+      session.licensePlateIn,
+      session.vehicleTypeId,
+      now,
+      await this.parkingOfGate(session.entryGateId),
+    );
     if (!session.reservationId && subscription) {
       return PbmsResponseDto.fail('Xe đang dùng vé tháng, không cần thanh toán khi ra', 409);
     }
@@ -632,7 +647,7 @@ export class ParkingOperationsService {
     if (isEmptyGuid(vehicleTypeId)) {
       return PbmsResponseDto.fail('Vui lòng chọn loại phương tiện');
     }
-    const sub = await this.activeSubscription(plate, vehicleTypeId, new Date());
+    const sub = await this.activeSubscription(plate, vehicleTypeId, new Date(), await this.parkingOfGate(gate));
     if (sub) {
       return PbmsResponseDto.fail('Biển số này đang có gói tháng hợp lệ. Vui lòng check-in Resident', 403);
     }
@@ -669,17 +684,19 @@ export class ParkingOperationsService {
     if (!isValidLicensePlate(plate)) {
       return PbmsResponseDto.fail('Biển số phải gồm 4-15 chữ cái và chữ số');
     }
+    const now = new Date();
     const sub = await this.prisma.monthlySubscription.findFirst({
       where: {
-        licensePlate: plate,
+        vehicle: { is: { licensePlate: plate } },
         status: 'Active',
-        startDate: { lte: new Date() },
-        endDate: { gte: new Date() },
+        startDate: { lte: now },
+        endDate: { gte: now },
+        ...this.validAtParking(await this.parkingOfGate(gate)),
       },
       include: { vehicle: { include: { vehicleType: true } } },
     });
     if (!sub) {
-      return PbmsResponseDto.fail('Không tìm thấy gói tháng hiệu lực cho biển số này', 404);
+      return PbmsResponseDto.fail('Không tìm thấy gói tháng hiệu lực tại bãi này cho biển số này', 404);
     }
     const busy = await this.prisma.parkingSession.findFirst({
       where: { licensePlateIn: plate, status: 'Active' },
@@ -742,7 +759,7 @@ export class ParkingOperationsService {
         'Ngoài khung giờ cho phép check-in đặt trước (Chỉ áp dụng trong khoảng -30p đến +30p so với giờ hẹn)',
       );
     }
-    const sub = await this.activeSubscription(plate, reservation.vehicle.vehicleTypeId, now);
+    const sub = await this.activeSubscription(plate, reservation.vehicle.vehicleTypeId, now, await this.parkingOfGate(gate));
     if (sub) {
       return PbmsResponseDto.fail(
         'Biển số này đang có gói tháng hợp lệ. Không thể check-in bằng vé đặt trước; vui lòng check-in tại tầng cư dân / khách tháng',
@@ -1000,15 +1017,39 @@ export class ParkingOperationsService {
     return code?.data ?? null;
   }
 
-  private async activeSubscription(plate: string, vehicleTypeId: string, at: Date) {
+  /**
+   * Vé tháng còn hiệu lực của xe tại bãi [parkingId]: vé của chính bãi đó, vé gói mọi bãi,
+   * hoặc vé cũ chưa gắn bãi. parkingId undefined: không lọc theo bãi.
+   */
+  private async activeSubscription(plate: string, vehicleTypeId: string, at: Date, parkingId?: string | null) {
     return this.prisma.monthlySubscription.findFirst({
       where: {
         vehicle: { is: { licensePlate: plate, vehicleTypeId } },
         status: 'Active',
         startDate: { lte: at },
         endDate: { gte: at },
+        ...this.validAtParking(parkingId),
       },
     });
+  }
+
+  private validAtParking(parkingId?: string | null): Prisma.MonthlySubscriptionWhereInput {
+    if (!parkingId) return {};
+    return { OR: [{ parkingId }, { parkingId: null }, { package: { is: { allParkings: true } } }] };
+  }
+
+  /** Bãi của một cổng (cổng thuộc tầng, tầng thuộc bãi). */
+  private async parkingOfGate(gate: { floorId: string } | string | null | undefined): Promise<string | null> {
+    if (!gate) return null;
+    if (typeof gate === 'string') {
+      const g = await this.prisma.gate.findUnique({
+        where: { id: gate },
+        select: { floor: { select: { parkingId: true } } },
+      });
+      return g?.floor.parkingId ?? null;
+    }
+    const floor = await this.prisma.floor.findUnique({ where: { id: gate.floorId }, select: { parkingId: true } });
+    return floor?.parkingId ?? null;
   }
 
   private async assertOwner(sessionId: string, userId: string) {

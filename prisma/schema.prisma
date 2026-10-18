@@ -178,8 +178,9 @@ model Parking {
   createdAt DateTime @default(now()) @map("created_at") @db.Timestamptz(6)
   updatedAt DateTime @updatedAt @map("updated_at") @db.Timestamptz(6)
 
-  floors Floor[]
-  slots  ParkingSlot[]
+  floors               Floor[]
+  slots                ParkingSlot[]
+  monthlySubscriptions MonthlySubscription[]
 
   @@map("parkings")
 }
@@ -237,6 +238,8 @@ model SubscriptionPackage {
   durationDays     Int     @default(30) @map("duration_days")
   price            Decimal @db.Decimal(15, 2)
   requireFixedSlot Boolean @default(false) @map("require_fixed_slot")
+  /// true: vé dùng được ở mọi bãi (không cố định ô); false: vé gắn với một bãi.
+  allParkings      Boolean @default(false) @map("all_parkings")
   description      String? @db.VarChar(500)
   /// PackageStatus: Active, Inactive, Suspended. Default Active. varchar(10).
   status           String  @default("Active") @db.VarChar(10)
@@ -258,6 +261,8 @@ model MonthlySubscription {
   endDate     DateTime  @map("end_date") @db.Timestamptz(6)
   price       Decimal   @db.Decimal(15, 2)
   fixedSlotId String?   @map("fixed_slot_id") @db.Uuid
+  /// Bãi áp dụng vé. null: gói mọi bãi (hoặc vé cũ trước khi có nhiều bãi).
+  parkingId   String?   @map("parking_id") @db.Uuid
   /// MonthlySubscriptionStatus: PendingPayment, Active, Cancelled, Expired. Default Active. varchar(30).
   status      String    @default("Active") @db.VarChar(30)
   /// false = hết hạn không tạo renew (cron). Không loại gói khỏi trạng thái đang hiệu lực theo ngày.
@@ -268,6 +273,7 @@ model MonthlySubscription {
   vehicle               Vehicle                @relation(fields: [vehicleId], references: [id], onDelete: Restrict)
   package               SubscriptionPackage    @relation(fields: [packageId], references: [id], onDelete: Restrict)
   fixedSlot             ParkingSlot?           @relation(fields: [fixedSlotId], references: [id], onDelete: SetNull)
+  parking               Parking?               @relation(fields: [parkingId], references: [id], onDelete: SetNull)
   payments              Payment[]
   subscriptionRenewals  SubscriptionRenewal[]
   vehicleChangeRequests VehicleChangeRequest[]
@@ -276,6 +282,7 @@ model MonthlySubscription {
   @@index([userId], name: "idx_monthly_subscriptions_user_id")
   @@index([vehicleId], name: "idx_monthly_subscriptions_vehicle_id")
   @@index([status], name: "idx_monthly_subscriptions_status")
+  @@index([parkingId], name: "idx_monthly_subscriptions_parking_id")
   @@map("monthly_subscriptions")
 }
 

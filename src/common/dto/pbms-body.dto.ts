@@ -182,6 +182,11 @@ export class PbmsBodyDto {
   requireFixedSlot?: unknown;
   @ApiPropertyOptional() @IsOptional() RequireFixedSlot?: unknown;
 
+  @ApiPropertyOptional({ type: Boolean, example: false, description: 'Gói dùng được ở mọi bãi' })
+  @IsOptional()
+  allParkings?: unknown;
+  @ApiPropertyOptional() @IsOptional() AllParkings?: unknown;
+
   @ApiPropertyOptional({ type: String, format: 'uuid', example: ids.userId })
   @IsOptional()
   userId?: unknown;
