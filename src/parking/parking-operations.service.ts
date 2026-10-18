@@ -17,6 +17,9 @@ import {
 import { isValidLicensePlate, normalizeLicensePlate } from '../common/license-plate';
 import { createTicket, extractGuidFromQrPayload } from '../common/qr.util';
 import { ParkingSessionsService } from './parking-sessions.service';
+import { exitPassPayload, issueExitPass, mapExitPass } from '../common/exit-pass';
+import { PaymentsService } from '../payments/payments.service';
+import { InsufficientWalletFundsError, WalletsService } from '../wallets/wallets.service';
 
 @Injectable()
 export class ParkingOperationsService {
@@ -25,6 +28,8 @@ export class ParkingOperationsService {
     private readonly payos: PayosService,
     private readonly plates: PlateRecognizerService,
     private readonly sessions: ParkingSessionsService,
+    private readonly payments: PaymentsService,
+    private readonly wallets: WalletsService,
   ) {}
 
   async checkIn(dto: object): Promise<PbmsResponseDto> {
@@ -63,6 +68,13 @@ export class ParkingOperationsService {
     if (!session || !sameStatus(session.status, 'Active')) {
       return PbmsResponseDto.fail('Không tìm thấy phiên gửi xe đang hoạt động', 404);
     }
+    const scanned = pbmsPick(dto, 'qrPayload', 'QrPayload').trim();
+    if (
+      scanned.startsWith('PBMS-EXIT:') &&
+      (!session.exitPassCode || scanned !== exitPassPayload(session.id, session.exitPassCode))
+    ) {
+      return PbmsResponseDto.fail('Mã ra cổng không hợp lệ hoặc đã hết hiệu lực', 403);
+    }
     const exitTime = new Date();
     const plateOut =
       normalizeLicensePlate(pbmsPick(dto, 'licensePlateOut', 'LicensePlateOut')) || session.licensePlateIn;
@@ -78,6 +90,14 @@ export class ParkingOperationsService {
     });
 
     const subscription = await this.activeSubscription(session.licensePlateIn, session.vehicleTypeId, exitTime);
+    if (session.prepaidAt && session.exitPassCode) {
+      // Khách đã thanh toán trước trên app: mã ra cổng có hiệu lực tới khi xe ra.
+      await this.closeSession(session.id, subscription?.fixedSlotId ?? null);
+      return PbmsResponseDto.ok(
+        'Checkout thành công (đã thanh toán trước trên ứng dụng)',
+        await this.loadSession(session.id),
+      );
+    }
     if (!session.reservationId && subscription) {
       await this.closeSession(session.id, subscription.fixedSlotId);
       const mapped = await this.loadSession(session.id);
@@ -175,6 +195,186 @@ export class ParkingOperationsService {
   async getMyFeePreview(sessionId: string, userId: string): Promise<PbmsResponseDto> {
     const owner = await this.assertOwner(sessionId, userId);
     return owner ?? this.getFeePreview(sessionId);
+  }
+
+  /**
+   * Khách thanh toán trước khi ra bãi (ví hoặc PayOS). Thành công sẽ sinh mã ra cổng,
+   * mã có hiệu lực tới khi xe ra khỏi bãi, không phát sinh thêm phí.
+   */
+  async prepay(sessionId: string, userId: string, dto: object): Promise<PbmsResponseDto> {
+    const owner = await this.assertOwner(sessionId, userId);
+    if (owner) {
+      return owner;
+    }
+    const session = await this.prisma.parkingSession.findUnique({ where: { id: sessionId } });
+    if (!session || !sameStatus(session.status, 'Active')) {
+      return PbmsResponseDto.fail('Phiên gửi xe đã kết thúc', 409);
+    }
+    if (session.exitPassCode) {
+      return PbmsResponseDto.ok('Bạn đã thanh toán, dùng mã ra cổng để lấy xe', {
+        ExitPass: await mapExitPass(session),
+      });
+    }
+    const atGate = await this.prisma.payment.findFirst({
+      where: { sessionId, paymentType: 'CheckoutFee', paymentStatus: 'Pending' },
+    });
+    if (atGate) {
+      return PbmsResponseDto.fail(
+        'Xe đang làm thủ tục ở cổng ra, vui lòng thanh toán theo yêu cầu tại cổng',
+        409,
+      );
+    }
+    const now = new Date();
+    const subscription = await this.activeSubscription(session.licensePlateIn, session.vehicleTypeId, now);
+    if (!session.reservationId && subscription) {
+      return PbmsResponseDto.fail('Xe đang dùng vé tháng, không cần thanh toán khi ra', 409);
+    }
+    const fee = await this.calculateFee(session, now);
+    if (fee instanceof PbmsResponseDto) {
+      return fee;
+    }
+    if (fee.amount <= 0) {
+      await issueExitPass(this.prisma, session.id);
+      return PbmsResponseDto.ok('Không phát sinh phí, đã cấp mã ra cổng', {
+        Fee: fee,
+        ExitPass: await this.exitPassOf(session.id),
+      });
+    }
+
+    const method = pbmsPick(dto, 'paymentMethod', 'PaymentMethod').trim().toLowerCase();
+    if (method === 'wallet') {
+      const paid = await this.prisma
+        .$transaction(async (tx) => {
+          const payment = await tx.payment.create({
+            data: {
+              userId,
+              sessionId: session.id,
+              reservationId: session.reservationId,
+              amount: new Prisma.Decimal(fee.amount),
+              paymentMethod: 'Wallet',
+              paymentType: 'PrepaidCheckout',
+              paymentTime: now,
+              paymentStatus: 'Success',
+              transactionReference: '',
+            },
+          });
+          // Dùng ví của module wallets. Thiếu tiền thì ném lỗi và huỷ cả giao dịch,
+          // không để lại thanh toán "thành công" ảo.
+          await this.wallets.debitInTransaction(
+            tx,
+            userId,
+            new Prisma.Decimal(fee.amount),
+            payment.id,
+            'ParkingFee',
+          );
+          return payment;
+        })
+        .catch((error: unknown) => {
+          if (error instanceof InsufficientWalletFundsError) {
+            return null;
+          }
+          throw error;
+        });
+      if (!paid) {
+        const balance = await this.wallets.getBalanceForUser(userId);
+        return new PbmsResponseDto('Số dư ví không đủ, vui lòng nạp thêm', 402, false, {
+          paymentMethod: 'Wallet',
+          walletId: balance.walletId,
+          walletBalance: balance.walletBalance,
+          amount: fee.amount,
+        });
+      }
+      await issueExitPass(this.prisma, session.id);
+      return PbmsResponseDto.ok('Đã thanh toán bằng ví và cấp mã ra cổng', {
+        Payment: this.mapPayment(paid),
+        Fee: fee,
+        ExitPass: await this.exitPassOf(session.id),
+        WalletBalance: (await this.wallets.getBalanceForUser(userId)).walletBalance,
+      });
+    }
+    if (method !== 'payos') {
+      return PbmsResponseDto.fail('Phương thức thanh toán trước chỉ được là Wallet hoặc PayOS');
+    }
+
+    // Phí tăng theo giờ: huỷ các link cũ để khách không trả theo số tiền đã lỗi thời.
+    const stale = await this.prisma.payment.findMany({
+      where: { sessionId, paymentType: 'PrepaidCheckout', paymentStatus: 'Pending' },
+    });
+    for (const old of stale) {
+      await this.prisma.payment.updateMany({
+        where: { id: old.id, paymentStatus: 'Pending' },
+        data: { paymentStatus: 'Failed' },
+      });
+      if (old.transactionReference) {
+        await this.payos.cancelPaymentLink(old.transactionReference).catch(() => undefined);
+      }
+    }
+    const payment = await this.prisma.payment.create({
+      data: {
+        userId,
+        sessionId: session.id,
+        reservationId: session.reservationId,
+        amount: new Prisma.Decimal(fee.amount),
+        paymentMethod: 'PayOS',
+        paymentType: 'PrepaidCheckout',
+        paymentTime: now,
+        paymentStatus: 'Pending',
+        transactionReference: '',
+      },
+    });
+    try {
+      const link = await this.payos.createPaymentLink(payment);
+      await this.prisma.payment.update({
+        where: { id: payment.id },
+        data: { transactionReference: link.orderCode },
+      });
+      return PbmsResponseDto.ok('Đã tạo liên kết thanh toán trước', {
+        Payment: this.mapPayment(payment, link.orderCode),
+        OnlinePayment: {
+          paymentUrl: link.paymentUrl,
+          paymentLinkId: link.paymentLinkId,
+          orderCode: link.orderCode,
+        },
+        Fee: fee,
+      });
+    } catch (error: unknown) {
+      await this.prisma.payment.update({ where: { id: payment.id }, data: { paymentStatus: 'Failed' } });
+      return PbmsResponseDto.fail(`Không thể tạo liên kết thanh toán: ${errorMessage(error)}`, 502);
+    }
+  }
+
+  /** Trạng thái thanh toán trước: đồng bộ link PayOS đang chờ rồi trả mã ra cổng nếu có. */
+  async getMyExitPass(sessionId: string, userId: string): Promise<PbmsResponseDto> {
+    const owner = await this.assertOwner(sessionId, userId);
+    if (owner) {
+      return owner;
+    }
+    const pending = await this.prisma.payment.findFirst({
+      where: {
+        sessionId,
+        paymentType: 'PrepaidCheckout',
+        paymentStatus: 'Pending',
+        paymentMethod: 'PayOS',
+      },
+      orderBy: { paymentTime: 'desc' },
+    });
+    let paymentStatus: string | null = null;
+    if (pending) {
+      try {
+        paymentStatus = await this.payments.syncPayosPayment(pending.id);
+      } catch (error: unknown) {
+        return PbmsResponseDto.fail(`Không kiểm tra được thanh toán: ${errorMessage(error)}`, 502);
+      }
+    }
+    return PbmsResponseDto.ok('Lấy mã ra cổng thành công', {
+      PaymentStatus: paymentStatus,
+      ExitPass: await this.exitPassOf(sessionId),
+    });
+  }
+
+  private async exitPassOf(sessionId: string) {
+    const session = await this.prisma.parkingSession.findUnique({ where: { id: sessionId } });
+    return session ? mapExitPass(session) : null;
   }
 
   async getMyCheckoutPayment(sessionId: string, userId: string): Promise<PbmsResponseDto> {

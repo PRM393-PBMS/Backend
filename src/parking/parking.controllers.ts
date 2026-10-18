@@ -57,6 +57,25 @@ export class ParkingSessionsController {
     return this.operations.getMyFeePreview(id, userId);
   }
 
+  @Post('my/:id/prepay')
+  @PbmsRoles('customer')
+  @ApiOperation({ summary: 'Thanh toán trước khi ra bãi (Wallet hoặc PayOS), nhận mã ra cổng' })
+  @ApiPbmsBodyExample(PbmsBodyDto, { paymentMethod: 'Wallet' })
+  prepay(
+    @Param('id') id: string,
+    @GetPbmsUserId() userId: string,
+    @Body() dto: PbmsBodyDto,
+  ): Promise<PbmsResponseDto> {
+    return this.operations.prepay(id, userId, dto);
+  }
+
+  @Get('my/:id/exit-pass')
+  @PbmsRoles('customer')
+  @ApiOperation({ summary: 'Mã ra cổng sau khi thanh toán trước (đồng bộ trạng thái PayOS)' })
+  myExitPass(@Param('id') id: string, @GetPbmsUserId() userId: string): Promise<PbmsResponseDto> {
+    return this.operations.getMyExitPass(id, userId);
+  }
+
   @Get('my/:id/checkout-payment')
   @PbmsRoles('customer')
   @ApiOperation({ summary: 'Xem thanh toán checkout phiên của tôi' })

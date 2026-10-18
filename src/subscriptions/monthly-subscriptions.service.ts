@@ -14,6 +14,8 @@ import {
 } from '../common/pbms-fields';
 import { isMotorbikeType } from '../common/license-plate';
 import { InsufficientWalletFundsError, WalletsService } from '../wallets/wallets.service';
+import { requiresContract } from '../common/contract-seal';
+import { ContractsService } from './contracts.service';
 
 type CustomerPaymentMethod = 'PayOS' | 'Wallet';
 
@@ -23,6 +25,7 @@ export class MonthlySubscriptionsService {
     private readonly prisma: PrismaService,
     private readonly payos: PayosService,
     private readonly wallets: WalletsService,
+    private readonly contracts: ContractsService,
   ) {}
 
   async register(userId: string, dto: object, createPayment: boolean): Promise<PbmsResponseDto> {
@@ -110,7 +113,8 @@ export class MonthlySubscriptionsService {
     const end = new Date(start);
     end.setUTCDate(end.getUTCDate() + pkg.durationDays);
 
-    if (createPayment) {
+    const needsContract = createPayment && requiresContract(pkg.durationMonths);
+    if (createPayment && !needsContract) {
       const method = this.parseCustomerPaymentMethod(dto);
       if (method.error) {
         return method.error;
@@ -135,7 +139,10 @@ export class MonthlySubscriptionsService {
             status: createPayment ? 'PendingPayment' : 'Active',
           },
         });
-        const payment = createPayment
+        const contract = needsContract
+          ? await this.contracts.createForSubscription(tx, subscription.id)
+          : null;
+        const payment = createPayment && !contract
           ? await tx.payment.create({
               data: {
                 userId,
@@ -149,8 +156,23 @@ export class MonthlySubscriptionsService {
               },
             })
           : null;
-        return { subscription, payment };
+        return { subscription, payment, contract };
       });
+
+      if (created.contract) {
+        return PbmsResponseDto.ok(
+          'Tạo đăng ký gói thành công, vui lòng ký hợp đồng trước khi thanh toán',
+          {
+            subscriptionId: created.subscription.id,
+            requiresContract: true,
+            contractId: created.contract.id,
+            contractNumber: created.contract.contractNumber,
+            amount: toMoney(created.subscription.price),
+            status: 'PendingPayment',
+          },
+          201,
+        );
+      }
 
       if (!created.payment) {
         return PbmsResponseDto.ok(
@@ -296,6 +318,10 @@ export class MonthlySubscriptionsService {
     }
     if (sameStatus(subscription.status, 'Active')) {
       return PbmsResponseDto.fail('Gói đã được kích hoạt');
+    }
+    const contract = await this.prisma.subscriptionContract.findUnique({ where: { subscriptionId } });
+    if (contract && !sameStatus(contract.status, 'Signed')) {
+      return PbmsResponseDto.fail('Vui lòng ký hợp đồng trước khi thanh toán', 409);
     }
     if (method.value === 'Wallet') {
       return this.payPendingWithWallet(subscription, userId);
@@ -585,6 +611,7 @@ export class MonthlySubscriptionsService {
         vehicle: { include: { vehicleType: true } },
         package: true,
         fixedSlot: true,
+        contract: { select: { id: true, status: true, contractNumber: true } },
       },
       orderBy: { startDate: 'desc' },
     });
@@ -594,7 +621,13 @@ export class MonthlySubscriptionsService {
   private loadOne(id: string) {
     return this.prisma.monthlySubscription.findUnique({
       where: { id },
-      include: { user: true, vehicle: { include: { vehicleType: true } }, package: true, fixedSlot: true },
+      include: {
+        user: true,
+        vehicle: { include: { vehicleType: true } },
+        package: true,
+        fixedSlot: true,
+        contract: { select: { id: true, status: true, contractNumber: true } },
+      },
     });
   }
 
@@ -608,8 +641,9 @@ export class MonthlySubscriptionsService {
     status: string;
     user?: { fullName: string | null };
     vehicle?: { licensePlate: string; vehicleType: { typeName: string } };
-    package?: { packageName: string };
+    package?: { packageName: string; durationMonths?: number; durationDays?: number };
     fixedSlot?: { slotCode: string } | null;
+    contract?: { id: string; status: string; contractNumber: string } | null;
   }) {
     return {
       subscriptionId: item.id,
@@ -624,6 +658,10 @@ export class MonthlySubscriptionsService {
       price: toMoney(item.price),
       status: item.status,
       fixedSlot: item.fixedSlot?.slotCode ?? null,
+      durationMonths: item.package?.durationMonths ?? null,
+      contractId: item.contract?.id ?? null,
+      contractNumber: item.contract?.contractNumber ?? null,
+      contractStatus: item.contract?.status ?? null,
     };
   }
 }

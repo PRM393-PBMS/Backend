@@ -13,6 +13,7 @@ import {
 } from '@nestjs/common';
 import { ApiBearerAuth, ApiOperation, ApiTags } from '@nestjs/swagger';
 import type { Response } from 'express';
+import { GetPbmsUserId } from '../auth/common/decorators/get-pbms-user-id.decorator';
 import { Public } from '../auth/common/decorators/public.decorator';
 import { PbmsRoles } from '../auth/common/decorators/pbms-roles.decorator';
 import { PbmsRolesGuard } from '../auth/common/guards/pbms-roles.guard';
@@ -62,6 +63,20 @@ export class PaymentsController {
   @ApiPbmsOkResponse('Lấy danh sách thanh toán thành công', [paymentExample])
   getAll(): Promise<PbmsResponseDto> {
     return this.payments.getAll();
+  }
+
+  @ApiBearerAuth('JWT-auth')
+  @UseGuards(PbmsRolesGuard)
+  @PbmsRoles('customer')
+  @UseInterceptors(PbmsStatusInterceptor)
+  @Get(':id/sync')
+  @ApiOperation({
+    summary: 'Khách kiểm tra thanh toán PayOS của mình (tra trực tiếp PayOS)',
+    description:
+      'Dùng cho nút "Tôi đã thanh toán" khi webhook chưa tới (nạp ví, thanh toán trước khi ra bãi, gói tháng). Thành công thì cộng ví / cấp mã ra cổng / kích hoạt gói đúng một lần.',
+  })
+  syncMine(@Param('id') id: string, @GetPbmsUserId() userId: string): Promise<PbmsResponseDto> {
+    return this.payments.syncMine(id, userId);
   }
 
   @ApiBearerAuth('JWT-auth')

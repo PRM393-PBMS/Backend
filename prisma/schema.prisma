@@ -263,6 +263,7 @@ model MonthlySubscription {
   payments              Payment[]
   subscriptionRenewals  SubscriptionRenewal[]
   vehicleChangeRequests VehicleChangeRequest[]
+  contract              SubscriptionContract?
 
   @@index([userId], name: "idx_monthly_subscriptions_user_id")
   @@index([vehicleId], name: "idx_monthly_subscriptions_vehicle_id")
@@ -347,6 +348,10 @@ model ParkingSession {
   actualSlotId        String?   @map("actual_slot_id") @db.Uuid
   /// SessionStatus: Active, Completed, Exception. Default Active. varchar(15).
   status              String    @default("Active") @db.VarChar(15)
+  /// Thời điểm khách thanh toán trước trên app (PrepaidCheckout thành công).
+  prepaidAt           DateTime? @map("prepaid_at") @db.Timestamptz(6)
+  /// Mã ra cổng sinh sau khi thanh toán trước; hết hiệu lực khi phiên đóng.
+  exitPassCode        String?   @map("exit_pass_code") @db.VarChar(12)
 
   reservation     Reservation?     @relation(fields: [reservationId], references: [id], onDelete: SetNull)
   vehicle         Vehicle?         @relation(fields: [vehicleId], references: [id], onDelete: SetNull)
@@ -449,4 +454,34 @@ model IncidentReport {
   @@index([sessionId], name: "idx_incident_reports_session_id")
   @@index([status], name: "idx_incident_reports_status")
   @@map("incident_reports")
+}
+
+/// Hợp đồng vé tháng dài hạn (>= 3 tháng): khách ký điện tử trước khi thanh toán,
+/// bãi niêm phong bằng chữ ký ECDSA P-256 trên băm nội dung + chữ ký tay.
+model SubscriptionContract {
+  id                 String    @id @default(uuid()) @db.Uuid
+  subscriptionId     String    @unique @map("subscription_id") @db.Uuid
+  userId             String    @map("user_id") @db.Uuid
+  contractNumber     String    @unique @map("contract_number") @db.VarChar(30)
+  /// Nội dung hợp đồng chuẩn hoá (văn bản thuần) tại thời điểm tạo, không đổi sau đó.
+  content            String
+  /// SHA-256 hex của `content` (UTF-8).
+  contentHash        String    @map("content_hash") @db.VarChar(64)
+  /// ContractStatus: PendingSignature, Signed, Void. varchar(20).
+  status             String    @default("PendingSignature") @db.VarChar(20)
+  signerName         String?   @map("signer_name") @db.VarChar(100)
+  /// Ảnh chữ ký tay (PNG base64, không gồm tiền tố data:).
+  signatureImage     String?   @map("signature_image")
+  signatureImageHash String?   @map("signature_image_hash") @db.VarChar(64)
+  signedAt           DateTime? @map("signed_at") @db.Timestamptz(6)
+  signerIp           String?   @map("signer_ip") @db.VarChar(45)
+  /// Niêm phong: chữ ký ECDSA (DER, base64) của chuỗi PBMS-CONTRACT|v1|...
+  seal               String?
+  sealKeyId          String?   @map("seal_key_id") @db.VarChar(32)
+  createdAt          DateTime  @default(now()) @map("created_at") @db.Timestamptz(6)
+
+  subscription MonthlySubscription @relation(fields: [subscriptionId], references: [id], onDelete: Cascade)
+
+  @@index([userId], name: "idx_subscription_contracts_user_id")
+  @@map("subscription_contracts")
 }

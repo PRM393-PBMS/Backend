@@ -14,16 +14,28 @@ import {
 } from '../common/pbms-fields';
 import { isMotorbikeType } from '../common/license-plate';
 import { WalletsService } from '../wallets/wallets.service';
+import { PayosService } from '../integrations/payos-files.service';
+import { issueExitPass } from '../common/exit-pass';
 
 const METHODS = ['PayOS', 'Cash', 'Wallet'];
 const STATUSES = ['Pending', 'Success', 'Failed'];
-const TYPES = ['Deposit', 'CheckoutFee', 'SubscriptionFee', 'SubscriptionRenewal', 'WalletTopUp'];
+const TYPES = [
+  'Deposit',
+  'CheckoutFee',
+  'SubscriptionFee',
+  'SubscriptionRenewal',
+  'WalletTopUp',
+  'PrepaidCheckout',
+];
+/** Loại thanh toán tạo ra tiền hoặc quyền ra bãi: chỉ tin trạng thái tra trực tiếp từ PayOS. */
+const VERIFIED_TYPES = ['WalletTopUp', 'PrepaidCheckout'];
 
 @Injectable()
 export class PaymentsService {
   constructor(
     private readonly prisma: PrismaService,
     private readonly wallets: WalletsService,
+    private readonly payos: PayosService,
   ) {}
 
   mapPayment(payment: {
@@ -182,6 +194,11 @@ export class PaymentsService {
     if (!payment || !sameStatus(payment.paymentStatus, 'Pending')) {
       return;
     }
+    if (VERIFIED_TYPES.some((t) => sameStatus(payment.paymentType ?? '', t))) {
+      // Webhook chưa kiểm tra chữ ký: hỏi lại PayOS trước khi cộng ví hoặc cấp mã ra cổng.
+      await this.syncPayosPayment(payment.id);
+      return;
+    }
     const code = String(body.code ?? body.Code ?? '');
     const success = code === '00';
     const marked = await this.prisma.payment.updateMany({
@@ -198,6 +215,63 @@ export class PaymentsService {
       await this.dispatchPayment(payment.id);
     } else {
       await this.restoreCheckoutSession(payment.sessionId);
+    }
+  }
+
+  /**
+   * Đồng bộ một thanh toán PayOS đang chờ bằng cách tra cứu trực tiếp PayOS.
+   * Dùng cho webhook (loại nhạy cảm) và nút "Tôi đã thanh toán" trên app.
+   */
+  async syncPayosPayment(paymentId: string): Promise<string> {
+    const payment = await this.prisma.payment.findUnique({ where: { id: paymentId } });
+    if (!payment) {
+      return 'Failed';
+    }
+    if (
+      !sameStatus(payment.paymentStatus, 'Pending') ||
+      !sameStatus(payment.paymentMethod, 'PayOS') ||
+      !payment.transactionReference
+    ) {
+      return payment.paymentStatus;
+    }
+    const remote = await this.payos.getPaymentStatus(payment.transactionReference);
+    const paid = remote.status === 'PAID' && remote.amountPaid >= Number(payment.amount);
+    const closed = remote.status === 'CANCELLED' || remote.status === 'EXPIRED';
+    if (!paid && !closed) {
+      return 'Pending';
+    }
+    // Chuyển trạng thái có điều kiện: webhook và nút kiểm tra chạy song song chỉ xử lý một lần.
+    const moved = await this.prisma.payment.updateMany({
+      where: { id: payment.id, paymentStatus: 'Pending' },
+      data: { paymentStatus: paid ? 'Success' : 'Failed', paymentTime: new Date() },
+    });
+    if (moved.count === 1 && paid) {
+      await this.dispatchPayment(payment.id);
+    }
+    return paid ? 'Success' : 'Failed';
+  }
+
+  /** Khách tự kiểm tra một thanh toán PayOS của mình (nạp ví, thanh toán trước, gói tháng). */
+  async syncMine(paymentId: string, userId: string): Promise<PbmsResponseDto> {
+    if (isEmptyGuid(paymentId)) {
+      return PbmsResponseDto.fail('PaymentId không hợp lệ');
+    }
+    const payment = await this.prisma.payment.findUnique({ where: { id: paymentId } });
+    if (!payment || payment.userId !== userId) {
+      return PbmsResponseDto.fail('Không tìm thấy thanh toán', 404);
+    }
+    try {
+      const status = await this.syncPayosPayment(payment.id);
+      return PbmsResponseDto.ok('Lấy trạng thái thanh toán thành công', {
+        paymentId: payment.id,
+        paymentType: payment.paymentType,
+        paymentStatus: status,
+        ...(sameStatus(payment.paymentType ?? '', 'WalletTopUp')
+          ? await this.wallets.getBalanceForUser(userId)
+          : {}),
+      });
+    } catch (error: unknown) {
+      return PbmsResponseDto.fail(`Không kiểm tra được thanh toán: ${errorMessage(error)}`, 502);
     }
   }
 
@@ -248,6 +322,13 @@ export class PaymentsService {
       await this.prisma.$transaction(async (tx) => {
         await this.wallets.creditFromPayment(tx, payment);
       });
+      return;
+    }
+    if (sameStatus(type, 'PrepaidCheckout')) {
+      if (!payment.sessionId) {
+        throw new Error(`Thanh toán trước ${payment.id} thiếu SessionId.`);
+      }
+      await issueExitPass(this.prisma, payment.sessionId);
       return;
     }
     throw new Error(`Không có luồng xử lý cho loại thanh toán '${payment.paymentType}'.`);

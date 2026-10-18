@@ -1,4 +1,5 @@
 import { Test, TestingModule } from '@nestjs/testing';
+import { ContractsService } from './contracts.service';
 import { Prisma } from '@prisma/client';
 import { PrismaService } from '../prisma/prisma.service';
 import { PayosService } from '../integrations/payos-files.service';
@@ -65,6 +66,7 @@ describe('MonthlySubscriptionsService register payment methods', () => {
         { provide: PrismaService, useValue: prisma },
         { provide: PayosService, useValue: payos },
         { provide: WalletsService, useValue: wallets },
+        { provide: ContractsService, useValue: { createForSubscription: jest.fn() } },
       ],
     }).compile();
     service = module.get(MonthlySubscriptionsService);
