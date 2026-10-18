@@ -1,0 +1,53 @@
+{
+  "schema_version": 1,
+  "diagram_type": "architecture",
+  "meta": {
+    "title": "PRM393 Parking Management — System Architecture",
+    "output": "system-architecture-overview.html",
+    "quality_profile": "showcase",
+    "viewBox": [4200, 2200],
+    "views": [
+      { "id": "request-path", "label": "Main request path", "focus": ["mobile", "api", "domain", "prisma", "pooler", "postgres"], "note": "Flutter requests reach NestJS domain services and durable PostgreSQL data." },
+      { "id": "integrations", "label": "External integrations", "focus": ["api", "domain", "payos", "resend", "ocr"], "note": "Payments, OTP email, and plate recognition use direct HTTPS integrations." },
+      { "id": "operations", "label": "Runtime limits", "focus": ["api", "cron", "localstate"], "note": "Reservation scheduling runs in-process; OTP and uploads remain process-local." }
+    ]
+  },
+  "components": [
+    { "id": "mobile", "type": "frontend", "label": "Flutter mobile application", "sublabel": "UI · Dio HTTP client · Secure Storage for JWT", "tag": "CLIENT", "pos": [150, 900], "size": [440, 150] },
+    { "id": "api", "type": "backend", "label": "NestJS API", "sublabel": "Controllers · DTO validation · REST endpoints", "tag": "APPLICATION ENTRY", "pos": [950, 900], "size": [400, 150] },
+    { "id": "authz", "type": "security", "label": "Authentication & authorization", "sublabel": "JWT Bearer · refresh tokens · RBAC guards", "tag": "SECURITY", "pos": [950, 450], "size": [400, 150] },
+    { "id": "domain", "type": "backend", "label": "Domain services", "sublabel": "Identity · Parking · Reservations · Billing · Operations", "tag": "NESTJS MODULES", "pos": [1650, 900], "size": [520, 150] },
+    { "id": "cron", "type": "backend", "label": "Reservation cron", "sublabel": "Nest Schedule · every minute · same process", "tag": "IN-PROCESS BATCH", "pos": [1650, 1300], "size": [520, 150] },
+    { "id": "prisma", "type": "backend", "label": "Prisma data access", "sublabel": "PrismaModule · typed queries", "tag": "DATA ACCESS", "pos": [2350, 900], "size": [420, 150] },
+    { "id": "localstate", "type": "database", "label": "Volatile local state", "sublabel": "OTP Map TTL 10 min · UPLOAD_DIR filesystem", "tag": "NOT OBJECT STORAGE", "pos": [950, 1300], "size": [400, 150] },
+    { "id": "pooler", "type": "cloud", "label": "Supabase Session Pooler", "sublabel": "DATABASE_URL · sslmode=require", "tag": "TLS CONNECTION", "pos": [3000, 900], "size": [430, 150] },
+    { "id": "postgres", "type": "database", "label": "PostgreSQL database", "sublabel": "Prisma 6 system of record", "tag": "PERSISTENT DATA", "pos": [3650, 900], "size": [400, 150] },
+    { "id": "payos", "type": "external", "label": "PayOS", "sublabel": "v2 payment API · signed webhook", "tag": "PAYMENT", "pos": [3000, 250], "size": [430, 140] },
+    { "id": "resend", "type": "external", "label": "Resend", "sublabel": "HTML OTP email API · HTTPS", "tag": "EMAIL", "pos": [3650, 250], "size": [400, 140] },
+    { "id": "ocr", "type": "external", "label": "Plate Recognizer", "sublabel": "v1/plate-reader · VN · confidence ≥ 0.75", "tag": "OCR", "pos": [3650, 1300], "size": [400, 150] }
+  ],
+  "boundaries": [
+    { "kind": "region", "label": "Flutter mobile client", "wraps": ["mobile"], "pad": 90 },
+    { "kind": "region", "label": "Render — production Web Service", "wraps": ["api", "authz", "domain", "cron", "prisma", "localstate"], "pad": 110 },
+    { "kind": "region", "label": "Supabase managed data platform", "wraps": ["pooler", "postgres"], "pad": 100 },
+    { "kind": "region", "label": "External integrations", "wraps": ["payos", "resend", "ocr"], "pad": 100 }
+  ],
+  "connections": [
+    { "id": "mobile-api", "from": "mobile", "to": "api", "label": "HTTPS JSON REST", "variant": "emphasis" },
+    { "id": "api-authz", "from": "api", "to": "authz", "label": "JWT Bearer + RBAC", "variant": "security", "fromSide": "top", "toSide": "bottom" },
+    { "id": "api-domain", "from": "api", "to": "domain", "label": "validated DTOs", "variant": "emphasis" },
+    { "id": "cron-domain", "from": "cron", "to": "domain", "label": "scheduled reservation update", "variant": "dashed", "fromSide": "top", "toSide": "bottom" },
+    { "id": "domain-prisma", "from": "domain", "to": "prisma", "label": "typed data access", "variant": "emphasis" },
+    { "id": "prisma-pooler", "from": "prisma", "to": "pooler", "label": "Prisma SQL over TLS", "variant": "emphasis" },
+    { "id": "pooler-postgres", "from": "pooler", "to": "postgres", "label": "pooled PostgreSQL connection", "variant": "emphasis" },
+    { "id": "api-localstate", "from": "api", "to": "localstate", "label": "OTP Map + UPLOAD_DIR", "variant": "dashed", "fromSide": "bottom", "toSide": "top", "labelAt": [1150, 1064] },
+    { "id": "domain-payos", "from": "domain", "to": "payos", "label": "HTTPS payment API + signed webhook", "variant": "emphasis", "fromSide": "top", "toSide": "bottom" },
+    { "id": "domain-resend", "from": "domain", "to": "resend", "label": "HTTPS send OTP", "variant": "emphasis", "fromSide": "top", "toSide": "bottom" },
+    { "id": "domain-ocr", "from": "domain", "to": "ocr", "label": "HTTPS image / OCR result", "variant": "emphasis" }
+  ],
+  "cards": [
+    { "dot": "cyan", "title": "Main request path", "items": ["Flutter UI → Dio → HTTPS REST → NestJS API → domain services", "Domain services use Prisma through the Supabase Session Pooler to PostgreSQL"] },
+    { "dot": "amber", "title": "External & operations", "items": ["PayOS webhook returns to the API; Resend and Plate Recognizer are direct HTTPS integrations", "UptimeRobot checks GET /health; Render builds, deploys, and starts the NestJS service"] },
+    { "dot": "rose", "title": "Known runtime limits", "items": ["Reservation cron is in the same NestJS process, not a separate worker", "OTP Map and UPLOAD_DIR are process-local; no object storage, queue, cache, or centralized observability is committed"] }
+  ]
+}

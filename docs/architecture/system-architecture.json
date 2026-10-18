@@ -1,0 +1,77 @@
+{
+  "schema_version": 1,
+  "diagram_type": "architecture",
+  "meta": {
+    "title": "PRM393 Parking Management — Detailed System Architecture",
+    "quality_profile": "standard",
+    "viewBox": [4200, 2100],
+    "views": [
+      { "id": "mobile", "label": "Flutter mobile", "focus": ["mobile_ui", "dio", "secure_store", "api"], "note": "Flutter UI uses Dio to call the REST API and persists tokens locally." },
+      { "id": "backend", "label": "Backend runtime", "focus": ["api", "authz", "identity", "parking_domain", "booking", "billing", "operations", "prisma"], "note": "All backend components run in one NestJS process on Render." },
+      { "id": "data", "label": "Data and integrations", "focus": ["pooler", "postgres", "payos", "resend", "ocr"], "note": "PostgreSQL is persistent state; vendors are called via HTTPS." }
+    ]
+  },
+  "components": [
+    { "id": "mobile_ui", "type": "frontend", "label": "Flutter UI", "sublabel": "Dart · Android / iOS screens", "tag": "MOBILE APP", "pos": [100, 500], "size": [340, 120], "brand": { "url": "https://flutter.dev/", "sha256": "063ec9f0455040f12dffa931ce99f30d64c589559bd76bb7bbee4ad4a3e27921" } },
+    { "id": "dio", "type": "frontend", "label": "🌐 Dio API client", "sublabel": "JSON HTTPS · timeout + interceptors", "tag": "NETWORK", "pos": [100, 850], "size": [340, 120] },
+    { "id": "secure_store", "type": "security", "label": "🔐 Secure token storage", "sublabel": "access / refresh token on device", "tag": "MOBILE SECURITY", "pos": [100, 1200], "size": [340, 120] },
+    { "id": "uptime", "type": "external", "label": "🩺 UptimeRobot", "sublabel": "external monitor · /health liveness", "tag": "MONITORING", "pos": [420, 70], "size": [320, 110] },
+    { "id": "delivery", "type": "cloud", "label": "🚀 Build & deployment", "sublabel": "npm → Prisma generate → Nest build", "tag": "NO CI/CD COMMITTED", "pos": [820, 1650], "size": [360, 120], "brand": "render" },
+    { "id": "authz", "type": "security", "label": "🛡 Auth module + guards", "sublabel": "JWT access / refresh · AtGuard · roles", "tag": "AUTHN / AUTHZ", "pos": [820, 500], "size": [340, 120] },
+    { "id": "api", "type": "backend", "label": "NestJS REST controllers", "sublabel": "/api/* · DTO validation · Swagger", "tag": "HTTP ENTRY", "pos": [820, 850], "size": [340, 120], "brand": { "url": "https://nestjs.com/", "sha256": "b876ce3a6dee02ca80e4bd359193d929a60a1c163503d0ada8173d5062f67bea" } },
+    { "id": "identity", "type": "backend", "label": "👤 Identity & profile", "sublabel": "Auth · Users · Roles", "tag": "DOMAIN MODULE", "pos": [1320, 500], "size": [340, 120] },
+    { "id": "parking_domain", "type": "backend", "label": "🅿 Catalog & parking", "sublabel": "Catalog · Parking · QR / OCR", "tag": "DOMAIN MODULE", "pos": [1320, 850], "size": [340, 120] },
+    { "id": "booking", "type": "backend", "label": "📅 Booking & subscriptions", "sublabel": "Reservations · Subscriptions", "tag": "DOMAIN MODULE", "pos": [1320, 1200], "size": [340, 120] },
+    { "id": "billing", "type": "backend", "label": "💳 Billing services", "sublabel": "Payments · Wallets · renewals", "tag": "DOMAIN MODULE", "pos": [1930, 500], "size": [340, 120] },
+    { "id": "operations", "type": "backend", "label": "📊 Operations services", "sublabel": "Incidents · Reports / PDF", "tag": "DOMAIN MODULE", "pos": [1930, 850], "size": [340, 120] },
+    { "id": "prisma", "type": "backend", "label": "Prisma data access", "sublabel": "global PrismaModule · typed queries", "tag": "DATA ACCESS", "pos": [1930, 1450], "size": [340, 120], "brand": "prisma" },
+    { "id": "cron", "type": "backend", "label": "⏱ Reservation cron", "sublabel": "Nest Schedule · every minute · same process", "tag": "BATCH", "pos": [820, 1200], "size": [340, 120] },
+    { "id": "localstate", "type": "database", "label": "💾 Volatile local state", "sublabel": "OTP Map TTL 10 min · UPLOAD_DIR filesystem", "tag": "NOT OBJECT STORAGE", "pos": [1320, 1450], "size": [340, 120] },
+    { "id": "pooler", "type": "cloud", "label": "🔌 Supabase Session Pooler", "sublabel": "DATABASE_URL · sslmode=require", "tag": "TLS CONNECTION", "pos": [3030, 1450], "size": [370, 120], "brand": "supabase" },
+    { "id": "postgres", "type": "database", "label": "🐘 PostgreSQL database", "sublabel": "Prisma 6 system of record", "tag": "PERSISTENT DATA", "pos": [3500, 1450], "size": [370, 120], "brand": "postgresql" },
+    { "id": "payos", "type": "external", "label": "💳 PayOS", "sublabel": "v2 payment API · signed webhook", "tag": "PAYMENT", "pos": [2800, 500], "size": [350, 120] },
+    { "id": "resend", "type": "external", "label": "Resend", "sublabel": "HTML OTP email API · HTTPS", "tag": "EMAIL", "pos": [2800, 850], "size": [350, 120], "brand": { "url": "https://resend.com/brand", "sha256": "71ab800939b1c3db40136b2c66f5d76eb840e72f77728e55f3cb1092ef91948a" } },
+    { "id": "ocr", "type": "external", "label": "📷 Plate Recognizer", "sublabel": "v1/plate-reader · VN · confidence ≥ 0.75", "tag": "OCR", "pos": [2800, 1200], "size": [350, 120] }
+  ],
+  "boundaries": [
+    { "kind": "region", "label": "Flutter mobile application", "wraps": ["mobile_ui", "dio", "secure_store"], "pad": 64 },
+    { "kind": "region", "label": "Render — production Web Service", "wraps": ["authz", "api", "identity", "parking_domain", "booking", "billing", "operations", "prisma", "cron", "localstate", "delivery"], "pad": 150 },
+    { "kind": "security-group", "label": "Application trust boundary — secrets loaded from environment", "wraps": ["authz", "api", "identity", "parking_domain", "booking", "billing", "operations", "prisma", "cron", "localstate"], "pad": 90 },
+    { "kind": "region", "label": "Domain services", "wraps": ["identity", "parking_domain", "booking", "billing", "operations"], "pad": 50 },
+    { "kind": "region", "label": "Supabase managed data platform", "wraps": ["pooler", "postgres"], "pad": 64 },
+    { "kind": "region", "label": "External integrations", "wraps": ["payos", "resend", "ocr"], "pad": 64 },
+    { "kind": "region", "label": "External monitoring", "wraps": ["uptime"], "pad": 32 },
+    { "kind": "region", "label": "Build / deployment", "wraps": ["delivery"], "pad": 32 }
+  ],
+  "connections": [
+    { "from": "mobile_ui", "to": "dio", "label": "view action", "variant": "emphasis", "labelAt": [270, 634] },
+    { "from": "secure_store", "to": "dio", "label": "read / write JWT", "variant": "security" },
+    { "from": "dio", "to": "api", "label": "HTTPS JSON REST", "variant": "emphasis" },
+    { "from": "api", "to": "authz", "label": "JWT Bearer + RBAC", "variant": "security" },
+    { "from": "api", "to": "identity", "label": "auth / profile DTO", "variant": "emphasis", "labelAt": [1255, 740] },
+    { "from": "api", "to": "parking_domain", "label": "parking DTO", "variant": "emphasis", "labelAt": [1200, 945] },
+    { "from": "api", "to": "booking", "label": "reservation / subscription DTO", "variant": "emphasis" },
+    { "from": "api", "to": "billing", "label": "payment / wallet DTO", "variant": "emphasis", "fromSide": "right", "toSide": "bottom", "via": [[1200, 910], [1200, 680], [2100, 680]], "labelAt": [2100, 645] },
+    { "from": "api", "to": "operations", "label": "incident / report DTO", "variant": "emphasis", "fromSide": "bottom", "toSide": "left", "via": [[990, 1010], [1850, 1010], [1850, 910]], "labelAt": [1450, 1010] },
+    { "from": "cron", "to": "booking", "label": "scheduled reservation state update", "variant": "dashed", "labelAt": [1240, 1340] },
+    { "from": "identity", "to": "prisma", "variant": "dashed" },
+    { "from": "parking_domain", "to": "prisma", "variant": "dashed" },
+    { "from": "booking", "to": "prisma", "variant": "dashed" },
+    { "from": "billing", "to": "prisma", "variant": "dashed", "fromSide": "right", "toSide": "right", "via": [[2270, 560], [2400, 560], [2400, 1510]] },
+    { "from": "operations", "to": "prisma", "variant": "dashed" },
+    { "from": "prisma", "to": "pooler", "label": "Prisma SQL over TLS", "variant": "emphasis" },
+    { "from": "pooler", "to": "postgres", "label": "pooled PostgreSQL connection", "variant": "emphasis", "labelAt": [3450, 1590] },
+    { "from": "billing", "to": "payos", "label": "HTTPS create / query payment", "variant": "emphasis" },
+    { "from": "payos", "to": "api", "label": "HTTPS signed webhook", "variant": "security", "fromSide": "bottom", "toSide": "right", "via": [[2975, 680], [1200, 680], [1200, 910]], "labelAt": [2550, 680] },
+    { "from": "identity", "to": "resend", "label": "HTTPS send OTP", "variant": "emphasis", "fromSide": "right", "toSide": "left", "via": [[1700, 560], [1700, 760], [2760, 760], [2760, 910]], "labelAt": [2200, 760] },
+    { "from": "api", "to": "localstate", "label": "OTP Map + UPLOAD_DIR · process-local state", "variant": "dashed", "fromSide": "top", "toSide": "right", "via": [[990, 800], [1860, 800], [1860, 1040], [1668, 1040], [1668, 1510]], "labelAt": [1460, 800] },
+    { "from": "parking_domain", "to": "ocr", "label": "HTTPS image / OCR result", "variant": "emphasis" },
+    { "from": "uptime", "to": "api", "label": "HTTPS GET /health", "variant": "dashed", "fromSide": "right", "toSide": "left", "via": [[760, 125], [760, 910]], "labelAt": [760, 520] },
+    { "from": "delivery", "to": "api", "label": "Render build / deploy → start NestJS", "variant": "dashed", "fromSide": "right", "toSide": "bottom", "via": [[1200, 1710], [1200, 1030], [990, 1030]], "labelAt": [1200, 1390] }
+  ],
+  "cards": [
+    { "dot": "cyan", "title": "Synchronous request path", "items": ["Flutter UI → Dio → HTTPS REST → Nest controllers → guards → domain services", "Domain services use Prisma through the Supabase Session Pooler to PostgreSQL", "Access and refresh tokens are retained on the mobile device; backend secrets remain in environment configuration"] },
+    { "dot": "violet", "title": "Async, batch, and external callbacks", "items": ["PayOS creates payment links through outbound HTTPS; its signed webhook returns to POST /api/payments/payos-webhook", "Reservation cron runs every minute inside the same NestJS process — it is not a separate worker", "Resend and Plate Recognizer are direct outbound HTTPS integrations; no queue, stream, or event bus is committed"] },
+    { "dot": "amber", "title": "Operational limits", "items": ["OTP Map and UPLOAD_DIR are process-local; uploads are not object storage and OTP is lost on restart", "UptimeRobot checks HTTP liveness only; no committed centralized logs, metrics, tracing, alerting, container orchestration, cache, or search", "Build/deployment is documented for Render; no CI/CD workflow is committed"] }
+  ]
+}

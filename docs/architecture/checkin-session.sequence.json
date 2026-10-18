@@ -1,0 +1,50 @@
+{
+  "schema_version": 1,
+  "diagram_type": "sequence",
+  "meta": {
+    "title": "Check-in — mở phiên",
+    "quality_profile": "showcase",
+    "viewBox": [900, 500],
+    "views": [
+      {
+        "id": "session",
+        "label": "Mở phiên",
+        "focus": ["staff", "parking", "db"],
+        "note": "check-in nhận Guest, Resident hoặc Reservation."
+      }
+    ]
+  },
+  "participants": [
+    { "id": "staff", "type": "external", "label": "Nhân viên", "sublabel": "cổng" },
+    { "id": "parking", "type": "backend", "label": "Parking", "sublabel": "API cổng" },
+    { "id": "db", "type": "database", "label": "PostgreSQL", "sublabel": "ParkingSession" }
+  ],
+  "messages": [
+    { "from": "staff", "to": "parking", "y": 176, "label": "POST check-in", "variant": "emphasis" },
+    { "from": "parking", "to": "db", "y": 248, "label": "tạo ParkingSession", "variant": "emphasis" },
+    { "from": "db", "to": "parking", "y": 320, "label": "session Active", "variant": "return" },
+    { "from": "parking", "to": "staff", "y": 392, "label": "envelope PBMS", "variant": "return" }
+  ],
+  "activations": [
+    { "participant": "parking", "from": 170, "to": 408, "type": "backend" },
+    { "participant": "db", "from": 242, "to": 336, "type": "database" }
+  ],
+  "cards": [
+    {
+      "dot": "emerald",
+      "title": "Ba kiểu khách",
+      "items": [
+        "Guest, Resident, Reservation là nhánh trong ParkingOperation. Cổng phải là Entry.",
+        "QR decode là endpoint riêng upload-and-decode-qr."
+      ]
+    },
+    {
+      "dot": "orange",
+      "title": "Checkout tách riêng",
+      "items": [
+        "check-out tính phí rồi tạo Payment Pending. PayOS chỉ khi paymentMethod là PayOS.",
+        "Gói tháng đang active có thể đóng phiên không thu thêm."
+      ]
+    }
+  ]
+}

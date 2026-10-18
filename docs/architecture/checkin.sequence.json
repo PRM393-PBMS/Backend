@@ -1,0 +1,52 @@
+{
+  "schema_version": 1,
+  "diagram_type": "sequence",
+  "meta": {
+    "title": "Check-in — nhận biển số",
+    "quality_profile": "showcase",
+    "viewBox": [900, 500],
+    "views": [
+      {
+        "id": "ocr",
+        "label": "Nhận biển số",
+        "focus": ["staff", "parking", "files", "ocr"],
+        "note": "Ảnh ghi UPLOAD_DIR rồi gửi Plate Recognizer. OCR chặn request."
+      }
+    ]
+  },
+  "participants": [
+    { "id": "staff", "type": "external", "label": "Nhân viên", "sublabel": "cổng" },
+    { "id": "parking", "type": "backend", "label": "Parking", "sublabel": "API cổng" },
+    { "id": "files", "type": "database", "label": "UPLOAD_DIR", "sublabel": "đĩa process" },
+    { "id": "ocr", "type": "external", "label": "OCR biển số", "sublabel": "Snapshot API" }
+  ],
+  "messages": [
+    { "from": "staff", "to": "parking", "y": 176, "label": "POST nhận biển", "variant": "emphasis" },
+    { "from": "parking", "to": "files", "y": 248, "label": "ghi ảnh", "variant": "default" },
+    { "from": "parking", "to": "ocr", "y": 320, "label": "Snapshot API", "variant": "dashed" },
+    { "from": "ocr", "to": "parking", "y": 392, "label": "biển số", "variant": "return" }
+  ],
+  "activations": [
+    { "participant": "parking", "from": 170, "to": 408, "type": "backend" },
+    { "participant": "files", "from": 242, "to": 264, "type": "database" },
+    { "participant": "ocr", "from": 314, "to": 408, "type": "external" }
+  ],
+  "cards": [
+    {
+      "dot": "cyan",
+      "title": "Đồng bộ",
+      "items": [
+        "OCR chặn request cho đến khi Plate Recognizer trả lời. Không có hàng đợi ảnh.",
+        "Lỗi nhà cung cấp làm fail request check-in ảnh."
+      ]
+    },
+    {
+      "dot": "emerald",
+      "title": "Ba kiểu khách",
+      "items": [
+        "Guest, Resident, Reservation là nhánh trong ParkingOperation. Cổng phải là Entry.",
+        "QR decode là endpoint riêng upload-and-decode-qr. Mở phiên nằm ở sơ đồ kế tiếp."
+      ]
+    }
+  ]
+}

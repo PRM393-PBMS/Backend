@@ -1,0 +1,86 @@
+{
+  "schema_version": 1,
+  "diagram_type": "architecture",
+  "meta": {
+    "title": "PRM393 — ngữ cảnh triển khai",
+    "quality_profile": "showcase",
+    "views": [
+      {
+        "id": "request",
+        "label": "Request HTTPS",
+        "focus": ["client", "atGuard", "nestApi", "postgres"],
+        "note": "Client gọi /api trên Render. Prisma ghi PostgreSQL Supabase."
+      },
+      {
+        "id": "files",
+        "label": "Ảnh và cron",
+        "focus": ["nestApi", "uploads", "cron", "postgres"],
+        "note": "Ảnh nằm trên đĩa process. Cron NoShow ghi cùng database."
+      }
+    ]
+  },
+  "components": [
+    { "id": "client", "type": "external", "label": "Client", "sublabel": "ngoài repo này", "pos": [48, 220], "size": [168, 72] },
+    { "id": "atGuard", "type": "security", "label": "AtGuard", "sublabel": "JWT, trừ @Public", "pos": [304, 220], "size": [168, 72] },
+    { "id": "nestApi", "type": "backend", "label": "NestJS API", "sublabel": "Render, Express", "pos": [560, 220], "size": [168, 72], "tag": "/api" },
+    { "id": "postgres", "type": "database", "label": "PostgreSQL", "sublabel": "Supabase", "pos": [816, 220], "size": [168, 72] },
+    { "id": "uploads", "type": "database", "label": "UPLOAD_DIR", "sublabel": "đĩa local", "pos": [560, 400], "size": [168, 72] },
+    { "id": "cron", "type": "backend", "label": "Nest Schedule", "sublabel": "cùng process", "pos": [816, 400], "size": [168, 72] }
+  ],
+  "boundaries": [
+    {
+      "kind": "region",
+      "label": "Render Web Service",
+      "wraps": ["atGuard", "nestApi", "cron", "uploads"],
+      "pad": 32
+    },
+    {
+      "kind": "security-group",
+      "label": "JWT Bearer",
+      "wraps": ["atGuard", "nestApi"],
+      "pad": 28
+    },
+    {
+      "kind": "region",
+      "label": "Supabase",
+      "wraps": ["postgres"],
+      "pad": 28
+    }
+  ],
+  "connections": [
+    { "id": "client-guard", "from": "client", "to": "atGuard", "label": "HTTPS /api", "variant": "emphasis", "labelDy": 28 },
+    { "id": "guard-api", "from": "atGuard", "to": "nestApi", "label": "qua guard", "variant": "security", "labelDy": 28 },
+    { "id": "sql", "from": "nestApi", "to": "postgres", "label": "Prisma SQL", "variant": "emphasis", "labelDy": 28 },
+    { "id": "files", "from": "nestApi", "to": "uploads", "label": "ghi ảnh", "fromSide": "bottom", "toSide": "top", "labelDy": 28 },
+    { "id": "cron-db", "from": "cron", "to": "postgres", "label": "NoShow", "variant": "dashed", "fromSide": "top", "toSide": "bottom", "labelDy": -28 }
+  ],
+  "cards": [
+    {
+      "dot": "cyan",
+      "title": "Một process",
+      "items": [
+        "NestJS 12 trên Render. Không có API gateway hay hàng đợi riêng.",
+        "Swagger /api/docs và static upload phục vụ cùng process.",
+        "GET /health chỉ liveness, không kiểm tra database."
+      ]
+    },
+    {
+      "dot": "rose",
+      "title": "Tin cậy",
+      "items": [
+        "AtGuard là APP_GUARD. Auth /api/Auth và webhook PayOS là @Public.",
+        "OTP nằm trong Map của process, TTL 10 phút, mất khi restart.",
+        "Client web/mobile không nằm trong repo backend này."
+      ]
+    },
+    {
+      "dot": "amber",
+      "title": "Lỗi",
+      "items": [
+        "Cron NoShow chạy mỗi phút trong process, không có retry queue.",
+        "Render free có thể ngủ; UptimeRobot chỉ ping /health.",
+        "PayOS, Resend và OCR nằm ở sơ đồ dịch vụ ngoài."
+      ]
+    }
+  ]
+}

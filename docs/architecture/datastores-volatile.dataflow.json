@@ -1,0 +1,58 @@
+{
+  "schema_version": 1,
+  "diagram_type": "dataflow",
+  "meta": {
+    "title": "PRM393 — OTP, ảnh và tiền",
+    "quality_profile": "showcase",
+    "viewBox": [980, 430],
+    "views": [
+      {
+        "id": "volatile",
+        "label": "Không bền",
+        "focus": ["authSvc", "otpMem", "billSvc", "prisma"],
+        "note": "OTP trong RAM. Ảnh trên đĩa UPLOAD_DIR của instance."
+      },
+      {
+        "id": "money",
+        "label": "Tiền",
+        "focus": ["billSvc", "prisma", "pgMoney"],
+        "note": "Payment, ví và gói nằm cùng PostgreSQL."
+      }
+    ]
+  },
+  "stages": [
+    { "label": "Module" },
+    { "label": "Trong process" },
+    { "label": "PostgreSQL" }
+  ],
+  "nodes": [
+    { "id": "billSvc", "type": "backend", "label": "Payments", "sublabel": "ví gói đặt chỗ", "stage": 0, "row": 0 },
+    { "id": "authSvc", "type": "security", "label": "Auth", "sublabel": "login OTP", "stage": 0, "row": 1, "yOffset": 16 },
+    { "id": "prisma", "type": "backend", "label": "Prisma", "sublabel": "client @Global", "stage": 1, "row": 0 },
+    { "id": "otpMem", "type": "security", "label": "OTP Map", "sublabel": "TTL 10 phút", "stage": 1, "row": 1, "yOffset": 16, "tag": "RAM" },
+    { "id": "pgMoney", "type": "database", "label": "Tiền", "sublabel": "Payment Wallet gói", "stage": 2, "row": 0 }
+  ],
+  "flows": [
+    { "id": "bill-sql", "from": "billSvc", "to": "prisma", "label": "payment", "classification": "SQL", "variant": "default" },
+    { "id": "otp", "from": "authSvc", "to": "otpMem", "label": "set OTP", "classification": "mất khi restart", "variant": "security", "route": "straight" },
+    { "id": "money-tables", "from": "prisma", "to": "pgMoney", "label": "tiền", "classification": "một DB", "variant": "default" }
+  ],
+  "cards": [
+    {
+      "dot": "rose",
+      "title": "Dữ liệu dễ mất",
+      "items": [
+        "OTP không ghi bảng. UPLOAD_DIR mặc định ./public/uploads trên máy đang chạy.",
+        "Đổi instance Render không kèm volume thì ảnh local không còn."
+      ]
+    },
+    {
+      "dot": "emerald",
+      "title": "Đề xuất, chưa có",
+      "items": [
+        "Hàng đợi webhook và lưu OTP bền là đề xuất, không có trong repo. Volume hoặc object storage cho ảnh là đề xuất.",
+        "Health check database cũng chưa có."
+      ]
+    }
+  ]
+}

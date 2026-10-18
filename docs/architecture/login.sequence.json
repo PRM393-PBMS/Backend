@@ -1,0 +1,60 @@
+{
+  "schema_version": 1,
+  "diagram_type": "sequence",
+  "meta": {
+    "title": "Đăng nhập JWT",
+    "quality_profile": "showcase",
+    "viewBox": [960, 500],
+    "views": [
+      {
+        "id": "login",
+        "label": "POST login",
+        "focus": ["client", "auth", "db"],
+        "note": "Route /api/Auth là @Public. Mật khẩu so bằng bcrypt trong process."
+      }
+    ]
+  },
+  "participants": [
+    { "id": "client", "type": "external", "label": "Client", "sublabel": "app" },
+    { "id": "auth", "type": "security", "label": "Auth", "sublabel": "POST /api/Auth/login" },
+    { "id": "db", "type": "database", "label": "PostgreSQL", "sublabel": "User RefreshToken" }
+  ],
+  "messages": [
+    { "from": "client", "to": "auth", "y": 168, "label": "POST /api/Auth/login", "variant": "emphasis" },
+    { "from": "auth", "to": "db", "y": 216, "label": "đọc User theo email", "variant": "default" },
+    { "from": "db", "to": "auth", "y": 264, "label": "bản ghi + hash", "variant": "return" },
+    { "from": "auth", "to": "db", "y": 312, "label": "ghi hash refresh token", "variant": "security" },
+    { "from": "db", "to": "auth", "y": 360, "label": "đã lưu", "variant": "return" },
+    { "from": "auth", "to": "client", "y": 408, "label": "accessToken + refreshToken", "variant": "return" }
+  ],
+  "activations": [
+    { "participant": "auth", "from": 162, "to": 424, "type": "security" },
+    { "participant": "db", "from": 210, "to": 376, "type": "database" }
+  ],
+  "cards": [
+    {
+      "dot": "rose",
+      "title": "Token",
+      "items": [
+        "Access và refresh ký bằng hai secret riêng. Refresh lưu dạng hash bcrypt, không lưu token thô.",
+        "refresh-token cấp access mới, không rotate refresh."
+      ]
+    },
+    {
+      "dot": "amber",
+      "title": "OTP không ở đây",
+      "items": [
+        "Đăng ký và reset gửi OTP qua Resend. OTP nằm trong Map process, TTL 10 phút.",
+        "Restart Render làm mất OTP đang chờ."
+      ]
+    },
+    {
+      "dot": "cyan",
+      "title": "Sau login",
+      "items": [
+        "Route còn lại gửi Authorization Bearer. AtGuard từ chối khi thiếu hoặc sai access token.",
+        "PbmsRolesGuard kiểm tra role trên từng controller."
+      ]
+    }
+  ]
+}
