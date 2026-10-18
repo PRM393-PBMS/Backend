@@ -17,10 +17,18 @@ describe('MonthlySubscriptionsService register payment methods', () => {
     requireFixedSlot: false,
     vehicleType: { typeName: 'Xe máy' },
   };
+  const vehicle = {
+    id: 'a52c7c13-5f2c-47ce-aeb2-1da63a5f9c68',
+    userId,
+    vehicleTypeId: pkg.vehicleTypeId,
+    licensePlate: '59A12345',
+    vehicleType: { typeName: 'Xe máy' },
+  };
 
   let service: MonthlySubscriptionsService;
   let prisma: {
     subscriptionPackage: { findUnique: jest.Mock };
+    vehicle: { findFirst: jest.Mock };
     monthlySubscription: { findFirst: jest.Mock; create: jest.Mock; update: jest.Mock };
     payment: { create: jest.Mock; update: jest.Mock };
     user: { findUnique: jest.Mock };
@@ -32,6 +40,7 @@ describe('MonthlySubscriptionsService register payment methods', () => {
   beforeEach(async () => {
     prisma = {
       subscriptionPackage: { findUnique: jest.fn().mockResolvedValue(pkg) },
+      vehicle: { findFirst: jest.fn().mockResolvedValue(vehicle) },
       monthlySubscription: {
         findFirst: jest.fn().mockResolvedValue(null),
         create: jest.fn(),
@@ -64,7 +73,7 @@ describe('MonthlySubscriptionsService register payment methods', () => {
   it('rejects an unsupported paymentMethod', async () => {
     const result = await service.register(
       userId,
-      { packageId, licensePlate: '59A12345', paymentMethod: 'Cash' },
+      { packageId, vehicleId: vehicle.id, paymentMethod: 'Cash' },
       true,
     );
     expect(result.isSuccess).toBe(false);
@@ -94,7 +103,7 @@ describe('MonthlySubscriptionsService register payment methods', () => {
       orderCode: '1727',
     });
 
-    const result = await service.register(userId, { packageId, licensePlate: '59A12345' }, true);
+    const result = await service.register(userId, { packageId, vehicleId: vehicle.id }, true);
 
     expect(result.statusCode).toBe(201);
     expect(result.result).toEqual(
@@ -126,7 +135,7 @@ describe('MonthlySubscriptionsService register payment methods', () => {
 
     const result = await service.register(
       userId,
-      { packageId, licensePlate: '59A12345', paymentMethod: 'Wallet' },
+      { packageId, vehicleId: vehicle.id, paymentMethod: 'Wallet' },
       true,
     );
 
@@ -161,7 +170,7 @@ describe('MonthlySubscriptionsService register payment methods', () => {
 
     const result = await service.register(
       userId,
-      { packageId, licensePlate: '59A12345', paymentMethod: 'Wallet' },
+      { packageId, vehicleId: vehicle.id, paymentMethod: 'Wallet' },
       true,
     );
 

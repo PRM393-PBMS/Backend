@@ -1,0 +1,45 @@
+{
+  "schema_version": 1,
+  "diagram_type": "architecture",
+  "meta": {
+    "title": "PRM393 PARKING MANAGEMENT SYSTEM — SYSTEM ARCHITECTURE",
+    "output": "system-architecture-report.html",
+    "quality_profile": "showcase",
+    "viewBox": [1500, 950],
+    "visual_preset": "editorial"
+  },
+  "components": [
+    { "id": "mobile", "type": "frontend", "label": "Flutter Mobile App", "tag": "CLIENT", "pos": [50, 430], "size": [210, 110] },
+    { "id": "api", "type": "backend", "label": "NestJS API Gateway", "tag": "HTTPS REST · JWT", "pos": [400, 430], "size": [220, 110] },
+    { "id": "domain", "type": "backend", "label": "Domain Services", "tag": "PARKING · BOOKING · BILLING", "pos": [740, 430], "size": [250, 110] },
+    { "id": "prisma", "type": "backend", "label": "Prisma ORM", "tag": "TYPED DATA ACCESS", "brand": "prisma", "pos": [1060, 430], "size": [180, 110] },
+    { "id": "database", "type": "database", "label": "Supabase PostgreSQL", "tag": "SESSION POOLER · TLS", "brand": "supabase", "pos": [1280, 430], "size": [170, 110] },
+    { "id": "cron", "type": "backend", "label": "Reservation Cron", "tag": "IN-PROCESS · EVERY MINUTE", "pos": [740, 700], "size": [250, 110] },
+    { "id": "local", "type": "database", "label": "Local State", "tag": "OTP MAP · UPLOAD_DIR", "pos": [400, 700], "size": [220, 110] },
+    { "id": "payos", "type": "external", "label": "PayOS", "tag": "PAYMENT API · WEBHOOK", "pos": [740, 150], "size": [200, 100] },
+    { "id": "resend", "type": "external", "label": "Resend", "tag": "OTP EMAIL SERVICE", "pos": [1040, 150], "size": [200, 100] },
+    { "id": "ocr", "type": "external", "label": "Plate Recognizer", "tag": "PLATE OCR API", "pos": [1280, 700], "size": [170, 100] }
+  ],
+  "boundaries": [
+    { "kind": "region", "label": "CLIENT", "wraps": ["mobile"], "pad": 45 },
+    { "kind": "region", "label": "RENDER — PRODUCTION WEB SERVICE", "wraps": ["api", "domain", "prisma", "cron", "local"], "pad": 55 },
+    { "kind": "region", "label": "THIRD-PARTY SERVICES", "wraps": ["payos", "resend", "ocr"], "pad": 45 },
+    { "kind": "region", "label": "MANAGED DATA PLATFORM", "wraps": ["database"], "pad": 45 }
+  ],
+  "connections": [
+    { "id": "mobile-api", "from": "mobile", "to": "api", "label": "HTTPS REST", "variant": "emphasis", "labelDy": -26 },
+    { "id": "api-domain", "from": "api", "to": "domain", "label": "DTO / REST", "variant": "emphasis", "labelDy": -26 },
+    { "id": "domain-prisma", "from": "domain", "to": "prisma", "label": "Prisma", "variant": "emphasis", "labelDy": -26 },
+    { "id": "prisma-db", "from": "prisma", "to": "database", "label": "SQL over TLS", "variant": "emphasis", "labelAt": [1260, 565] },
+    { "id": "api-local", "from": "api", "to": "local", "label": "OTP / uploads", "variant": "dashed", "fromSide": "bottom", "toSide": "top", "labelAt": [510, 575] },
+    { "id": "cron-domain", "from": "cron", "to": "domain", "label": "scheduled update", "variant": "dashed", "fromSide": "top", "toSide": "bottom", "labelDx": 70 },
+    { "id": "domain-payos", "from": "domain", "to": "payos", "label": "payment", "variant": "emphasis", "fromSide": "top", "toSide": "bottom", "labelDx": -40 },
+    { "id": "domain-resend", "from": "domain", "to": "resend", "label": "OTP email", "variant": "emphasis", "fromSide": "top", "toSide": "bottom", "labelDx": 55 },
+    { "id": "domain-ocr", "from": "domain", "to": "ocr", "label": "plate OCR", "variant": "emphasis", "fromSide": "right", "toSide": "left", "via": [[1040, 485], [1040, 750]] }
+  ],
+  "cards": [
+    { "dot": "cyan", "title": "Core request", "items": ["Flutter → NestJS API → domain services → Prisma → Supabase PostgreSQL"] },
+    { "dot": "amber", "title": "Integrations", "items": ["PayOS payment/webhook · Resend OTP email · Plate Recognizer OCR"] },
+    { "dot": "rose", "title": "Runtime note", "items": ["Reservation cron runs in NestJS; OTP Map and UPLOAD_DIR are process-local"] }
+  ]
+}

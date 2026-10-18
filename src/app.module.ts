@@ -18,6 +18,7 @@ import { RolesModule } from './roles/roles.module';
 import { SubscriptionsModule } from './subscriptions/subscriptions.module';
 import { UsersModule } from './users/users.module';
 import { WalletsModule } from './wallets/wallets.module';
+import { VehiclesModule } from './vehicles/vehicles.module';
 
 @Module({
   imports: [
@@ -27,6 +28,7 @@ import { WalletsModule } from './wallets/wallets.module';
     IntegrationsModule,
     AuthModule,
     UsersModule,
+    VehiclesModule,
     WalletsModule,
     RolesModule,
     CatalogModule,

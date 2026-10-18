@@ -58,7 +58,7 @@ export class ParkingOperationsService {
     }
     const session = await this.prisma.parkingSession.findUnique({
       where: { id: sessionId },
-      include: { vehicleType: true },
+      include: { vehicle: { select: { userId: true } }, vehicleType: true },
     });
     if (!session || !sameStatus(session.status, 'Active')) {
       return PbmsResponseDto.fail('Không tìm thấy phiên gửi xe đang hoạt động', 404);
@@ -99,7 +99,7 @@ export class ParkingOperationsService {
     const method = this.normalizeMethod(pbmsPick(dto, 'paymentMethod', 'PaymentMethod')) || 'Cash';
     const payment = await this.prisma.payment.create({
       data: {
-        userId: session.driverUserId,
+        userId: session.vehicle?.userId ?? null,
         sessionId: session.id,
         reservationId: session.reservationId,
         amount: new Prisma.Decimal(fee.amount),
@@ -139,7 +139,10 @@ export class ParkingOperationsService {
   }
 
   async getFeePreview(sessionId: string): Promise<PbmsResponseDto> {
-    const session = await this.prisma.parkingSession.findUnique({ where: { id: sessionId } });
+    const session = await this.prisma.parkingSession.findUnique({
+      where: { id: sessionId },
+      include: { vehicle: { select: { userId: true } } },
+    });
     if (!session || !sameStatus(session.status, 'Active')) {
       return PbmsResponseDto.fail('Không tìm thấy phiên gửi xe đang hoạt động', 404);
     }
@@ -403,12 +406,16 @@ export class ParkingOperationsService {
     if (!slot) {
       return PbmsResponseDto.fail('Hệ thống hết vị trí trống khả dụng cho xe vãng lai', 409);
     }
+    const registeredVehicle = await this.prisma.vehicle.findFirst({
+      where: { licensePlate: plate, vehicleTypeId },
+    });
     const session = await this.createActiveSession({
       licensePlate: plate,
       vehicleTypeId,
       gateId: gate.id,
       slotId: slot.id,
       dto,
+      vehicleId: registeredVehicle?.id ?? null,
     });
     await this.prisma.parkingSlot.update({ where: { id: slot.id }, data: { status: 'Occupied' } });
     return PbmsResponseDto.ok('Check-in xe vãng lai thành công', await this.loadSession(session.id), 201);
@@ -429,7 +436,7 @@ export class ParkingOperationsService {
         startDate: { lte: new Date() },
         endDate: { gte: new Date() },
       },
-      include: { vehicleType: true },
+      include: { vehicle: { include: { vehicleType: true } } },
     });
     if (!sub) {
       return PbmsResponseDto.fail('Không tìm thấy gói tháng hiệu lực cho biển số này', 404);
@@ -446,11 +453,11 @@ export class ParkingOperationsService {
     }
     const session = await this.createActiveSession({
       licensePlate: plate,
-      vehicleTypeId: sub.vehicleTypeId,
+      vehicleTypeId: sub.vehicle.vehicleTypeId,
       gateId: gate.id,
       slotId,
       dto,
-      driverUserId: sub.userId,
+      vehicleId: sub.vehicleId,
     });
     void gate;
     return PbmsResponseDto.ok('Check-in khách tháng thành công', await this.loadSession(session.id), 201);
@@ -471,9 +478,18 @@ export class ParkingOperationsService {
     if (!isValidLicensePlate(plate)) {
       return PbmsResponseDto.fail('Vui lòng nhập biển số');
     }
-    const reservation = await this.prisma.reservation.findUnique({ where: { id: reservationId } });
+    const reservation = await this.prisma.reservation.findUnique({
+      where: { id: reservationId },
+      include: { vehicle: true },
+    });
     if (!reservation) {
       return PbmsResponseDto.fail('Không tìm thấy đặt chỗ', 404);
+    }
+    if (!reservation.vehicle) {
+      return PbmsResponseDto.fail('Đặt chỗ chưa được liên kết với xe', 409);
+    }
+    if (reservation.vehicle.licensePlate !== plate) {
+      return PbmsResponseDto.fail('Biển số không khớp với xe đã chọn khi đặt chỗ', 403);
     }
     if (!sameStatus(reservation.status, 'Confirmed') && !sameStatus(reservation.status, 'Modified')) {
       return PbmsResponseDto.fail('Đặt chỗ phải ở trạng thái Confirmed hoặc Modified để check-in');
@@ -486,7 +502,7 @@ export class ParkingOperationsService {
         'Ngoài khung giờ cho phép check-in đặt trước (Chỉ áp dụng trong khoảng -30p đến +30p so với giờ hẹn)',
       );
     }
-    const sub = await this.activeSubscription(plate, reservation.vehicleTypeId, now);
+    const sub = await this.activeSubscription(plate, reservation.vehicle.vehicleTypeId, now);
     if (sub) {
       return PbmsResponseDto.fail(
         'Biển số này đang có gói tháng hợp lệ. Không thể check-in bằng vé đặt trước; vui lòng check-in tại tầng cư dân / khách tháng',
@@ -499,7 +515,7 @@ export class ParkingOperationsService {
     if (busy) {
       return PbmsResponseDto.fail('Xe này đang có phiên gửi xe chưa checkout', 409);
     }
-    const slot = await this.findReservationSlot(reservation.vehicleTypeId, gate.floorId);
+    const slot = await this.findReservationSlot(reservation.vehicle.vehicleTypeId, gate.floorId);
     if (!slot) {
       return PbmsResponseDto.fail('Hệ thống hết vị trí trống khả dụng cho xe đặt trước tại thời điểm này', 409);
     }
@@ -507,11 +523,11 @@ export class ParkingOperationsService {
       const created = await tx.parkingSession.create({
         data: {
           reservationId: reservation.id,
-          driverUserId: reservation.userId,
+          vehicleId: reservation.vehicleId,
           licensePlateIn: plate,
           entryImageUrl: pbmsPick(dto, 'entryImageUrl', 'EntryImageUrl').trim() || null,
           driverEntryImageUrl: pbmsPick(dto, 'driverEntryImageUrl', 'DriverEntryImageUrl').trim() || null,
-          vehicleTypeId: reservation.vehicleTypeId,
+          vehicleTypeId: reservation.vehicle.vehicleTypeId,
           entryTime: now,
           entryGateId: gate.id,
           assignedSlotId: slot.id,
@@ -532,11 +548,11 @@ export class ParkingOperationsService {
     gateId: string;
     slotId: string | null;
     dto: object;
-    driverUserId?: string | null;
+    vehicleId?: string | null;
   }) {
     return this.prisma.parkingSession.create({
       data: {
-        driverUserId: input.driverUserId ?? null,
+        vehicleId: input.vehicleId ?? null,
         licensePlateIn: input.licensePlate,
         entryImageUrl: pbmsPick(input.dto, 'entryImageUrl', 'EntryImageUrl').trim() || null,
         driverEntryImageUrl: pbmsPick(input.dto, 'driverEntryImageUrl', 'DriverEntryImageUrl').trim() || null,
@@ -567,7 +583,10 @@ export class ParkingOperationsService {
   }
 
   private async closeSession(sessionId: string, assignedFixedSlotId: string | null): Promise<void> {
-    const session = await this.prisma.parkingSession.findUnique({ where: { id: sessionId } });
+    const session = await this.prisma.parkingSession.findUnique({
+      where: { id: sessionId },
+      include: { vehicle: { select: { userId: true } } },
+    });
     if (!session) {
       return;
     }
@@ -726,8 +745,7 @@ export class ParkingOperationsService {
   private async activeSubscription(plate: string, vehicleTypeId: string, at: Date) {
     return this.prisma.monthlySubscription.findFirst({
       where: {
-        licensePlate: plate,
-        vehicleTypeId,
+        vehicle: { is: { licensePlate: plate, vehicleTypeId } },
         status: 'Active',
         startDate: { lte: at },
         endDate: { gte: at },
@@ -739,11 +757,14 @@ export class ParkingOperationsService {
     if (isEmptyGuid(sessionId) || isEmptyGuid(userId)) {
       return PbmsResponseDto.fail('Thông tin phiên gửi xe không hợp lệ');
     }
-    const session = await this.prisma.parkingSession.findUnique({ where: { id: sessionId } });
+    const session = await this.prisma.parkingSession.findUnique({
+      where: { id: sessionId },
+      include: { vehicle: { select: { userId: true } } },
+    });
     if (!session) {
       return PbmsResponseDto.fail('Không tìm thấy phiên gửi xe', 404);
     }
-    if (session.driverUserId !== userId) {
+    if (session.vehicle?.userId !== userId) {
       return PbmsResponseDto.fail('Bạn không có quyền xem phiên gửi xe này', 403);
     }
     return null;
@@ -764,7 +785,7 @@ export class ParkingOperationsService {
     const item = await this.prisma.parkingSession.findUnique({
       where: { id },
       include: {
-        driverUser: true,
+        vehicle: { include: { user: true } },
         vehicleType: true,
         entryGate: true,
         exitGate: true,

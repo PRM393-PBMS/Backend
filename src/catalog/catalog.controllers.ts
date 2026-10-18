@@ -26,7 +26,10 @@ import {
   slotExample,
   vehicleTypeExample,
 } from '../common/swagger/pbms-example-data';
-import { ApiPbmsBodyExample, ApiPbmsOkResponse } from '../common/swagger/pbms-swagger';
+import {
+  ApiPbmsBodyExample,
+  ApiPbmsOkResponse,
+} from '../common/swagger/pbms-swagger';
 import { FloorsService } from './floors.service';
 import { GatesService } from './gates.service';
 import { ParkingSlotsService } from './parking-slots.service';
@@ -45,7 +48,9 @@ export class VehicleTypesController {
   @Get()
   @PbmsRoles('manager', 'staff')
   @ApiOperation({ summary: 'Danh sách loại phương tiện' })
-  @ApiPbmsOkResponse('Lấy danh sách loại phương tiện thành công', [vehicleTypeExample])
+  @ApiPbmsOkResponse('Lấy danh sách loại phương tiện thành công', [
+    vehicleTypeExample,
+  ])
   getAll(): Promise<PbmsResponseDto> {
     return this.vehicleTypes.getAll();
   }
@@ -61,7 +66,10 @@ export class VehicleTypesController {
   @Post()
   @PbmsRoles('manager')
   @ApiOperation({ summary: 'Tạo loại phương tiện' })
-  @ApiPbmsBodyExample(PbmsBodyDto, { typeName: 'Xe máy', dimensions: '2.0m x 0.8m' })
+  @ApiPbmsBodyExample(PbmsBodyDto, {
+    typeName: 'Xe máy',
+    dimensions: '2.0m x 0.8m',
+  })
   @ApiPbmsOkResponse('Tạo loại phương tiện thành công', vehicleTypeExample, 201)
   create(@Body() dto: PbmsBodyDto): Promise<PbmsResponseDto> {
     return this.vehicleTypes.create(dto);
@@ -117,6 +125,7 @@ export class FloorsController {
   @PbmsRoles('manager')
   @ApiOperation({ summary: 'Tạo tầng' })
   @ApiPbmsBodyExample(PbmsBodyDto, {
+    parkingId: ids.parkingId,
     floorName: 'Tầng B1',
     dedicatedVehicleTypeId: ids.vehicleTypeId,
     totalCapacity: 120,
@@ -133,6 +142,7 @@ export class FloorsController {
   @ApiOperation({ summary: 'Cập nhật tầng' })
   @ApiPbmsBodyExample(PbmsBodyDto, {
     floorId: ids.floorId,
+    parkingId: ids.parkingId,
     floorName: 'Tầng B1',
     dedicatedVehicleTypeId: ids.vehicleTypeId,
     totalCapacity: 120,
@@ -243,6 +253,7 @@ export class ParkingSlotsController {
   @PbmsRoles('manager')
   @ApiOperation({ summary: 'Tạo ô đỗ' })
   @ApiPbmsBodyExample(PbmsBodyDto, {
+    parkingId: ids.parkingId,
     floorId: ids.floorId,
     vehicleTypeId: ids.vehicleTypeId,
     slotCode: 'B1-A12',
@@ -259,6 +270,7 @@ export class ParkingSlotsController {
   @ApiOperation({ summary: 'Cập nhật ô đỗ' })
   @ApiPbmsBodyExample(PbmsBodyDto, {
     parkingSlotId: ids.slotId,
+    parkingId: ids.parkingId,
     floorId: ids.floorId,
     vehicleTypeId: ids.vehicleTypeId,
     slotCode: 'B1-A12',
@@ -274,8 +286,14 @@ export class ParkingSlotsController {
   @PbmsRoles('manager', 'staff')
   @ApiOperation({ summary: 'Cập nhật trạng thái ô đỗ' })
   @ApiPbmsBodyExample(PbmsBodyDto, { status: 'Occupied' })
-  @ApiPbmsOkResponse('Cập nhật trạng thái ô đỗ thành công', { ...slotExample, status: 'Occupied' })
-  updateStatus(@Param('id') id: string, @Body() dto: PbmsBodyDto): Promise<PbmsResponseDto> {
+  @ApiPbmsOkResponse('Cập nhật trạng thái ô đỗ thành công', {
+    ...slotExample,
+    status: 'Occupied',
+  })
+  updateStatus(
+    @Param('id') id: string,
+    @Body() dto: PbmsBodyDto,
+  ): Promise<PbmsResponseDto> {
     return this.parkingSlots.updateStatus(id, dto);
   }
 
@@ -299,7 +317,9 @@ export class PricingPoliciesController {
   @Public()
   @Get()
   @ApiOperation({ summary: 'Danh sách chính sách giá' })
-  @ApiPbmsOkResponse('Lấy danh sách chính sách giá thành công', [pricingPolicyExample])
+  @ApiPbmsOkResponse('Lấy danh sách chính sách giá thành công', [
+    pricingPolicyExample,
+  ])
   getAll(): Promise<PbmsResponseDto> {
     return this.pricing.getAll();
   }
@@ -413,7 +433,10 @@ export class SubscriptionPackagesController {
     status: 'Active',
   })
   @ApiPbmsOkResponse('Cập nhật gói thuê bao thành công', packageExample)
-  update(@Param('id') id: string, @Body() dto: PbmsBodyDto): Promise<PbmsResponseDto> {
+  update(
+    @Param('id') id: string,
+    @Body() dto: PbmsBodyDto,
+  ): Promise<PbmsResponseDto> {
     return this.packages.update(id, dto);
   }
 

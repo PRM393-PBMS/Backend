@@ -1,0 +1,53 @@
+{
+  "schema_version": 1,
+  "diagram_type": "sequence",
+  "meta": {
+    "title": "PayOS — tạo link",
+    "quality_profile": "showcase",
+    "viewBox": [960, 500],
+    "views": [
+      {
+        "id": "link",
+        "label": "Tạo link",
+        "focus": ["client", "api", "payos", "db"],
+        "note": "HMAC ký lúc tạo link, không phải lúc nhận webhook."
+      }
+    ]
+  },
+  "participants": [
+    { "id": "client", "type": "external", "label": "Client", "sublabel": "JWT" },
+    { "id": "api", "type": "backend", "label": "Checkout", "sublabel": "Parking, ví" },
+    { "id": "payos", "type": "external", "label": "PayOS", "sublabel": "REST" },
+    { "id": "db", "type": "database", "label": "PostgreSQL", "sublabel": "Payment" }
+  ],
+  "messages": [
+    { "from": "client", "to": "api", "y": 168, "label": "checkout hoặc top-up", "variant": "emphasis" },
+    { "from": "api", "to": "db", "y": 220, "label": "Payment Pending", "variant": "default" },
+    { "from": "api", "to": "payos", "y": 272, "label": "createPaymentLink HMAC", "variant": "dashed" },
+    { "from": "payos", "to": "api", "y": 324, "label": "paymentUrl", "variant": "return" },
+    { "from": "api", "to": "client", "y": 376, "label": "URL thanh toán", "variant": "return" }
+  ],
+  "activations": [
+    { "participant": "api", "from": 162, "to": 392, "type": "backend" },
+    { "participant": "db", "from": 214, "to": 236, "type": "database" },
+    { "participant": "payos", "from": 266, "to": 340, "type": "external" }
+  ],
+  "cards": [
+    {
+      "dot": "rose",
+      "title": "Chữ ký lúc tạo link",
+      "items": [
+        "HMAC nằm ở createPaymentLink. Webhook @Public xác nhận ở sơ đồ kế tiếp.",
+        "handleWebhook không đối chiếu checksum trên body."
+      ]
+    },
+    {
+      "dot": "emerald",
+      "title": "Một Payment",
+      "items": [
+        "Deposit xác nhận Reservation. SubscriptionFee và Renewal kích hoạt gói.",
+        "WalletTopUp cộng balance. CheckoutFee đóng phiên."
+      ]
+    }
+  ]
+}

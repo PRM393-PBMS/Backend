@@ -1,0 +1,98 @@
+{
+  "schema_version": 1,
+  "diagram_type": "architecture",
+  "meta": {
+    "title": "PRM393 — module trong process",
+    "quality_profile": "showcase",
+    "views": [
+      {
+        "id": "auth-import",
+        "label": "Auth dùng chung",
+        "focus": ["auth", "parking", "payments"],
+        "note": "Mọi feature module import AuthModule. Prisma và Integrations là @Global."
+      },
+      {
+        "id": "billing",
+        "label": "Tiền và gói",
+        "focus": ["subscriptions", "wallets", "payments", "integrations"],
+        "note": "Subscriptions và Payments import WalletsModule. Cả ba gọi PayosService."
+      },
+      {
+        "id": "gate",
+        "label": "Cổng bãi",
+        "focus": ["parking", "integrations", "incidents"],
+        "note": "Parking và Incident dùng FilesService. Parking gọi OCR."
+      }
+    ]
+  },
+  "layout": {
+    "mode": "grid",
+    "origin": [48, 88],
+    "cols": 4,
+    "gapX": 72,
+    "gapY": 96,
+    "cellW": 190,
+    "cellH": 76
+  },
+  "components": [
+    { "id": "auth", "type": "security", "label": "Auth", "sublabel": "/api/Auth", "row": 0, "col": 0 },
+    { "id": "users", "type": "backend", "label": "Users", "sublabel": "/api/User profile", "row": 0, "col": 1 },
+    { "id": "roles", "type": "backend", "label": "Roles", "sublabel": "/api/Role", "row": 0, "col": 2 },
+    { "id": "catalog", "type": "backend", "label": "Catalog", "sublabel": "tầng cổng chỗ giá", "row": 0, "col": 3 },
+    { "id": "reservations", "type": "backend", "label": "Reservations", "sublabel": "cron NoShow", "row": 1, "col": 0 },
+    { "id": "parking", "type": "backend", "label": "Parking", "sublabel": "session + cổng", "row": 1, "col": 1 },
+    { "id": "integrations", "type": "backend", "label": "Integrations", "sublabel": "@Global", "row": 1, "col": 2 },
+    { "id": "incidents", "type": "backend", "label": "Incidents", "sublabel": "/api/IncidentReport", "row": 1, "col": 3 },
+    { "id": "subscriptions", "type": "backend", "label": "Subscriptions", "sublabel": "gói tháng", "row": 2, "col": 0 },
+    { "id": "wallets", "type": "backend", "label": "Wallets", "sublabel": "/api/wallet", "row": 2, "col": 1 },
+    { "id": "payments", "type": "backend", "label": "Payments", "sublabel": "webhook PayOS", "row": 2, "col": 2 },
+    { "id": "reports", "type": "backend", "label": "Reports", "sublabel": "PDF trên response", "row": 2, "col": 3 }
+  ],
+  "boundaries": [
+    {
+      "kind": "security-group",
+      "label": "import AuthModule",
+      "wraps": ["users", "roles", "catalog", "reservations", "parking", "incidents", "subscriptions", "wallets", "payments", "reports"],
+      "pad": 28
+    },
+    {
+      "kind": "region",
+      "label": "IntegrationsModule @Global",
+      "wraps": ["integrations"],
+      "pad": 28
+    }
+  ],
+  "connections": [
+    { "id": "sub-wallet", "from": "subscriptions", "to": "wallets", "label": "import Wallets", "variant": "emphasis" },
+    { "id": "pay-wallet", "from": "payments", "to": "wallets", "label": "Wallets", "variant": "emphasis", "labelAt": [520, 540] },
+    { "id": "wallet-int", "from": "wallets", "to": "integrations", "label": "PayosService", "variant": "dashed" },
+    { "id": "park-int", "from": "parking", "to": "integrations", "label": "OCR + file", "variant": "dashed" },
+    { "id": "inc-int", "from": "incidents", "to": "integrations", "label": "FilesService" }
+  ],
+  "cards": [
+    {
+      "dot": "violet",
+      "title": "Không tách deploy",
+      "items": [
+        "Mười hai module Nest trong một AppModule, một process. PrismaModule @Global nên không có cạnh module riêng.",
+        "Users avatar cũng gọi FilesService; cạnh đó bỏ để khỏi cắt ngang lưới."
+      ]
+    },
+    {
+      "dot": "emerald",
+      "title": "Import thật",
+      "items": [
+        "Chỉ Subscriptions và Payments khai báo WalletsModule. Parking, Wallets và Subscriptions gọi PayosService. Payments dùng WalletsService.",
+        "Reports đọc Prisma rồi stream PDF, không lưu file báo cáo."
+      ]
+    },
+    {
+      "dot": "slate",
+      "title": "Catalog công khai một phần",
+      "items": [
+        "GET Floor, Gate, ParkingSlot, PricingPolicy, SubscriptionPackage có @Public. Ghi catalog vẫn đi qua role guard.",
+        "POST /api/parkings là surface thứ hai, không prefix api PascalCase."
+      ]
+    }
+  ]
+}

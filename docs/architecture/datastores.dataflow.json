@@ -1,0 +1,61 @@
+{
+  "schema_version": 1,
+  "diagram_type": "dataflow",
+  "meta": {
+    "title": "PRM393 — PostgreSQL",
+    "quality_profile": "showcase",
+    "viewBox": [980, 430],
+    "views": [
+      {
+        "id": "sql",
+        "label": "PostgreSQL",
+        "focus": ["authSvc", "parkSvc", "prisma", "pgIdentity", "pgOps"],
+        "note": "Một database. Nhóm bảng là cách đọc, không phải schema tách."
+      },
+      {
+        "id": "pdf",
+        "label": "PDF tức thời",
+        "focus": ["reportSvc", "prisma", "pgOps"],
+        "note": "PDFKit ghi thẳng response, không có bảng báo cáo."
+      }
+    ]
+  },
+  "stages": [
+    { "label": "Module" },
+    { "label": "Trong process" },
+    { "label": "PostgreSQL" }
+  ],
+  "nodes": [
+    { "id": "authSvc", "type": "security", "label": "Auth", "sublabel": "login OTP", "stage": 0, "row": 0 },
+    { "id": "parkSvc", "type": "backend", "label": "Parking", "sublabel": "phiên + ảnh", "stage": 0, "row": 1 },
+    { "id": "prisma", "type": "backend", "label": "Prisma", "sublabel": "client @Global", "stage": 1, "row": 0 },
+    { "id": "reportSvc", "type": "backend", "label": "Reports", "sublabel": "PDFKit", "stage": 1, "row": 1 },
+    { "id": "pgIdentity", "type": "database", "label": "Identity", "sublabel": "User Role Token", "stage": 2, "row": 0 },
+    { "id": "pgOps", "type": "database", "label": "Vận hành", "sublabel": "slot session incident", "stage": 2, "row": 1 }
+  ],
+  "flows": [
+    { "id": "auth-sql", "from": "authSvc", "to": "prisma", "label": "User token", "classification": "SQL", "variant": "emphasis", "labelDy": -40 },
+    { "id": "park-sql", "from": "parkSvc", "to": "prisma", "label": "session", "classification": "SQL", "variant": "emphasis", "labelAt": [256, 220] },
+    { "id": "id-tables", "from": "prisma", "to": "pgIdentity", "label": "identity", "classification": "một DB", "variant": "security", "labelDy": -40 },
+    { "id": "ops-tables", "from": "prisma", "to": "pgOps", "label": "vận hành", "classification": "một DB", "variant": "emphasis", "labelAt": [520, 220] },
+    { "id": "report-read", "from": "reportSvc", "to": "prisma", "label": "đọc tổng hợp", "classification": "SQL", "variant": "default", "labelAt": [315, 330] }
+  ],
+  "cards": [
+    {
+      "dot": "cyan",
+      "title": "Một PostgreSQL",
+      "items": [
+        "Schema Prisma có User, Role, RefreshToken, catalog, Reservation, ParkingSession.",
+        "Payment, Wallet, WalletTransaction, MonthlySubscription, IncidentReport cùng database. Không có Redis, Kafka hay object storage riêng trong code."
+      ]
+    },
+    {
+      "dot": "emerald",
+      "title": "PDF tức thời",
+      "items": [
+        "Reports đọc Prisma rồi PDFKit ghi thẳng response. Không có bảng báo cáo.",
+        "OTP, ảnh UPLOAD_DIR và các đề xuất chưa có nằm ở sơ đồ dữ liệu dễ mất."
+      ]
+    }
+  ]
+}

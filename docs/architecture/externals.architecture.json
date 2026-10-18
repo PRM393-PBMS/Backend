@@ -1,0 +1,69 @@
+{
+  "schema_version": 1,
+  "diagram_type": "architecture",
+  "meta": {
+    "title": "PRM393 — HTTPS ra ngoài process",
+    "quality_profile": "showcase",
+    "views": [
+      {
+        "id": "pay",
+        "label": "PayOS",
+        "focus": ["nestApi", "payos"],
+        "note": "Tạo link có HMAC. Webhook trở lại route public."
+      },
+      {
+        "id": "mail-ocr",
+        "label": "OTP và OCR",
+        "focus": ["nestApi", "resend", "plate"],
+        "note": "Cả hai là HTTPS đồng bộ, không qua hàng đợi."
+      }
+    ]
+  },
+  "components": [
+    { "id": "resend", "type": "external", "label": "Resend", "sublabel": "Emails API", "pos": [48, 196], "size": [168, 72] },
+    { "id": "uptime", "type": "external", "label": "UptimeRobot", "sublabel": "GET /health", "pos": [264, 196], "size": [168, 72] },
+    { "id": "nestApi", "type": "backend", "label": "NestJS API", "sublabel": "Render", "pos": [480, 196], "size": [168, 72] },
+    { "id": "payos", "type": "external", "label": "PayOS", "sublabel": "REST + webhook", "pos": [696, 196], "size": [168, 72] },
+    { "id": "plate", "type": "external", "label": "Plate Recognizer", "sublabel": "Snapshot API", "pos": [912, 196], "size": [168, 72] }
+  ],
+  "boundaries": [
+    {
+      "kind": "region",
+      "label": "Render Web Service",
+      "wraps": ["nestApi"],
+      "pad": 32
+    }
+  ],
+  "connections": [
+    { "id": "mail", "from": "nestApi", "to": "resend", "label": "OTP HTTPS", "variant": "dashed", "fromSide": "top", "toSide": "top" },
+    { "id": "health", "from": "uptime", "to": "nestApi", "label": "GET /health", "variant": "dashed", "labelAt": [456, 282] },
+    { "id": "pay", "from": "nestApi", "to": "payos", "label": "link và webhook", "variant": "dashed", "labelAt": [672, 282] },
+    { "id": "ocr", "from": "nestApi", "to": "plate", "label": "Snapshot", "variant": "dashed", "fromSide": "bottom", "toSide": "bottom" }
+  ],
+  "cards": [
+    {
+      "dot": "amber",
+      "title": "Đồng bộ",
+      "items": [
+        "PayOS, Resend và Plate Recognizer được gọi bằng HTTPS trong request. Không có queue, worker hay SDK PayOS riêng.",
+        "Thiếu API key thì service ném lỗi cấu hình."
+      ]
+    },
+    {
+      "dot": "rose",
+      "title": "Webhook",
+      "items": [
+        "POST /api/payments/payos-webhook là @Public. HMAC dùng khi tạo link, không thấy đối chiếu checksum ở handleWebhook.",
+        "Lỗi xử lý trả HTTP 500."
+      ]
+    },
+    {
+      "dot": "cyan",
+      "title": "Health",
+      "items": [
+        "UptimeRobot chỉ gọi GET /health. Health không mở kết nối database.",
+        "Domain neoforcelab.com hiện dùng cho MAIL_FROM, không phải host API."
+      ]
+    }
+  ]
+}

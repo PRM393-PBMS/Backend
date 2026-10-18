@@ -41,7 +41,7 @@ export class MonthlySubscriptionsController {
   @ApiOperation({
     summary: 'Đăng ký gói tháng: paymentMethod PayOS (mặc định) hoặc Wallet',
     description: [
-      'JWT bắt buộc. Body: `packageId`, `licensePlate` (4–15 chữ/số) bắt buộc; `vehicleTypeId` tuỳ chọn; `fixedSlotId` khi gói ô tô `requireFixedSlot`; `paymentMethod` `PayOS` (mặc định nếu trống) hoặc `Wallet`. Khác hai giá trị → `Phương thức thanh toán gói chỉ được là PayOS hoặc Wallet`.',
+      'JWT bắt buộc. Body: `packageId`, `vehicleId` (xe đã đăng ký của chính user) bắt buộc; `fixedSlotId` khi gói ô tô `requireFixedSlot`; `paymentMethod` `PayOS` (mặc định nếu trống) hoặc `Wallet`.',
       '**PayOS** (example Swagger): gói `PendingPayment`. Message `Tạo đăng ký gói thành công`. `result`: `subscriptionId`, `paymentId`, `paymentMethod=PayOS`, `orderCode`, `amount`, `paymentLinkId`, `paymentUrl`, `status=PendingPayment`. FE mở `paymentUrl`; `Active` sau webhook.',
       '**Wallet**: trừ ví ngay. Message `Thanh toán gói bằng ví thành công`. `result`: `subscriptionId`, `paymentId`, `paymentMethod=Wallet`, `amount`, `walletId`, `walletBalance` (sau trừ), `status=Active`. Không `paymentUrl`.',
       'Lỗi: thiếu gói/biển; biển không hợp lệ; 404 gói ngừng bán; biển đã có gói Active/PendingPayment; ô không hợp lệ / xe máy không dùng `fixedSlotId`; 409 hết ô cư dân; 401; 400 số dư không đủ (`result` có `paymentMethod`, `walletId`, `walletBalance`, `amount` — không tạo gói); 500.',
@@ -51,12 +51,11 @@ export class MonthlySubscriptionsController {
     PbmsBodyDto,
     {
       packageId: ids.packageId,
-      licensePlate: '59A12345',
-      vehicleTypeId: ids.vehicleTypeId,
+      vehicleId: ids.vehicleId,
       fixedSlotId: ids.slotId,
       paymentMethod: 'PayOS',
     },
-    '`packageId`, `licensePlate` bắt buộc. `vehicleTypeId`/`fixedSlotId` theo loại gói. `paymentMethod` tùy chọn: `PayOS` | `Wallet`.',
+    '`packageId`, `vehicleId` bắt buộc. `fixedSlotId` theo loại gói. `paymentMethod` tùy chọn: `PayOS` | `Wallet`.',
   )
   @ApiPbmsOkResponse('Tạo đăng ký gói thành công', subscriptionPaymentExample, 201)
   register(@GetPbmsUserId() userId: string, @Body() dto: PbmsBodyDto): Promise<PbmsResponseDto> {
@@ -69,8 +68,7 @@ export class MonthlySubscriptionsController {
   @ApiPbmsBodyExample(PbmsBodyDto, {
     userId: ids.userId,
     packageId: ids.packageId,
-    licensePlate: '59A12345',
-    vehicleTypeId: ids.vehicleTypeId,
+    vehicleId: ids.vehicleId,
   })
   @ApiPbmsOkResponse('Tạo đăng ký gói thành công', subscriptionPaymentExample, 201)
   create(@Body() dto: PbmsBodyDto): Promise<PbmsResponseDto> {
@@ -154,7 +152,6 @@ export class MonthlySubscriptionsController {
   @PbmsRoles('manager')
   @ApiOperation({ summary: 'Cập nhật gói tháng' })
   @ApiPbmsBodyExample(PbmsBodyDto, {
-    licensePlate: '59A12345',
     startDate: '2026-09-01T00:00:00.000Z',
     endDate: '2026-12-01T00:00:00.000Z',
     status: 'Active',

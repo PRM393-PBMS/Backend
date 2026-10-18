@@ -7,7 +7,11 @@ import { ids } from '../swagger/pbms-example-data';
  * Không ép kiểu để client gửi string/number/boolean tùy endpoint.
  */
 export class PbmsBodyDto {
-  @ApiPropertyOptional({ type: String, format: 'uuid', example: ids.roleStaffId })
+  @ApiPropertyOptional({
+    type: String,
+    format: 'uuid',
+    example: ids.roleStaffId,
+  })
   @IsOptional()
   roleId?: unknown;
   @ApiPropertyOptional() @IsOptional() RoleId?: unknown;
@@ -22,7 +26,11 @@ export class PbmsBodyDto {
   description?: unknown;
   @ApiPropertyOptional() @IsOptional() Description?: unknown;
 
-  @ApiPropertyOptional({ type: String, format: 'uuid', example: ids.vehicleTypeId })
+  @ApiPropertyOptional({
+    type: String,
+    format: 'uuid',
+    example: ids.vehicleTypeId,
+  })
   @IsOptional()
   vehicleTypeId?: unknown;
   @ApiPropertyOptional() @IsOptional() VehicleTypeId?: unknown;
@@ -47,7 +55,11 @@ export class PbmsBodyDto {
   floorName?: unknown;
   @ApiPropertyOptional() @IsOptional() FloorName?: unknown;
 
-  @ApiPropertyOptional({ type: String, format: 'uuid', example: ids.vehicleTypeId })
+  @ApiPropertyOptional({
+    type: String,
+    format: 'uuid',
+    example: ids.vehicleTypeId,
+  })
   @IsOptional()
   dedicatedVehicleTypeId?: unknown;
   @ApiPropertyOptional() @IsOptional() DedicatedVehicleTypeId?: unknown;
@@ -62,7 +74,11 @@ export class PbmsBodyDto {
   isResident?: unknown;
   @ApiPropertyOptional() @IsOptional() IsResident?: unknown;
 
-  @ApiPropertyOptional({ type: String, format: 'uuid', example: ids.gateEntryId })
+  @ApiPropertyOptional({
+    type: String,
+    format: 'uuid',
+    example: ids.gateEntryId,
+  })
   @IsOptional()
   gateId?: unknown;
   @ApiPropertyOptional() @IsOptional() GateId?: unknown;
@@ -91,6 +107,11 @@ export class PbmsBodyDto {
   @IsOptional()
   slotCode?: unknown;
   @ApiPropertyOptional() @IsOptional() SlotCode?: unknown;
+
+  @ApiPropertyOptional({ type: String, format: 'uuid', example: ids.parkingId })
+  @IsOptional()
+  parkingId?: unknown;
+  @ApiPropertyOptional() @IsOptional() ParkingId?: unknown;
 
   @ApiPropertyOptional({ type: String, example: 'Available' })
   @IsOptional()
@@ -127,7 +148,11 @@ export class PbmsBodyDto {
   nightSurcharge?: unknown;
   @ApiPropertyOptional() @IsOptional() NightSurcharge?: unknown;
 
-  @ApiPropertyOptional({ type: String, format: 'date-time', example: '2026-09-01T00:00:00.000Z' })
+  @ApiPropertyOptional({
+    type: String,
+    format: 'date-time',
+    example: '2026-09-01T00:00:00.000Z',
+  })
   @IsOptional()
   effectiveDate?: unknown;
   @ApiPropertyOptional() @IsOptional() EffectiveDate?: unknown;
@@ -162,6 +187,11 @@ export class PbmsBodyDto {
   userId?: unknown;
   @ApiPropertyOptional() @IsOptional() UserId?: unknown;
 
+  @ApiPropertyOptional({ type: String, format: 'uuid', example: ids.vehicleId })
+  @IsOptional()
+  vehicleId?: unknown;
+  @ApiPropertyOptional() @IsOptional() VehicleId?: unknown;
+
   @ApiPropertyOptional({ type: String, example: '59A12345' })
   @IsOptional()
   licensePlate?: unknown;
@@ -172,12 +202,20 @@ export class PbmsBodyDto {
   fixedSlotId?: unknown;
   @ApiPropertyOptional() @IsOptional() FixedSlotId?: unknown;
 
-  @ApiPropertyOptional({ type: String, format: 'date-time', example: '2026-09-01T00:00:00.000Z' })
+  @ApiPropertyOptional({
+    type: String,
+    format: 'date-time',
+    example: '2026-09-01T00:00:00.000Z',
+  })
   @IsOptional()
   startDate?: unknown;
   @ApiPropertyOptional() @IsOptional() StartDate?: unknown;
 
-  @ApiPropertyOptional({ type: String, format: 'date-time', example: '2026-12-01T00:00:00.000Z' })
+  @ApiPropertyOptional({
+    type: String,
+    format: 'date-time',
+    example: '2026-12-01T00:00:00.000Z',
+  })
   @IsOptional()
   endDate?: unknown;
   @ApiPropertyOptional() @IsOptional() EndDate?: unknown;
@@ -192,7 +230,11 @@ export class PbmsBodyDto {
   amount?: unknown;
   @ApiPropertyOptional() @IsOptional() Amount?: unknown;
 
-  @ApiPropertyOptional({ type: String, format: 'uuid', example: ids.subscriptionId })
+  @ApiPropertyOptional({
+    type: String,
+    format: 'uuid',
+    example: ids.subscriptionId,
+  })
   @IsOptional()
   subscriptionId?: unknown;
   @ApiPropertyOptional() @IsOptional() SubscriptionId?: unknown;
@@ -202,7 +244,11 @@ export class PbmsBodyDto {
   renewalId?: unknown;
   @ApiPropertyOptional() @IsOptional() RenewalId?: unknown;
 
-  @ApiPropertyOptional({ type: String, format: 'date-time', example: '2026-09-15T08:30:00.000Z' })
+  @ApiPropertyOptional({
+    type: String,
+    format: 'date-time',
+    example: '2026-09-15T08:30:00.000Z',
+  })
   @IsOptional()
   renewalDate?: unknown;
   @ApiPropertyOptional() @IsOptional() RenewalDate?: unknown;
@@ -217,12 +263,20 @@ export class PbmsBodyDto {
   reason?: unknown;
   @ApiPropertyOptional() @IsOptional() Reason?: unknown;
 
-  @ApiPropertyOptional({ type: String, format: 'date-time', example: '2026-09-18T09:00:00.000Z' })
+  @ApiPropertyOptional({
+    type: String,
+    format: 'date-time',
+    example: '2026-09-18T09:00:00.000Z',
+  })
   @IsOptional()
   expectedEntryTime?: unknown;
   @ApiPropertyOptional() @IsOptional() ExpectedEntryTime?: unknown;
 
-  @ApiPropertyOptional({ type: String, format: 'date-time', example: '2026-09-18T10:30:00.000Z' })
+  @ApiPropertyOptional({
+    type: String,
+    format: 'date-time',
+    example: '2026-09-18T10:30:00.000Z',
+  })
   @IsOptional()
   newExpectedTime?: unknown;
   @ApiPropertyOptional() @IsOptional() NewExpectedTime?: unknown;
@@ -237,7 +291,11 @@ export class PbmsBodyDto {
   sessionId?: unknown;
   @ApiPropertyOptional() @IsOptional() SessionId?: unknown;
 
-  @ApiPropertyOptional({ type: String, format: 'uuid', example: ids.reservationId })
+  @ApiPropertyOptional({
+    type: String,
+    format: 'uuid',
+    example: ids.reservationId,
+  })
   @IsOptional()
   reservationId?: unknown;
   @ApiPropertyOptional() @IsOptional() ReservationId?: unknown;
@@ -252,7 +310,11 @@ export class PbmsBodyDto {
   paymentType?: unknown;
   @ApiPropertyOptional() @IsOptional() PaymentType?: unknown;
 
-  @ApiPropertyOptional({ type: String, format: 'date-time', example: '2026-09-17T11:45:00.000Z' })
+  @ApiPropertyOptional({
+    type: String,
+    format: 'date-time',
+    example: '2026-09-17T11:45:00.000Z',
+  })
   @IsOptional()
   paymentTime?: unknown;
   @ApiPropertyOptional() @IsOptional() PaymentTime?: unknown;
@@ -277,22 +339,34 @@ export class PbmsBodyDto {
   qrPayload?: unknown;
   @ApiPropertyOptional() @IsOptional() QrPayload?: unknown;
 
-  @ApiPropertyOptional({ type: String, example: 'https://api.example.com/uploads/entry-59A12345.jpg' })
+  @ApiPropertyOptional({
+    type: String,
+    example: 'https://api.example.com/uploads/entry-59A12345.jpg',
+  })
   @IsOptional()
   entryImageUrl?: unknown;
   @ApiPropertyOptional() @IsOptional() EntryImageUrl?: unknown;
 
-  @ApiPropertyOptional({ type: String, example: 'https://api.example.com/uploads/driver-in.jpg' })
+  @ApiPropertyOptional({
+    type: String,
+    example: 'https://api.example.com/uploads/driver-in.jpg',
+  })
   @IsOptional()
   driverEntryImageUrl?: unknown;
   @ApiPropertyOptional() @IsOptional() DriverEntryImageUrl?: unknown;
 
-  @ApiPropertyOptional({ type: String, example: 'https://api.example.com/uploads/exit-59A12345.jpg' })
+  @ApiPropertyOptional({
+    type: String,
+    example: 'https://api.example.com/uploads/exit-59A12345.jpg',
+  })
   @IsOptional()
   exitImageUrl?: unknown;
   @ApiPropertyOptional() @IsOptional() ExitImageUrl?: unknown;
 
-  @ApiPropertyOptional({ type: String, example: 'https://api.example.com/uploads/driver-out.jpg' })
+  @ApiPropertyOptional({
+    type: String,
+    example: 'https://api.example.com/uploads/driver-out.jpg',
+  })
   @IsOptional()
   driverExitImageUrl?: unknown;
   @ApiPropertyOptional() @IsOptional() DriverExitImageUrl?: unknown;
@@ -307,27 +381,38 @@ export class PbmsBodyDto {
   licensePlateIn?: unknown;
   @ApiPropertyOptional() @IsOptional() LicensePlateIn?: unknown;
 
-  @ApiPropertyOptional({ type: String, format: 'uuid', example: ids.userId })
-  @IsOptional()
-  driverUserId?: unknown;
-  @ApiPropertyOptional() @IsOptional() DriverUserId?: unknown;
-
-  @ApiPropertyOptional({ type: String, format: 'date-time', example: '2026-09-17T08:15:00.000Z' })
+  @ApiPropertyOptional({
+    type: String,
+    format: 'date-time',
+    example: '2026-09-17T08:15:00.000Z',
+  })
   @IsOptional()
   entryTime?: unknown;
   @ApiPropertyOptional() @IsOptional() EntryTime?: unknown;
 
-  @ApiPropertyOptional({ type: String, format: 'date-time', example: '2026-09-17T11:45:00.000Z' })
+  @ApiPropertyOptional({
+    type: String,
+    format: 'date-time',
+    example: '2026-09-17T11:45:00.000Z',
+  })
   @IsOptional()
   exitTime?: unknown;
   @ApiPropertyOptional() @IsOptional() ExitTime?: unknown;
 
-  @ApiPropertyOptional({ type: String, format: 'uuid', example: ids.gateEntryId })
+  @ApiPropertyOptional({
+    type: String,
+    format: 'uuid',
+    example: ids.gateEntryId,
+  })
   @IsOptional()
   entryGateId?: unknown;
   @ApiPropertyOptional() @IsOptional() EntryGateId?: unknown;
 
-  @ApiPropertyOptional({ type: String, format: 'uuid', example: ids.gateExitId })
+  @ApiPropertyOptional({
+    type: String,
+    format: 'uuid',
+    example: ids.gateExitId,
+  })
   @IsOptional()
   exitGateId?: unknown;
   @ApiPropertyOptional() @IsOptional() ExitGateId?: unknown;
@@ -342,7 +427,11 @@ export class PbmsBodyDto {
   actualSlotId?: unknown;
   @ApiPropertyOptional() @IsOptional() ActualSlotId?: unknown;
 
-  @ApiPropertyOptional({ type: String, format: 'uuid', example: ids.incidentId })
+  @ApiPropertyOptional({
+    type: String,
+    format: 'uuid',
+    example: ids.incidentId,
+  })
   @IsOptional()
   incidentId?: unknown;
   @ApiPropertyOptional() @IsOptional() IncidentId?: unknown;
@@ -357,7 +446,10 @@ export class PbmsBodyDto {
   issueType?: unknown;
   @ApiPropertyOptional() @IsOptional() IssueType?: unknown;
 
-  @ApiPropertyOptional({ type: String, example: 'https://api.example.com/uploads/incidents/proof.jpg' })
+  @ApiPropertyOptional({
+    type: String,
+    example: 'https://api.example.com/uploads/incidents/proof.jpg',
+  })
   @IsOptional()
   proofImageUrl?: unknown;
   @ApiPropertyOptional() @IsOptional() ProofImageUrl?: unknown;
@@ -367,22 +459,37 @@ export class PbmsBodyDto {
   handledByStaffId?: unknown;
   @ApiPropertyOptional() @IsOptional() HandledByStaffId?: unknown;
 
-  @ApiPropertyOptional({ type: String, format: 'date-time', example: '2026-09-17T14:00:00.000Z' })
+  @ApiPropertyOptional({
+    type: String,
+    format: 'date-time',
+    example: '2026-09-17T14:00:00.000Z',
+  })
   @IsOptional()
   resolvedAt?: unknown;
   @ApiPropertyOptional() @IsOptional() ResolvedAt?: unknown;
 
-  @ApiPropertyOptional({ type: String, example: 'Đã xác minh và giải phóng ô đỗ' })
+  @ApiPropertyOptional({
+    type: String,
+    example: 'Đã xác minh và giải phóng ô đỗ',
+  })
   @IsOptional()
   resolutionNotes?: unknown;
   @ApiPropertyOptional() @IsOptional() ResolutionNotes?: unknown;
 
-  @ApiPropertyOptional({ type: String, format: 'date-time', example: '2026-09-01T00:00:00.000Z' })
+  @ApiPropertyOptional({
+    type: String,
+    format: 'date-time',
+    example: '2026-09-01T00:00:00.000Z',
+  })
   @IsOptional()
   from?: unknown;
   @ApiPropertyOptional() @IsOptional() From?: unknown;
 
-  @ApiPropertyOptional({ type: String, format: 'date-time', example: '2026-09-17T23:59:59.000Z' })
+  @ApiPropertyOptional({
+    type: String,
+    format: 'date-time',
+    example: '2026-09-17T23:59:59.000Z',
+  })
   @IsOptional()
   to?: unknown;
   @ApiPropertyOptional() @IsOptional() To?: unknown;

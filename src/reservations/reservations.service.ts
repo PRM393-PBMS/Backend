@@ -6,8 +6,10 @@ import { PayosService } from '../integrations/payos-files.service';
 import { PbmsResponseDto } from '../common/dto/pbms-response.dto';
 import {
   errorMessage,
+  isEmptyGuid,
   pbmsPick,
   pbmsPickDate,
+  pbmsPickGuid,
   sameStatus,
   toMoney,
 } from '../common/pbms-fields';
@@ -25,6 +27,7 @@ export class ReservationsService {
   ) {}
 
   async create(userId: string, dto: object): Promise<PbmsResponseDto> {
+    const vehicleId = pbmsPickGuid(dto, 'vehicleId', 'VehicleId');
     const expected = pbmsPickDate(dto, 'expectedEntryTime', 'ExpectedEntryTime');
     if (!expected) {
       return PbmsResponseDto.fail('Vui lòng nhập thời gian vào');
@@ -40,17 +43,24 @@ export class ReservationsService {
     if (!user) {
       return PbmsResponseDto.fail('Không tìm thấy người dùng', 404);
     }
-    const carType = await this.prisma.vehicleType.findFirst({
-      where: { typeName: { equals: 'Ô tô', mode: 'insensitive' } },
-    });
-    if (!carType) {
-      return PbmsResponseDto.fail('Không tìm thấy loại phương tiện', 500);
+    if (isEmptyGuid(vehicleId)) {
+      return PbmsResponseDto.fail('Vui lòng chọn xe để đặt chỗ');
     }
-    const quotaError = await this.assertQuota(carType.id, null);
+    const vehicle = await this.prisma.vehicle.findFirst({
+      where: { id: vehicleId, userId },
+      include: { vehicleType: true },
+    });
+    if (!vehicle) {
+      return PbmsResponseDto.fail('Không tìm thấy xe hoặc xe không thuộc tài khoản của bạn', 404);
+    }
+    if (!sameStatus(vehicle.vehicleType.typeName, 'Ô tô')) {
+      return PbmsResponseDto.fail('Đặt chỗ trước hiện chỉ áp dụng cho xe ô tô');
+    }
+    const quotaError = await this.assertQuota(vehicle.vehicleTypeId, null);
     if (quotaError) {
       return quotaError;
     }
-    const pricing = await this.activePolicy(carType.id);
+    const pricing = await this.activePolicy(vehicle.vehicleTypeId);
     if (!pricing) {
       return PbmsResponseDto.fail('Không tìm thấy chính sách giá', 404);
     }
@@ -59,7 +69,7 @@ export class ReservationsService {
         const reservation = await tx.reservation.create({
           data: {
             userId,
-            vehicleTypeId: carType.id,
+            vehicleId: vehicle.id,
             expectedEntryTime: expected,
             status: 'Pending',
           },
@@ -105,7 +115,10 @@ export class ReservationsService {
     if (!newExpected) {
       return PbmsResponseDto.fail('Vui lòng nhập giờ hẹn mới');
     }
-    const reservation = await this.prisma.reservation.findUnique({ where: { id: reservationId } });
+    const reservation = await this.prisma.reservation.findUnique({
+      where: { id: reservationId },
+      include: { vehicle: true },
+    });
     if (!reservation) {
       return PbmsResponseDto.fail('Không tìm thấy thông tin đặt chỗ', 404);
     }
@@ -134,14 +147,14 @@ export class ReservationsService {
     if (now >= new Date(reservation.expectedEntryTime.getTime() - 15 * 60 * 1000)) {
       return PbmsResponseDto.fail('Phải thực hiện đổi lịch trước giờ hẹn cũ ít nhất 15 phút.');
     }
-    const quotaError = await this.assertQuota(reservation.vehicleTypeId, reservation.id);
+    const quotaError = await this.assertQuota(reservation.vehicle.vehicleTypeId, reservation.id);
     if (quotaError) {
       return quotaError;
     }
     const updated = await this.prisma.reservation.update({
       where: { id: reservationId },
       data: { expectedEntryTime: newExpected, status: 'Modified' },
-      include: { user: true, vehicleType: true },
+      include: { user: true, vehicle: { include: { vehicleType: true, user: true } } },
     });
     return PbmsResponseDto.ok('Đổi giờ đặt chỗ thành công', await this.map(updated));
   }
@@ -162,7 +175,14 @@ export class ReservationsService {
       orderBy: { paymentTime: 'desc' },
     });
     if (!payment) {
-      const pricing = await this.activePolicy(reservation.vehicleTypeId);
+      const reservationWithVehicle = await this.prisma.reservation.findUnique({
+        where: { id },
+        include: { vehicle: true },
+      });
+      if (!reservationWithVehicle) {
+        return PbmsResponseDto.fail('Không tìm thấy thông tin xe đặt chỗ', 404);
+      }
+      const pricing = await this.activePolicy(reservationWithVehicle.vehicle.vehicleTypeId);
       if (!pricing) {
         return PbmsResponseDto.fail('Không tìm thấy chính sách giá', 404);
       }
@@ -198,7 +218,7 @@ export class ReservationsService {
   async getMine(userId: string): Promise<PbmsResponseDto> {
     const items = await this.prisma.reservation.findMany({
       where: { userId },
-      include: { user: true, vehicleType: true },
+      include: { user: true, vehicle: { include: { vehicleType: true, user: true } } },
       orderBy: { createdAt: 'desc' },
     });
     return PbmsResponseDto.ok(
@@ -210,7 +230,7 @@ export class ReservationsService {
   async getById(id: string, userId: string, role: string): Promise<PbmsResponseDto> {
     const item = await this.prisma.reservation.findUnique({
       where: { id },
-      include: { user: true, vehicleType: true },
+      include: { user: true, vehicle: { include: { vehicleType: true, user: true } } },
     });
     if (!item) {
       return PbmsResponseDto.fail('Không tìm thấy thông tin đặt chỗ', 404);
@@ -269,7 +289,7 @@ export class ReservationsService {
     }
     const items = await this.prisma.reservation.findMany({
       where,
-      include: { user: true, vehicleType: true },
+      include: { user: true, vehicle: { include: { vehicleType: true, user: true } } },
       orderBy: { expectedEntryTime: 'desc' },
     });
     return PbmsResponseDto.ok(
@@ -285,7 +305,7 @@ export class ReservationsService {
     }
     const existing = await this.prisma.reservation.findUnique({
       where: { id },
-      include: { user: true, vehicleType: true },
+      include: { user: true, vehicle: { include: { vehicleType: true, user: true } } },
     });
     if (!existing) {
       return PbmsResponseDto.fail('Không tìm thấy thông tin đặt chỗ', 404);
@@ -293,7 +313,7 @@ export class ReservationsService {
     const updated = await this.prisma.reservation.update({
       where: { id },
       data: { status },
-      include: { user: true, vehicleType: true },
+      include: { user: true, vehicle: { include: { vehicleType: true, user: true } } },
     });
     return PbmsResponseDto.ok('Cập nhật trạng thái đặt chỗ thành công', await this.map(updated));
   }
@@ -333,7 +353,7 @@ export class ReservationsService {
     const maxSlots = Math.floor(totalCarCapacity * QUOTA);
     const current = await this.prisma.reservation.count({
       where: {
-        vehicleTypeId,
+        vehicle: { is: { vehicleTypeId } },
         status: { in: ['Confirmed', 'Modified'] },
         ...(excludeId ? { NOT: { id: excludeId } } : {}),
       },
@@ -360,19 +380,28 @@ export class ReservationsService {
   private async map(item: {
     id: string;
     userId: string;
-    vehicleTypeId: string;
+    vehicleId: string;
     expectedEntryTime: Date;
     status: string;
     createdAt: Date | null;
     user: { fullName: string | null };
-    vehicleType: { typeName: string };
+    vehicle: {
+      licensePlate: string;
+      vehicleTypeId: string;
+      vehicleType: { typeName: string };
+      user: { id: string; fullName: string | null };
+    };
   }) {
     return {
       reservationId: item.id,
       userId: item.userId,
       userFullName: item.user.fullName ?? '',
-      vehicleTypeId: item.vehicleTypeId,
-      vehicleTypeName: item.vehicleType.typeName,
+      vehicleId: item.vehicleId,
+      licensePlate: item.vehicle.licensePlate,
+      vehicleTypeId: item.vehicle.vehicleTypeId,
+      vehicleTypeName: item.vehicle.vehicleType.typeName,
+      vehicleOwnerId: item.vehicle.user.id,
+      vehicleOwnerFullName: item.vehicle.user.fullName,
       expectedEntryTime: item.expectedEntryTime,
       status: item.status,
       createdAt: item.createdAt,

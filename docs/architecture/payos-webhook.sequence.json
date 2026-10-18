@@ -1,0 +1,50 @@
+{
+  "schema_version": 1,
+  "diagram_type": "sequence",
+  "meta": {
+    "title": "PayOS — webhook",
+    "quality_profile": "showcase",
+    "viewBox": [900, 500],
+    "views": [
+      {
+        "id": "webhook",
+        "label": "Xác nhận",
+        "focus": ["payos", "payments", "db"],
+        "note": "Webhook @Public. Thành công trả HTTP 200 body rỗng."
+      }
+    ]
+  },
+  "participants": [
+    { "id": "payos", "type": "external", "label": "PayOS", "sublabel": "REST" },
+    { "id": "payments", "type": "backend", "label": "Payments", "sublabel": "payos-webhook" },
+    { "id": "db", "type": "database", "label": "PostgreSQL", "sublabel": "Payment" }
+  ],
+  "messages": [
+    { "from": "payos", "to": "payments", "y": 176, "label": "POST payos-webhook", "variant": "security" },
+    { "from": "payments", "to": "db", "y": 248, "label": "Pending sang Success hoặc Failed", "variant": "emphasis" },
+    { "from": "payments", "to": "db", "y": 320, "label": "ví, gói hoặc đặt chỗ", "variant": "emphasis" },
+    { "from": "payments", "to": "payos", "y": 392, "label": "HTTP 200 rỗng", "variant": "return" }
+  ],
+  "activations": [
+    { "participant": "payments", "from": 170, "to": 408, "type": "backend" },
+    { "participant": "db", "from": 242, "to": 336, "type": "database" }
+  ],
+  "cards": [
+    {
+      "dot": "rose",
+      "title": "Webhook công khai",
+      "items": [
+        "POST /api/payments/payos-webhook không yêu cầu JWT. handleWebhook không đối chiếu checksum trên body.",
+        "Chữ ký HMAC nằm ở bước tạo link."
+      ]
+    },
+    {
+      "dot": "orange",
+      "title": "Khi lỗi",
+      "items": [
+        "Xử lý ném lỗi thì HTTP 500 JSON isSuccess false. code khác 00 đánh dấu Failed và hoàn phiên checkout.",
+        "Không có queue; PayOS gọi lại thì process phải đang chạy."
+      ]
+    }
+  ]
+}

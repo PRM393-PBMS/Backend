@@ -30,7 +30,7 @@ export class ParkingSessionsService {
 
   async getMine(userId: string): Promise<PbmsResponseDto> {
     const items = await this.prisma.parkingSession.findMany({
-      where: { driverUserId: userId },
+      where: { vehicle: { userId } },
       include: this.include(),
       orderBy: { entryTime: 'desc' },
     });
@@ -64,7 +64,7 @@ export class ParkingSessionsService {
     try {
       const session = await this.prisma.parkingSession.create({
         data: {
-          driverUserId: pbmsPickGuid(dto, 'driverUserId', 'DriverUserId') || null,
+          vehicleId: pbmsPickGuid(dto, 'vehicleId', 'VehicleId') || null,
           licensePlateIn,
           licensePlateOut: pbmsPick(dto, 'licensePlateOut', 'LicensePlateOut').trim() || null,
           entryImageUrl: pbmsPick(dto, 'entryImageUrl', 'EntryImageUrl').trim() || null,
@@ -101,7 +101,7 @@ export class ParkingSessionsService {
       const session = await this.prisma.parkingSession.update({
         where: { id },
         data: {
-          driverUserId: pbmsPickGuid(dto, 'driverUserId', 'DriverUserId') || existing.driverUserId,
+          vehicleId: pbmsPickGuid(dto, 'vehicleId', 'VehicleId') || existing.vehicleId,
           licensePlateIn: pbmsPick(dto, 'licensePlateIn', 'LicensePlateIn').trim() || existing.licensePlateIn,
           licensePlateOut: pbmsPick(dto, 'licensePlateOut', 'LicensePlateOut').trim() || existing.licensePlateOut,
           entryImageUrl: pbmsPick(dto, 'entryImageUrl', 'EntryImageUrl').trim() || existing.entryImageUrl,
@@ -145,7 +145,7 @@ export class ParkingSessionsService {
 
   private include() {
     return {
-      driverUser: true,
+      vehicle: { include: { user: true } },
       vehicleType: true,
       entryGate: true,
       exitGate: true,
@@ -158,8 +158,8 @@ export class ParkingSessionsService {
   async map(item: {
     id: string;
     reservationId: string | null;
-    driverUserId: string | null;
-    driverUser: { fullName: string | null } | null;
+    vehicleId: string | null;
+    vehicle: { licensePlate: string; user: { id: string; fullName: string | null } } | null;
     licensePlateIn: string;
     licensePlateOut: string | null;
     entryImageUrl: string | null;
@@ -190,9 +190,11 @@ export class ParkingSessionsService {
     return {
       sessionId: item.id,
       reservationId: item.reservationId,
-      driverUserId: item.driverUserId,
-      driverFullName: item.driverUser?.fullName ?? null,
+      vehicleId: item.vehicleId,
+      vehicleOwnerId: item.vehicle?.user.id ?? null,
+      vehicleOwnerFullName: item.vehicle?.user.fullName ?? null,
       licensePlateIn: item.licensePlateIn,
+      registeredLicensePlate: item.vehicle?.licensePlate ?? null,
       licensePlateOut: item.licensePlateOut,
       entryImageUrl: item.entryImageUrl,
       driverEntryImageUrl: item.driverEntryImageUrl,
