@@ -7,6 +7,45 @@ import { PrismaService } from '../prisma/prisma.service';
 
 const includeVehicleType = { vehicleType: true } as const;
 
+/** Tên tự đặt và mẫu xe: chỉ để hiển thị, giới hạn theo cột trong DB. */
+const TEXT_FIELDS = {
+  nickname: { keys: ['nickname', 'Nickname'], max: 40, label: 'Tên xe' },
+  modelName: { keys: ['modelName', 'ModelName'], max: 60, label: 'Mẫu xe' },
+} as const;
+
+type TextField = keyof typeof TEXT_FIELDS;
+
+/**
+ * Đọc tên tự đặt / mẫu xe từ body.
+ * undefined: không gửi (giữ nguyên); null: gửi chuỗi rỗng (xoá); string: giá trị mới.
+ */
+function pickText(dto: object, field: TextField): string | null | undefined | { error: string } {
+  const { keys, max, label } = TEXT_FIELDS[field];
+  const rec = dto as Record<string, unknown>;
+  const key = keys.find((k) => rec[k] !== undefined && rec[k] !== null);
+  if (key === undefined) return undefined;
+  const raw = rec[key];
+  if (typeof raw !== 'string') return { error: `${label} phải là chuỗi ký tự` };
+  const value = raw.trim().replace(/\s+/g, ' ');
+  if (!value) return null;
+  if (value.length > max) return { error: `${label} tối đa ${max} ký tự` };
+  return value;
+}
+
+function pickTexts(dto: object) {
+  const nickname = pickText(dto, 'nickname');
+  const modelName = pickText(dto, 'modelName');
+  for (const v of [nickname, modelName]) {
+    if (v && typeof v === 'object') return { error: v.error };
+  }
+  return {
+    data: {
+      ...(nickname !== undefined ? { nickname: nickname as string | null } : {}),
+      ...(modelName !== undefined ? { modelName: modelName as string | null } : {}),
+    },
+  };
+}
+
 @Injectable()
 export class VehiclesService {
   constructor(private readonly prisma: PrismaService) {}
@@ -17,9 +56,11 @@ export class VehiclesService {
     if (isEmptyGuid(vehicleTypeId) || !isValidLicensePlate(licensePlate)) {
       return PbmsResponseDto.fail('Vui lòng nhập loại xe và biển số hợp lệ (4-15 chữ/số)');
     }
+    const texts = pickTexts(dto);
+    if ('error' in texts) return PbmsResponseDto.fail(texts.error!);
     try {
       const vehicle = await this.prisma.vehicle.create({
-        data: { userId, vehicleTypeId, licensePlate },
+        data: { userId, vehicleTypeId, licensePlate, ...texts.data },
         include: includeVehicleType,
       });
       return PbmsResponseDto.ok('Đăng ký xe thành công', this.map(vehicle), 201);
@@ -59,8 +100,13 @@ export class VehiclesService {
     if (rawPlate && !isValidLicensePlate(licensePlate)) {
       return PbmsResponseDto.fail('Biển số phải gồm 4-15 chữ cái và chữ số');
     }
-    if (!rawPlate && !rawTypeId) return PbmsResponseDto.fail('Không có thông tin xe để cập nhật');
-    const hasUsage = await this.prisma.$transaction([
+    const texts = pickTexts(dto);
+    if ('error' in texts) return PbmsResponseDto.fail(texts.error!);
+    if (!rawPlate && !rawTypeId && Object.keys(texts.data).length === 0) {
+      return PbmsResponseDto.fail('Không có thông tin xe để cập nhật');
+    }
+    // Chỉ đổi tên / mẫu xe: không ảnh hưởng gói tháng, đặt chỗ hay phiên gửi xe.
+    const hasUsage = !rawPlate && !rawTypeId ? [0, 0, 0] : await this.prisma.$transaction([
       this.prisma.monthlySubscription.count({ where: { vehicleId: id } }),
       this.prisma.reservation.count({ where: { vehicleId: id } }),
       this.prisma.parkingSession.count({ where: { vehicleId: id, status: 'Active' } }),
@@ -77,7 +123,7 @@ export class VehiclesService {
     try {
       const updated = await this.prisma.vehicle.update({
         where: { id },
-        data: { licensePlate, ...(rawTypeId ? { vehicleTypeId: rawTypeId } : {}) },
+        data: { licensePlate, ...(rawTypeId ? { vehicleTypeId: rawTypeId } : {}), ...texts.data },
         include: includeVehicleType,
       });
       return PbmsResponseDto.ok('Cập nhật xe thành công', this.map(updated));
@@ -121,6 +167,8 @@ export class VehiclesService {
     userId: string;
     vehicleTypeId: string;
     licensePlate: string;
+    nickname?: string | null;
+    modelName?: string | null;
     vehicleType: { typeName: string };
   }) {
     return {
@@ -129,6 +177,8 @@ export class VehiclesService {
       vehicleTypeId: vehicle.vehicleTypeId,
       vehicleTypeName: vehicle.vehicleType.typeName,
       licensePlate: vehicle.licensePlate,
+      nickname: vehicle.nickname ?? null,
+      modelName: vehicle.modelName ?? null,
     };
   }
 }

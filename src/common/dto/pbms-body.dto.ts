@@ -197,6 +197,16 @@ export class PbmsBodyDto {
   licensePlate?: unknown;
   @ApiPropertyOptional() @IsOptional() LicensePlate?: unknown;
 
+  @ApiPropertyOptional({ type: String, example: 'Xe của mẹ', description: 'Tên khách tự đặt cho xe (tối đa 40 ký tự, chuỗi rỗng để xoá)' })
+  @IsOptional()
+  nickname?: unknown;
+  @ApiPropertyOptional() @IsOptional() Nickname?: unknown;
+
+  @ApiPropertyOptional({ type: String, example: 'Toyota Vios 2020', description: 'Mẫu xe / tên xe (tối đa 60 ký tự, chuỗi rỗng để xoá)' })
+  @IsOptional()
+  modelName?: unknown;
+  @ApiPropertyOptional() @IsOptional() ModelName?: unknown;
+
   @ApiPropertyOptional({ type: String, format: 'uuid', example: ids.slotId })
   @IsOptional()
   fixedSlotId?: unknown;

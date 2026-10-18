@@ -115,6 +115,10 @@ model Vehicle {
   userId        String   @map("user_id") @db.Uuid
   vehicleTypeId String   @map("vehicle_type_id") @db.Uuid
   licensePlate  String   @unique @map("license_plate") @db.VarChar(15)
+  /// Tên khách tự đặt cho xe, vd. "Xe của mẹ".
+  nickname      String?  @db.VarChar(40)
+  /// Mẫu xe / tên xe, vd. "Toyota Vios 2020".
+  modelName     String?  @map("model_name") @db.VarChar(60)
   createdAt     DateTime @default(now()) @map("created_at") @db.Timestamptz(6)
   updatedAt     DateTime @updatedAt @map("updated_at") @db.Timestamptz(6)
 
