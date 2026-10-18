@@ -18,6 +18,7 @@ import { isValidLicensePlate, normalizeLicensePlate } from '../common/license-pl
 import { createTicket, extractGuidFromQrPayload } from '../common/qr.util';
 import { ParkingSessionsService } from './parking-sessions.service';
 import { exitPassPayload, issueExitPass, mapExitPass } from '../common/exit-pass';
+import { effectiveEntryPassStatus, parseEntryPassPayload } from '../common/entry-pass';
 import { PaymentsService } from '../payments/payments.service';
 import { InsufficientWalletFundsError, WalletsService } from '../wallets/wallets.service';
 import { NotificationsService, formatTime, formatVnd } from '../notifications/notifications.service';
@@ -35,6 +36,15 @@ export class ParkingOperationsService {
   ) {}
 
   async checkIn(dto: object): Promise<PbmsResponseDto> {
+    // Quét mã QR gửi xe một lần của khách: không cần chọn loại khách.
+    const entryPass = parseEntryPassPayload(pbmsPick(dto, 'qrPayload', 'QrPayload'));
+    if (entryPass) {
+      const gate = await this.resolveGate(pbmsPickGuid(dto, 'gateId', 'GateId'), 'Entry');
+      if ('error' in gate) {
+        return gate.error ?? PbmsResponseDto.fail('Cổng không hợp lệ');
+      }
+      return this.checkInEntryPass(dto, gate.gate, entryPass);
+    }
     const customerType = this.normalizeCustomer(pbmsPick(dto, 'customerType', 'CustomerType'));
     if (!customerType) {
       return PbmsResponseDto.fail('Vui lòng chọn CustomerType: Guest, Resident hoặc Reservation');
@@ -582,9 +592,7 @@ export class ParkingOperationsService {
     }
     return PbmsResponseDto.ok('Giải mã payload QR thành công', {
       qrPayload: payload.trim(),
-      codeType: resolved.codeType,
-      reservationId: resolved.reservationId,
-      sessionId: resolved.sessionId,
+      ...resolved,
     });
   }
 
@@ -674,6 +682,67 @@ export class ParkingOperationsService {
     });
     await this.prisma.parkingSlot.update({ where: { id: slot.id }, data: { status: 'Occupied' } });
     return PbmsResponseDto.ok('Check-in xe vãng lai thành công', await this.loadSession(session.id), 201);
+  }
+
+  /** Check-in bằng mã gửi xe một lần: như xe vãng lai nhưng biển số / loại xe lấy theo mã. */
+  private async checkInEntryPass(
+    dto: object,
+    gate: { id: string; floorId: string },
+    scanned: { passId: string; code: string },
+  ): Promise<PbmsResponseDto> {
+    const pass = await this.prisma.entryPass.findUnique({
+      where: { id: scanned.passId },
+      include: { vehicle: true },
+    });
+    if (!pass || pass.code !== scanned.code) {
+      return PbmsResponseDto.fail('Mã vào bãi không hợp lệ', 404);
+    }
+    const status = effectiveEntryPassStatus(pass);
+    if (status !== 'Active') {
+      const reason =
+        status === 'Used' ? 'đã được sử dụng' : status === 'Cancelled' ? 'đã bị huỷ' : 'đã hết hạn';
+      return PbmsResponseDto.fail(`Mã vào bãi ${reason}`, 409);
+    }
+    const plate = pass.vehicle.licensePlate;
+    // Camera / nhân viên đọc được biển số khác biển trên mã: không cho vào bằng mã này.
+    const seen = normalizeLicensePlate(pbmsPick(dto, 'licensePlate', 'LicensePlate', 'licensePlateIn', 'LicensePlateIn'));
+    if (seen && seen !== plate) {
+      return PbmsResponseDto.fail(`Biển số xe (${seen}) không khớp mã vào bãi (${plate})`, 409);
+    }
+    const vehicleTypeId = pass.vehicle.vehicleTypeId;
+    const sub = await this.activeSubscription(plate, vehicleTypeId, new Date(), await this.parkingOfGate(gate));
+    if (sub) {
+      return PbmsResponseDto.fail('Xe đang có vé tháng hợp lệ, vui lòng check-in khách tháng', 409);
+    }
+    const busy = await this.prisma.parkingSession.findFirst({
+      where: { licensePlateIn: plate, status: 'Active' },
+    });
+    if (busy) {
+      return PbmsResponseDto.fail('Xe này đang có phiên gửi xe chưa checkout', 409);
+    }
+    const slot = await this.findGuestSlot(vehicleTypeId, gate.floorId);
+    if (!slot) {
+      return PbmsResponseDto.fail('Hệ thống hết vị trí trống khả dụng cho xe vãng lai', 409);
+    }
+    // Đánh dấu đã dùng trước (có điều kiện) để hai lần quét cùng lúc chỉ một lần vào được.
+    const claimed = await this.prisma.entryPass.updateMany({
+      where: { id: pass.id, status: 'Active', expiresAt: { gt: new Date() } },
+      data: { status: 'Used', usedAt: new Date() },
+    });
+    if (claimed.count !== 1) {
+      return PbmsResponseDto.fail('Mã vào bãi đã được sử dụng', 409);
+    }
+    const session = await this.createActiveSession({
+      licensePlate: plate,
+      vehicleTypeId,
+      gateId: gate.id,
+      slotId: slot.id,
+      dto,
+      vehicleId: pass.vehicleId,
+    });
+    await this.prisma.parkingSlot.update({ where: { id: slot.id }, data: { status: 'Occupied' } });
+    await this.prisma.entryPass.update({ where: { id: pass.id }, data: { sessionId: session.id } });
+    return PbmsResponseDto.ok('Check-in bằng mã vào bãi thành công', await this.loadSession(session.id), 201);
   }
 
   private async checkInResident(
@@ -993,6 +1062,25 @@ export class ParkingOperationsService {
   }
 
   private async resolveQr(payload: string) {
+    const entry = parseEntryPassPayload(payload);
+    if (entry) {
+      const pass = await this.prisma.entryPass.findUnique({
+        where: { id: entry.passId },
+        include: { vehicle: true },
+      });
+      if (!pass || pass.code !== entry.code) {
+        return PbmsResponseDto.fail('Mã vào bãi không hợp lệ', 404);
+      }
+      return {
+        reservationId: null,
+        sessionId: pass.sessionId,
+        codeType: 'EntryPass',
+        entryPassId: pass.id,
+        entryPassStatus: effectiveEntryPassStatus(pass),
+        licensePlate: pass.vehicle.licensePlate,
+        vehicleTypeId: pass.vehicle.vehicleTypeId,
+      };
+    }
     const id = extractGuidFromQrPayload(payload);
     if (!id) {
       return PbmsResponseDto.fail('Mã QR không chứa GUID hợp lệ');

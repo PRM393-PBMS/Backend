@@ -47,6 +47,7 @@ model User {
 
   refreshTokens         RefreshToken[]
   vehicles              Vehicle[]
+  entryPasses           EntryPass[]
   assignedParkingSlots  ParkingSlot[]
   monthlySubscriptions  MonthlySubscription[]
   payments              Payment[]
@@ -128,6 +129,7 @@ model Vehicle {
   monthlySubscriptions MonthlySubscription[]
   reservations         Reservation[]
   parkingSessions      ParkingSession[]
+  entryPasses          EntryPass[]
 
   @@unique([id, userId], map: "vehicles_id_user_id_key")
   @@index([userId], name: "idx_vehicles_user_id")
@@ -377,6 +379,7 @@ model ParkingSession {
   actualSlot      ParkingSlot?     @relation("SessionActualSlot", fields: [actualSlotId], references: [id], onDelete: SetNull)
   incidentReports IncidentReport[]
   payments        Payment[]
+  entryPass       EntryPass?
 
   @@index([vehicleId], name: "idx_parking_sessions_vehicle_id")
   @@index([licensePlateIn], name: "idx_parking_sessions_license_plate_in")
@@ -516,4 +519,28 @@ model Notification {
 
   @@index([userId, createdAt(sort: Desc)], name: "idx_notifications_user_created")
   @@map("notifications")
+}
+
+/// Mã QR gửi xe một lần: khách tạo cho xe đã đăng ký, quét ở cổng vào, dùng một lần.
+model EntryPass {
+  id        String    @id @default(uuid()) @db.Uuid
+  userId    String    @map("user_id") @db.Uuid
+  vehicleId String    @map("vehicle_id") @db.Uuid
+  /// Mã ngắn 6 ký tự, nằm trong payload QR "PBMS-ENTRY:<id>:<code>".
+  code      String    @db.VarChar(12)
+  /// Active, Used, Cancelled. Hết hạn tính theo expires_at.
+  status    String    @default("Active") @db.VarChar(15)
+  expiresAt DateTime  @map("expires_at") @db.Timestamptz(6)
+  createdAt DateTime  @default(now()) @map("created_at") @db.Timestamptz(6)
+  usedAt    DateTime? @map("used_at") @db.Timestamptz(6)
+  /// Phiên gửi xe tạo ra khi quét mã ở cổng.
+  sessionId String?   @unique @map("session_id") @db.Uuid
+
+  user    User            @relation(fields: [userId], references: [id], onDelete: Cascade)
+  vehicle Vehicle         @relation(fields: [vehicleId], references: [id], onDelete: Cascade)
+  session ParkingSession? @relation(fields: [sessionId], references: [id], onDelete: SetNull)
+
+  @@index([userId, createdAt(sort: Desc)], name: "idx_entry_passes_user_created")
+  @@index([vehicleId, status], name: "idx_entry_passes_vehicle_status")
+  @@map("entry_passes")
 }

@@ -10,6 +10,8 @@ import { ParkingOperationsService } from './parking-operations.service';
 import { ParkingSessionsService } from './parking-sessions.service';
 import { ParkingsController } from './parkings.controller';
 import { ParkingsService } from './parkings.service';
+import { EntryPassesController } from './entry-passes.controller';
+import { EntryPassesService } from './entry-passes.service';
 
 @Module({
   imports: [AuthModule, PaymentsModule, WalletsModule],
@@ -17,8 +19,10 @@ import { ParkingsService } from './parkings.service';
     ParkingSessionsController,
     ParkingOperationsController,
     ParkingsController,
+    EntryPassesController,
   ],
   providers: [
+    EntryPassesService,
     ParkingSessionsService,
     ParkingOperationsService,
     ParkingsService,
