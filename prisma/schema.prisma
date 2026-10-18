@@ -167,6 +167,9 @@ model Parking {
   id        String   @id @default(uuid()) @db.Uuid
   name      String   @unique @db.VarChar(255)
   location  String   @db.VarChar(500)
+  /// Toạ độ để app vẽ bãi trên bản đồ (quản lý nhập; null thì chỉ hiện trong danh sách).
+  latitude  Float?
+  longitude Float?
   createdAt DateTime @default(now()) @map("created_at") @db.Timestamptz(6)
   updatedAt DateTime @updatedAt @map("updated_at") @db.Timestamptz(6)
 

@@ -144,6 +144,8 @@ export class ParkingOperationsService {
             paymentUrl: link.paymentUrl,
             paymentLinkId: link.paymentLinkId,
             orderCode: link.orderCode,
+            // Chuỗi VietQR: màn hình cổng hiển thị, khách quét bằng app ngân hàng.
+            qrCode: link.qrCode,
           },
           Fee: fee,
         });
@@ -334,6 +336,7 @@ export class ParkingOperationsService {
           paymentUrl: link.paymentUrl,
           paymentLinkId: link.paymentLinkId,
           orderCode: link.orderCode,
+          qrCode: link.qrCode,
         },
         Fee: fee,
       });
@@ -400,6 +403,7 @@ export class ParkingOperationsService {
           paymentUrl: link.paymentUrl,
           paymentLinkId: link.paymentLinkId,
           orderCode: payment.transactionReference,
+          qrCode: link.qrCode,
         };
       } catch (error: unknown) {
         return PbmsResponseDto.fail(`Không thể tải liên kết thanh toán: ${errorMessage(error)}`, 502);
@@ -412,12 +416,40 @@ export class ParkingOperationsService {
   }
 
   async getCheckoutPayment(paymentId: string): Promise<PbmsResponseDto> {
-    const payment = await this.findCheckoutPayment(paymentId);
+    let payment = await this.findCheckoutPayment(paymentId);
     if (payment instanceof PbmsResponseDto) {
       return payment;
     }
+    // Màn hình cổng gọi lặp lại API này: tra PayOS để biết khách đã quét mã trả tiền
+    // ngay cả khi webhook chưa tới (khách vãng lai không có tài khoản trên app).
+    let onlinePayment: object | null = null;
+    if (
+      sameStatus(payment.paymentMethod, 'PayOS') &&
+      sameStatus(payment.paymentStatus, 'Pending') &&
+      payment.transactionReference
+    ) {
+      try {
+        await this.payments.syncPayosPayment(payment.id);
+        const fresh = await this.findCheckoutPayment(paymentId);
+        if (!(fresh instanceof PbmsResponseDto)) {
+          payment = fresh;
+        }
+        if (sameStatus(payment.paymentStatus, 'Pending') && payment.transactionReference) {
+          const link = await this.payos.getPaymentLink(payment.transactionReference);
+          onlinePayment = {
+            paymentUrl: link.paymentUrl,
+            paymentLinkId: link.paymentLinkId,
+            orderCode: payment.transactionReference,
+            qrCode: link.qrCode,
+          };
+        }
+      } catch (error: unknown) {
+        return PbmsResponseDto.fail(`Không thể tải liên kết thanh toán: ${errorMessage(error)}`, 502);
+      }
+    }
     return PbmsResponseDto.ok('Lấy trạng thái thanh toán checkout thành công', {
       Payment: this.mapPayment(payment),
+      OnlinePayment: onlinePayment,
       Session: payment.sessionId ? await this.loadSession(payment.sessionId) : null,
     });
   }

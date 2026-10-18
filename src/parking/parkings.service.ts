@@ -11,6 +11,8 @@ const parkingSelect = {
   id: true,
   name: true,
   location: true,
+  latitude: true,
+  longitude: true,
   createdAt: true,
   updatedAt: true,
 } satisfies Prisma.ParkingSelect;
@@ -35,10 +37,55 @@ export class ParkingsService {
         data: {
           name: dto.name.trim(),
           location: dto.location.trim(),
+          latitude: dto.latitude ?? null,
+          longitude: dto.longitude ?? null,
         },
         select: parkingSelect,
       }),
     );
+  }
+
+  /**
+   * Danh sách bãi cho app khách hàng: toạ độ (nếu có) và chỗ trống theo loại xe,
+   * đếm trực tiếp từ trạng thái ô đỗ.
+   */
+  async listForCustomers() {
+    const [parkings, counts, types] = await Promise.all([
+      this.prisma.parking.findMany({ select: parkingSelect, orderBy: [{ name: 'asc' }, { id: 'asc' }] }),
+      this.prisma.parkingSlot.groupBy({
+        by: ['parkingId', 'vehicleTypeId', 'status'],
+        _count: { _all: true },
+      }),
+      this.prisma.vehicleType.findMany({ select: { id: true, typeName: true } }),
+    ]);
+    const typeName = new Map(types.map((t) => [t.id, t.typeName]));
+    return parkings.map((p) => {
+      const byType = new Map<string, { vehicleTypeId: string; vehicleTypeName: string; totalSlots: number; availableSlots: number }>();
+      for (const c of counts.filter((c) => c.parkingId === p.id)) {
+        const row = byType.get(c.vehicleTypeId) ?? {
+          vehicleTypeId: c.vehicleTypeId,
+          vehicleTypeName: typeName.get(c.vehicleTypeId) ?? '',
+          totalSlots: 0,
+          availableSlots: 0,
+        };
+        row.totalSlots += c._count._all;
+        if (c.status.toLowerCase() === 'available') {
+          row.availableSlots += c._count._all;
+        }
+        byType.set(c.vehicleTypeId, row);
+      }
+      const availability = [...byType.values()];
+      return {
+        parkingId: p.id,
+        name: p.name,
+        location: p.location,
+        latitude: p.latitude,
+        longitude: p.longitude,
+        totalSlots: availability.reduce((s, a) => s + a.totalSlots, 0),
+        availableSlots: availability.reduce((s, a) => s + a.availableSlots, 0),
+        availability,
+      };
+    });
   }
 
   findAll() {
@@ -67,6 +114,12 @@ export class ParkingsService {
     }
     if (dto.location !== undefined) {
       data.location = dto.location.trim();
+    }
+    if (dto.latitude !== undefined) {
+      data.latitude = dto.latitude;
+    }
+    if (dto.longitude !== undefined) {
+      data.longitude = dto.longitude;
     }
     if (Object.keys(data).length === 0) {
       return this.findOne(id);
