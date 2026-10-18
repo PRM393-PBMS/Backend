@@ -116,3 +116,13 @@ export class ChangePasswordBodyDto {
 
   @ApiPropertyOptional() @IsOptional() @IsString() NewPassword?: string;
 }
+
+/** Xoá tài khoản: nhập lại mật khẩu để xác nhận. */
+export class DeleteAccountBodyDto {
+  @ApiPropertyOptional({ type: String, example: 'MatKhau@123' })
+  @IsOptional()
+  @IsString()
+  password?: string;
+
+  @ApiPropertyOptional() @IsOptional() @IsString() Password?: string;
+}
