@@ -1,6 +1,8 @@
 import { Module } from '@nestjs/common';
 import { AuthModule } from '../auth/auth.module';
 import { WalletsModule } from '../wallets/wallets.module';
+import { ContractsController } from './contracts.controller';
+import { ContractsService } from './contracts.service';
 import { MonthlySubscriptionsService } from './monthly-subscriptions.service';
 import { SubscriptionRenewalsService } from './subscription-renewals.service';
 import {
@@ -16,7 +18,8 @@ import { VehicleChangeRequestsService } from './vehicle-change-requests.service'
     MonthlySubscriptionsController,
     SubscriptionRenewalsController,
     VehicleChangeRequestsController,
+    ContractsController,
   ],
-  providers: [MonthlySubscriptionsService, SubscriptionRenewalsService, VehicleChangeRequestsService],
+  providers: [MonthlySubscriptionsService, SubscriptionRenewalsService, VehicleChangeRequestsService, ContractsService],
 })
 export class SubscriptionsModule {}

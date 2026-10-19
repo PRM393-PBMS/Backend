@@ -19,6 +19,9 @@ const UUID_RE =
   /^[0-9a-f]{8}-[0-9a-f]{4}-[1-8][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i;
 
 type WalletHistoryFilter = 'TopUp' | 'SubscriptionFee';
+/** Loại giao dịch chi từ ví. */
+export type WalletSpendType = 'SubscriptionFee' | 'ParkingFee';
+const SPEND_TYPES: WalletSpendType[] = ['SubscriptionFee', 'ParkingFee'];
 type DbClient = Prisma.TransactionClient | PrismaService;
 
 @Injectable()
@@ -130,6 +133,7 @@ export class WalletsService {
     userId: string,
     amount: Prisma.Decimal,
     paymentId: string,
+    type: WalletSpendType = 'SubscriptionFee',
   ): Promise<{ walletId: string; balanceAfter: Prisma.Decimal }> {
     const wallet = await this.ensureWallet(tx, userId);
     const debited = await tx.wallet.updateMany({
@@ -148,7 +152,7 @@ export class WalletsService {
       data: {
         walletId: wallet.id,
         paymentId,
-        type: 'SubscriptionFee',
+        type,
         amount: amount.negated(),
         balanceAfter,
       },
@@ -257,7 +261,11 @@ export class WalletsService {
 
   private async loadHistory(walletId: string, type?: WalletHistoryFilter) {
     const items = await this.prisma.walletTransaction.findMany({
-      where: type ? { walletId, type } : { walletId },
+      where: !type
+        ? { walletId }
+        : type === 'SubscriptionFee'
+          ? { walletId, type: { in: SPEND_TYPES } }
+          : { walletId, type },
       include: {
         payment: {
           select: {
@@ -332,7 +340,9 @@ export class WalletsService {
       licensePlate,
       description: isCredit
         ? 'Nạp ví qua PayOS'
-        : packageName
+        : item.type === 'ParkingFee'
+          ? 'Thanh toán phí gửi xe bằng ví'
+          : packageName
           ? `Mua gói tháng ${packageName}${licensePlate ? ` — ${licensePlate}` : ''}`
           : 'Thanh toán gói tháng bằng ví',
     };

@@ -41,6 +41,18 @@ export class ParkingsController {
     return this.parkings.findAll();
   }
 
+  // Đặt trước các route ':id' để 'available' không bị hiểu là id.
+  @Get('available')
+  @PbmsRoles('customer', 'manager', 'staff', 'admin')
+  @ApiOperation({
+    summary: 'Bãi đỗ cho app khách hàng: toạ độ và chỗ trống theo loại xe',
+    description:
+      'Mỗi phần tử: parkingId, name, location, latitude/longitude (null nếu chưa nhập), totalSlots, availableSlots, availability[{vehicleTypeId, vehicleTypeName, totalSlots, availableSlots}].',
+  })
+  listAvailable() {
+    return this.parkings.listForCustomers();
+  }
+
   @Get(':id/slots')
   @PbmsRoles('manager', 'staff')
   @ApiOperation({ summary: 'Danh sách ô đỗ của một bãi' })

@@ -182,6 +182,11 @@ export class PbmsBodyDto {
   requireFixedSlot?: unknown;
   @ApiPropertyOptional() @IsOptional() RequireFixedSlot?: unknown;
 
+  @ApiPropertyOptional({ type: Boolean, example: false, description: 'Gói dùng được ở mọi bãi' })
+  @IsOptional()
+  allParkings?: unknown;
+  @ApiPropertyOptional() @IsOptional() AllParkings?: unknown;
+
   @ApiPropertyOptional({ type: String, format: 'uuid', example: ids.userId })
   @IsOptional()
   userId?: unknown;
@@ -196,6 +201,16 @@ export class PbmsBodyDto {
   @IsOptional()
   licensePlate?: unknown;
   @ApiPropertyOptional() @IsOptional() LicensePlate?: unknown;
+
+  @ApiPropertyOptional({ type: String, example: 'Xe của mẹ', description: 'Tên khách tự đặt cho xe (tối đa 40 ký tự, chuỗi rỗng để xoá)' })
+  @IsOptional()
+  nickname?: unknown;
+  @ApiPropertyOptional() @IsOptional() Nickname?: unknown;
+
+  @ApiPropertyOptional({ type: String, example: 'Toyota Vios 2020', description: 'Mẫu xe / tên xe (tối đa 60 ký tự, chuỗi rỗng để xoá)' })
+  @IsOptional()
+  modelName?: unknown;
+  @ApiPropertyOptional() @IsOptional() ModelName?: unknown;
 
   @ApiPropertyOptional({ type: String, format: 'uuid', example: ids.slotId })
   @IsOptional()
@@ -513,4 +528,24 @@ export class PbmsBodyDto {
   @IsOptional()
   format?: unknown;
   @ApiPropertyOptional() @IsOptional() Format?: unknown;
+
+  @ApiPropertyOptional({ type: Boolean, example: true })
+  @IsOptional()
+  agreed?: unknown;
+  @ApiPropertyOptional() @IsOptional() Agreed?: unknown;
+
+  @ApiPropertyOptional({ type: String, example: 'Nguyễn Văn A' })
+  @IsOptional()
+  signerName?: unknown;
+  @ApiPropertyOptional() @IsOptional() SignerName?: unknown;
+
+  @ApiPropertyOptional({ type: String, example: '3f2a...sha256' })
+  @IsOptional()
+  contentHash?: unknown;
+  @ApiPropertyOptional() @IsOptional() ContentHash?: unknown;
+
+  @ApiPropertyOptional({ type: String, example: 'data:image/png;base64,iVBORw0KGgo...' })
+  @IsOptional()
+  signatureImage?: unknown;
+  @ApiPropertyOptional() @IsOptional() SignatureImage?: unknown;
 }

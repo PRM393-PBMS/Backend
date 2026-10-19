@@ -1,7 +1,10 @@
 import { ApiProperty, ApiPropertyOptional } from '@nestjs/swagger';
 import {
   IsNotEmpty,
+  IsNumber,
   IsOptional,
+  Max,
+  Min,
   IsString,
   IsUUID,
   MaxLength,
@@ -19,6 +22,20 @@ export class CreateParkingDto {
   @IsNotEmpty()
   @MaxLength(500)
   location!: string;
+
+  @ApiPropertyOptional({ example: 10.8411, minimum: -90, maximum: 90, nullable: true })
+  @IsOptional()
+  @IsNumber()
+  @Min(-90)
+  @Max(90)
+  latitude?: number | null;
+
+  @ApiPropertyOptional({ example: 106.8099, minimum: -180, maximum: 180, nullable: true })
+  @IsOptional()
+  @IsNumber()
+  @Min(-180)
+  @Max(180)
+  longitude?: number | null;
 }
 
 export class UpdateParkingDto {
@@ -38,6 +55,20 @@ export class UpdateParkingDto {
   @IsNotEmpty()
   @MaxLength(500)
   location?: string;
+
+  @ApiPropertyOptional({ example: 10.8411, minimum: -90, maximum: 90, nullable: true })
+  @IsOptional()
+  @IsNumber()
+  @Min(-90)
+  @Max(90)
+  latitude?: number | null;
+
+  @ApiPropertyOptional({ example: 106.8099, minimum: -180, maximum: 180, nullable: true })
+  @IsOptional()
+  @IsNumber()
+  @Min(-180)
+  @Max(180)
+  longitude?: number | null;
 }
 
 export class ParkingResponseDto {
@@ -49,6 +80,12 @@ export class ParkingResponseDto {
 
   @ApiProperty({ example: 'Khu Công nghệ cao, Thủ Đức' })
   location!: string;
+
+  @ApiPropertyOptional({ example: 10.8411, nullable: true })
+  latitude!: number | null;
+
+  @ApiPropertyOptional({ example: 106.8099, nullable: true })
+  longitude!: number | null;
 
   @ApiProperty({ format: 'date-time' })
   createdAt!: Date;

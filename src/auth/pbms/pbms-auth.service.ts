@@ -43,10 +43,13 @@ export class PbmsAuthService {
   ) {}
 
   async login(dto: PbmsLoginDto): Promise<PbmsResponseDto> {
-    const email = this.normalizeEmail(pbmsPick(dto, 'email', 'Email'));
+    // Ô đăng nhập nhận email hoặc tên đăng nhập (app gửi cả hai qua field "email").
+    const identifier = pbmsPick(dto, 'email', 'Email', 'userName', 'UserName').trim();
     const password = pbmsPick(dto, 'password', 'Password');
 
-    const user = await this.findUserByEmail(email);
+    const user = identifier.includes('@')
+      ? await this.findUserByEmail(this.normalizeEmail(identifier))
+      : await this.findUserByUserName(identifier);
     if (!user) {
       return new PbmsResponseDto('Không tìm thấy người dùng', 400, false);
     }
@@ -557,6 +560,16 @@ export class PbmsAuthService {
     }
     return this.prisma.user.findFirst({
       where: { email: { equals: email, mode: 'insensitive' } },
+      include: { pbmsRole: true, wallet: { select: { id: true } } },
+    });
+  }
+
+  private async findUserByUserName(userName: string) {
+    if (!userName) {
+      return null;
+    }
+    return this.prisma.user.findFirst({
+      where: { userName: { equals: userName, mode: 'insensitive' } },
       include: { pbmsRole: true, wallet: { select: { id: true } } },
     });
   }

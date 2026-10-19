@@ -1,4 +1,4 @@
-import { Injectable } from '@nestjs/common';
+import { Injectable, Optional } from '@nestjs/common';
 import { Prisma } from '@prisma/client';
 import { PrismaService } from '../prisma/prisma.service';
 import { PayosService } from '../integrations/payos-files.service';
@@ -14,6 +14,9 @@ import {
 } from '../common/pbms-fields';
 import { isMotorbikeType } from '../common/license-plate';
 import { InsufficientWalletFundsError, WalletsService } from '../wallets/wallets.service';
+import { requiresContract } from '../common/contract-seal';
+import { ContractsService } from './contracts.service';
+import { NotificationsService, formatTime, formatVnd } from '../notifications/notifications.service';
 
 type CustomerPaymentMethod = 'PayOS' | 'Wallet';
 
@@ -23,7 +26,18 @@ export class MonthlySubscriptionsService {
     private readonly prisma: PrismaService,
     private readonly payos: PayosService,
     private readonly wallets: WalletsService,
+    private readonly contracts: ContractsService,
+    @Optional() private readonly notifications?: NotificationsService,
   ) {}
+
+  private notifyWalletActivation(userId: string, subscriptionId: string, amount: Prisma.Decimal) {
+    return this.notifications?.notify(userId, {
+      title: 'Vé tháng đã kích hoạt',
+      message: `Đã trừ ${formatVnd(toMoney(amount))} từ ví PBMS. Vé tháng của bạn đã được kích hoạt.`,
+      type: 'subscription',
+      metadata: { subscriptionId },
+    });
+  }
 
   async register(userId: string, dto: object, createPayment: boolean): Promise<PbmsResponseDto> {
     if (isEmptyGuid(userId)) {
@@ -32,6 +46,7 @@ export class MonthlySubscriptionsService {
     const packageId = pbmsPickGuid(dto, 'packageId', 'PackageId');
     const vehicleId = pbmsPickGuid(dto, 'vehicleId', 'VehicleId');
     const fixedSlotId = pbmsPickGuid(dto, 'fixedSlotId', 'FixedSlotId') || null;
+    const requestedParkingId = pbmsPickGuid(dto, 'parkingId', 'ParkingId') || null;
     if (isEmptyGuid(packageId)) {
       return PbmsResponseDto.fail('Vui lòng chọn gói');
     }
@@ -65,9 +80,36 @@ export class MonthlySubscriptionsService {
       return PbmsResponseDto.fail('Biển số này đã có gói đang hiệu lực hoặc đang chờ thanh toán');
     }
 
+    // Bãi áp dụng: gói mọi bãi thì không gắn bãi; gói một bãi thì khách chọn bãi
+    // (hoặc lấy theo ô cố định, hoặc bãi duy nhất khi hệ thống chỉ có một bãi).
+    let parkingId: string | null = null;
+    if (pkg.allParkings) {
+      if (fixedSlotId) {
+        return PbmsResponseDto.fail('Gói mọi bãi không dùng vị trí đỗ cố định');
+      }
+    } else {
+      const slotParking = fixedSlotId
+        ? (await this.prisma.parkingSlot.findUnique({ where: { id: fixedSlotId }, select: { parkingId: true } }))
+            ?.parkingId ?? null
+        : null;
+      parkingId = requestedParkingId ?? slotParking;
+      if (!parkingId) {
+        const lots = await this.prisma.parking.findMany({ select: { id: true }, take: 2 });
+        if (lots.length !== 1) {
+          return PbmsResponseDto.fail('Vui lòng chọn bãi đỗ áp dụng vé tháng');
+        }
+        parkingId = lots[0].id;
+      } else if (!(await this.prisma.parking.findUnique({ where: { id: parkingId }, select: { id: true } }))) {
+        return PbmsResponseDto.fail('Không tìm thấy bãi đỗ', 404);
+      }
+      if (slotParking && slotParking !== parkingId) {
+        return PbmsResponseDto.fail('Vị trí đỗ cố định không thuộc bãi đã chọn');
+      }
+    }
+
     const motorbike = isMotorbikeType(pkg.vehicleType.typeName);
     let selectedSlot: { id: string; slotCode: string } | null = null;
-    if (!motorbike) {
+    if (!motorbike && !pkg.allParkings) {
       if (pkg.requireFixedSlot) {
         if (!fixedSlotId) {
           return PbmsResponseDto.fail('Vui lòng chọn vị trí đỗ cố định cho gói này');
@@ -96,6 +138,7 @@ export class MonthlySubscriptionsService {
             vehicleTypeId: pkg.vehicleTypeId,
             status: 'Available',
             floor: { isResident: true },
+            ...(parkingId ? { parkingId } : {}),
           },
         });
         if (available === 0) {
@@ -110,13 +153,14 @@ export class MonthlySubscriptionsService {
     const end = new Date(start);
     end.setUTCDate(end.getUTCDate() + pkg.durationDays);
 
-    if (createPayment) {
+    const needsContract = createPayment && requiresContract(pkg.durationMonths);
+    if (createPayment && !needsContract) {
       const method = this.parseCustomerPaymentMethod(dto);
       if (method.error) {
         return method.error;
       }
       if (method.value === 'Wallet') {
-        return this.registerWithWallet(userId, pkg, vehicle, selectedSlot, start, end);
+        return this.registerWithWallet(userId, pkg, vehicle, selectedSlot, start, end, parkingId);
       }
     }
 
@@ -131,11 +175,15 @@ export class MonthlySubscriptionsService {
             endDate: end,
             price: pkg.price,
             fixedSlotId: selectedSlot?.id ?? null,
+            parkingId,
             autoRenew: true,
             status: createPayment ? 'PendingPayment' : 'Active',
           },
         });
-        const payment = createPayment
+        const contract = needsContract
+          ? await this.contracts.createForSubscription(tx, subscription.id)
+          : null;
+        const payment = createPayment && !contract
           ? await tx.payment.create({
               data: {
                 userId,
@@ -149,8 +197,23 @@ export class MonthlySubscriptionsService {
               },
             })
           : null;
-        return { subscription, payment };
+        return { subscription, payment, contract };
       });
+
+      if (created.contract) {
+        return PbmsResponseDto.ok(
+          'Tạo đăng ký gói thành công, vui lòng ký hợp đồng trước khi thanh toán',
+          {
+            subscriptionId: created.subscription.id,
+            requiresContract: true,
+            contractId: created.contract.id,
+            contractNumber: created.contract.contractNumber,
+            amount: toMoney(created.subscription.price),
+            status: 'PendingPayment',
+          },
+          201,
+        );
+      }
 
       if (!created.payment) {
         return PbmsResponseDto.ok(
@@ -297,6 +360,10 @@ export class MonthlySubscriptionsService {
     if (sameStatus(subscription.status, 'Active')) {
       return PbmsResponseDto.fail('Gói đã được kích hoạt');
     }
+    const contract = await this.prisma.subscriptionContract.findUnique({ where: { subscriptionId } });
+    if (contract && !sameStatus(contract.status, 'Signed')) {
+      return PbmsResponseDto.fail('Vui lòng ký hợp đồng trước khi thanh toán', 409);
+    }
     if (method.value === 'Wallet') {
       return this.payPendingWithWallet(subscription, userId);
     }
@@ -351,6 +418,7 @@ export class MonthlySubscriptionsService {
     selectedSlot: { id: string; slotCode: string } | null,
     start: Date,
     end: Date,
+    parkingId: string | null = null,
   ): Promise<PbmsResponseDto> {
     try {
       const created = await this.prisma.$transaction(async (tx) => {
@@ -363,6 +431,7 @@ export class MonthlySubscriptionsService {
             endDate: end,
             price: pkg.price,
             fixedSlotId: selectedSlot?.id ?? null,
+            parkingId,
             autoRenew: true,
             status: 'PendingPayment',
           },
@@ -387,6 +456,7 @@ export class MonthlySubscriptionsService {
         });
         return { subscription, payment, debit };
       });
+      await this.notifyWalletActivation(userId, created.subscription.id, created.payment.amount);
       return PbmsResponseDto.ok(
         'Thanh toán gói bằng ví thành công',
         {
@@ -471,6 +541,7 @@ export class MonthlySubscriptionsService {
         });
         return { payment, debit };
       });
+      await this.notifyWalletActivation(userId, subscription.id, paid.payment.amount);
       return PbmsResponseDto.ok('Thanh toán gói bằng ví thành công', {
         subscriptionId: subscription.id,
         paymentId: paid.payment.id,
@@ -585,6 +656,8 @@ export class MonthlySubscriptionsService {
         vehicle: { include: { vehicleType: true } },
         package: true,
         fixedSlot: true,
+        parking: { select: { id: true, name: true } },
+        contract: { select: { id: true, status: true, contractNumber: true } },
       },
       orderBy: { startDate: 'desc' },
     });
@@ -594,7 +667,14 @@ export class MonthlySubscriptionsService {
   private loadOne(id: string) {
     return this.prisma.monthlySubscription.findUnique({
       where: { id },
-      include: { user: true, vehicle: { include: { vehicleType: true } }, package: true, fixedSlot: true },
+      include: {
+        user: true,
+        vehicle: { include: { vehicleType: true } },
+        package: true,
+        fixedSlot: true,
+        parking: { select: { id: true, name: true } },
+        contract: { select: { id: true, status: true, contractNumber: true } },
+      },
     });
   }
 
@@ -608,8 +688,11 @@ export class MonthlySubscriptionsService {
     status: string;
     user?: { fullName: string | null };
     vehicle?: { licensePlate: string; vehicleType: { typeName: string } };
-    package?: { packageName: string };
+    package?: { packageName: string; durationMonths?: number; durationDays?: number; allParkings?: boolean };
     fixedSlot?: { slotCode: string } | null;
+    parkingId?: string | null;
+    parking?: { id: string; name: string } | null;
+    contract?: { id: string; status: string; contractNumber: string } | null;
   }) {
     return {
       subscriptionId: item.id,
@@ -624,6 +707,13 @@ export class MonthlySubscriptionsService {
       price: toMoney(item.price),
       status: item.status,
       fixedSlot: item.fixedSlot?.slotCode ?? null,
+      parkingId: item.parkingId ?? null,
+      parkingName: item.parking?.name ?? null,
+      allParkings: item.package?.allParkings ?? false,
+      durationMonths: item.package?.durationMonths ?? null,
+      contractId: item.contract?.id ?? null,
+      contractNumber: item.contract?.contractNumber ?? null,
+      contractStatus: item.contract?.status ?? null,
     };
   }
 }

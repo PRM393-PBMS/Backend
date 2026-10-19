@@ -17,7 +17,7 @@ import { PbmsStatusInterceptor } from '../common/interceptors/pbms-status.interc
 import { userExample } from '../common/swagger/pbms-example-data';
 import { ApiPbmsOkResponse } from '../common/swagger/pbms-swagger';
 import type { UploadedImage } from '../common/uploaded-image';
-import { UpdateProfileDto } from './dto/user.dto';
+import { ChangePasswordBodyDto, DeleteAccountBodyDto, UpdateProfileDto } from './dto/user.dto';
 import { UsersService } from './users.service';
 
 @ApiTags('PBMS Profile')
@@ -56,6 +56,40 @@ export class ProfileController {
     @Body() dto: UpdateProfileDto,
   ): Promise<PbmsResponseDto> {
     return this.users.updateProfile(userId, dto);
+  }
+
+  @Post('delete-account')
+  @ApiOperation({
+    summary: 'Xoá tài khoản của tôi',
+    description: [
+      'JWT bắt buộc. Body: `password` để xác nhận.',
+      'Từ chối (409) khi còn xe trong bãi, vé tháng còn hiệu lực / chờ thanh toán, đặt chỗ chưa kết thúc, thanh toán đang chờ hoặc số dư ví > 0.',
+      'Ẩn danh hoá hồ sơ (email, tên, SĐT, ảnh), khoá đăng nhập, thu hồi phiên, xoá thông báo, huỷ mã vào bãi, xoá xe chưa từng dùng. Lịch sử gửi xe, thanh toán, hợp đồng được giữ theo quy định lưu chứng từ.',
+    ].join('\n\n'),
+  })
+  @ApiPbmsOkResponse('Đã xoá tài khoản', null)
+  deleteAccount(
+    @GetPbmsUserId() userId: string,
+    @Body() dto: DeleteAccountBodyDto,
+  ): Promise<PbmsResponseDto> {
+    return this.users.deleteAccount(userId, dto);
+  }
+
+  @Post('change-password')
+  @ApiOperation({
+    summary: 'Đổi mật khẩu',
+    description: [
+      'JWT bắt buộc. Body: `currentPassword`, `newPassword` (6-72 ký tự, khác mật khẩu cũ).',
+      'Đổi thành công thì mọi refresh token cũ bị thu hồi (các thiết bị khác phải đăng nhập lại).',
+      'Lỗi: 400 sai mật khẩu hiện tại / mật khẩu mới không hợp lệ; 401; 404.',
+    ].join('\n\n'),
+  })
+  @ApiPbmsOkResponse('Đổi mật khẩu thành công', null)
+  changePassword(
+    @GetPbmsUserId() userId: string,
+    @Body() dto: ChangePasswordBodyDto,
+  ): Promise<PbmsResponseDto> {
+    return this.users.changePassword(userId, dto);
   }
 
   @Post('avatar')

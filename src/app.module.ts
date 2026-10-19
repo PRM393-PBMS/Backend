@@ -10,6 +10,7 @@ import { AtGuard } from './auth/common/guards/at.guard';
 import { CatalogModule } from './catalog/catalog.module';
 import { IncidentsModule } from './incidents/incidents.module';
 import { IntegrationsModule } from './integrations/integrations.module';
+import { NotificationsModule } from './notifications/notifications.module';
 import { ParkingModule } from './parking/parking.module';
 import { PaymentsModule } from './payments/payments.module';
 import { ReportsModule } from './reports/reports.module';
@@ -26,6 +27,7 @@ import { VehiclesModule } from './vehicles/vehicles.module';
     ScheduleModule.forRoot(),
     PrismaModule,
     IntegrationsModule,
+    NotificationsModule,
     AuthModule,
     UsersModule,
     VehiclesModule,

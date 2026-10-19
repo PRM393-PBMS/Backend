@@ -63,6 +63,124 @@ export class UsersService {
     return PbmsResponseDto.ok('Lấy thông tin cá nhân thành công', this.mapUser(user));
   }
 
+  /**
+   * Khách tự xoá tài khoản. Lịch sử gửi xe, thanh toán, hợp đồng phải lưu theo luật nên
+   * không xoá cứng: ẩn danh hoá thông tin cá nhân, khoá đăng nhập, thu hồi phiên,
+   * xoá thông báo, huỷ mã vào bãi và xoá xe chưa từng dùng.
+   */
+  async deleteAccount(userId: string, dto: object): Promise<PbmsResponseDto> {
+    if (isEmptyGuid(userId)) {
+      return PbmsResponseDto.fail('Vui lòng đăng nhập', 401);
+    }
+    const password = pbmsPick(dto, 'password', 'Password');
+    if (!password) {
+      return PbmsResponseDto.fail('Vui lòng nhập mật khẩu để xác nhận');
+    }
+    const user = await this.prisma.user.findUnique({
+      where: { id: userId },
+      select: { id: true, passwordHash: true, wallet: { select: { balance: true } } },
+    });
+    if (!user) {
+      return PbmsResponseDto.fail('Không tìm thấy người dùng', 404);
+    }
+    if (!(await this.hashing.compare(password, user.passwordHash))) {
+      return PbmsResponseDto.fail('Mật khẩu không đúng');
+    }
+
+    // Còn việc dở dang thì chưa cho xoá, để không mất xe trong bãi, vé hay tiền.
+    const [inLot, passes, reservations, pending] = await this.prisma.$transaction([
+      this.prisma.parkingSession.count({ where: { vehicle: { is: { userId } }, status: 'Active' } }),
+      this.prisma.monthlySubscription.count({
+        where: { userId, status: { in: ['Active', 'PendingPayment'] }, endDate: { gte: new Date() } },
+      }),
+      this.prisma.reservation.count({ where: { userId, status: { in: ['Pending', 'Confirmed', 'Modified'] } } }),
+      this.prisma.payment.count({ where: { userId, paymentStatus: 'Pending' } }),
+    ]);
+    const blockers = [
+      inLot > 0 && 'xe đang gửi trong bãi',
+      passes > 0 && 'vé tháng còn hiệu lực hoặc đang chờ thanh toán',
+      reservations > 0 && 'đặt chỗ chưa kết thúc',
+      pending > 0 && 'thanh toán đang chờ xử lý',
+      Number(user.wallet?.balance ?? 0) > 0 && `số dư ví ${Number(user.wallet?.balance).toLocaleString('vi-VN')} đ`,
+    ].filter(Boolean);
+    if (blockers.length > 0) {
+      return PbmsResponseDto.fail(
+        `Chưa thể xoá tài khoản vì còn ${blockers.join(', ')}. Vui lòng hoàn tất hoặc liên hệ quản lý bãi.`,
+        409,
+      );
+    }
+
+    const tag = userId.replace(/-/g, '').slice(0, 12);
+    await this.prisma.$transaction([
+      this.prisma.refreshToken.deleteMany({ where: { userId } }),
+      this.prisma.notification.deleteMany({ where: { userId } }),
+      this.prisma.entryPass.updateMany({ where: { userId, status: 'Active' }, data: { status: 'Cancelled' } }),
+      // Xe chưa từng gửi / đặt / đăng ký vé thì xoá; xe có lịch sử giữ lại cho chứng từ.
+      this.prisma.vehicle.deleteMany({
+        where: {
+          userId,
+          parkingSessions: { none: {} },
+          reservations: { none: {} },
+          monthlySubscriptions: { none: {} },
+        },
+      }),
+      this.prisma.vehicle.updateMany({ where: { userId }, data: { nickname: null, modelName: null } }),
+      this.prisma.user.update({
+        where: { id: userId },
+        data: {
+          email: `deleted-${tag}@deleted.pbms.invalid`,
+          userName: `deleted_${tag}`,
+          fullName: 'Tài khoản đã xoá',
+          firstName: null,
+          lastName: null,
+          phoneNumber: null,
+          avatarUrl: null,
+          passwordHash: await this.hashing.hash(`${userId}:${Date.now()}:${Math.random()}`),
+          isActive: false,
+          status: 'Deleted',
+        },
+      }),
+    ]);
+    return PbmsResponseDto.ok('Đã xoá tài khoản');
+  }
+
+  /** Đổi mật khẩu của chính mình, xác minh mật khẩu hiện tại trước. */
+  async changePassword(userId: string, dto: object): Promise<PbmsResponseDto> {
+    if (isEmptyGuid(userId)) {
+      return PbmsResponseDto.fail('Vui lòng đăng nhập', 401);
+    }
+    const current = pbmsPick(dto, 'currentPassword', 'CurrentPassword');
+    const next = pbmsPick(dto, 'newPassword', 'NewPassword');
+    if (!current || !next) {
+      return PbmsResponseDto.fail('Vui lòng nhập mật khẩu hiện tại và mật khẩu mới');
+    }
+    if (next.length < 6 || next.length > 72) {
+      return PbmsResponseDto.fail('Mật khẩu mới phải từ 6 đến 72 ký tự');
+    }
+    if (next === current) {
+      return PbmsResponseDto.fail('Mật khẩu mới phải khác mật khẩu hiện tại');
+    }
+    const user = await this.prisma.user.findUnique({
+      where: { id: userId },
+      select: { id: true, passwordHash: true },
+    });
+    if (!user) {
+      return PbmsResponseDto.fail('Không tìm thấy người dùng', 404);
+    }
+    if (!(await this.hashing.compare(current, user.passwordHash))) {
+      return PbmsResponseDto.fail('Mật khẩu hiện tại không đúng');
+    }
+    await this.prisma.$transaction([
+      this.prisma.user.update({
+        where: { id: userId },
+        data: { passwordHash: await this.hashing.hash(next) },
+      }),
+      // Đăng xuất các thiết bị khác: phiên làm mới cũ không dùng được nữa.
+      this.prisma.refreshToken.deleteMany({ where: { userId } }),
+    ]);
+    return PbmsResponseDto.ok('Đổi mật khẩu thành công');
+  }
+
   async updateProfile(userId: string, dto: object): Promise<PbmsResponseDto> {
     if (isEmptyGuid(userId)) {
       return PbmsResponseDto.fail('Vui lòng đăng nhập', 401);

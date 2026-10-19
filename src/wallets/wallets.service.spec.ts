@@ -130,7 +130,9 @@ describe('WalletsService', () => {
     prisma.walletTransaction.findMany.mockClear();
     await service.listSpends(userId, walletId);
     expect(prisma.walletTransaction.findMany).toHaveBeenCalledWith(
-      expect.objectContaining({ where: { walletId, type: 'SubscriptionFee' } }),
+      expect.objectContaining({
+        where: { walletId, type: { in: ['SubscriptionFee', 'ParkingFee'] } },
+      }),
     );
   });
 

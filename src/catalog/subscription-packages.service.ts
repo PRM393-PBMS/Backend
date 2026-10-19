@@ -62,6 +62,7 @@ export class SubscriptionPackagesService {
             (pbmsPickNumber(dto, 'durationMonths', 'DurationMonths') ?? 1) * 30,
           price: new Prisma.Decimal(pbmsPickNumber(dto, 'price', 'Price') ?? 0),
           requireFixedSlot: pbmsPickBool(dto, 'requireFixedSlot', 'RequireFixedSlot') ?? false,
+          allParkings: pbmsPickBool(dto, 'allParkings', 'AllParkings') ?? false,
           description: pbmsPick(dto, 'description', 'Description').trim() || null,
           status: pbmsPick(dto, 'status', 'Status').trim() || 'Active',
         },
@@ -98,6 +99,7 @@ export class SubscriptionPackagesService {
             existing.durationDays,
           price: new Prisma.Decimal(pbmsPickNumber(dto, 'price', 'Price') ?? Number(existing.price)),
           requireFixedSlot: pbmsPickBool(dto, 'requireFixedSlot', 'RequireFixedSlot') ?? existing.requireFixedSlot,
+          allParkings: pbmsPickBool(dto, 'allParkings', 'AllParkings') ?? existing.allParkings,
           description: pbmsPick(dto, 'description', 'Description').trim() || existing.description,
           status: pbmsPick(dto, 'status', 'Status').trim() || existing.status,
         },
@@ -133,6 +135,7 @@ export class SubscriptionPackagesService {
     durationDays: number;
     price: Prisma.Decimal;
     requireFixedSlot: boolean;
+    allParkings: boolean;
     description: string | null;
     status: string;
     vehicleType: { typeName: string };
@@ -146,6 +149,7 @@ export class SubscriptionPackagesService {
       durationDays: item.durationDays,
       price: toMoney(item.price),
       requireFixedSlot: item.requireFixedSlot,
+      allParkings: item.allParkings,
       description: item.description,
       status: item.status,
     };

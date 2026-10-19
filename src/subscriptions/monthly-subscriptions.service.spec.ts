@@ -1,4 +1,5 @@
 import { Test, TestingModule } from '@nestjs/testing';
+import { ContractsService } from './contracts.service';
 import { Prisma } from '@prisma/client';
 import { PrismaService } from '../prisma/prisma.service';
 import { PayosService } from '../integrations/payos-files.service';
@@ -32,6 +33,7 @@ describe('MonthlySubscriptionsService register payment methods', () => {
     monthlySubscription: { findFirst: jest.Mock; create: jest.Mock; update: jest.Mock };
     payment: { create: jest.Mock; update: jest.Mock };
     user: { findUnique: jest.Mock };
+    parking: { findMany: jest.Mock; findUnique: jest.Mock };
     $transaction: jest.Mock;
   };
   let payos: { createPaymentLink: jest.Mock };
@@ -40,6 +42,11 @@ describe('MonthlySubscriptionsService register payment methods', () => {
   beforeEach(async () => {
     prisma = {
       subscriptionPackage: { findUnique: jest.fn().mockResolvedValue(pkg) },
+      // Hệ thống một bãi: vé tự gắn vào bãi đó.
+      parking: {
+        findMany: jest.fn().mockResolvedValue([{ id: 'c56a4180-65aa-42ec-a945-5fd21dec0538' }]),
+        findUnique: jest.fn().mockResolvedValue({ id: 'c56a4180-65aa-42ec-a945-5fd21dec0538' }),
+      },
       vehicle: { findFirst: jest.fn().mockResolvedValue(vehicle) },
       monthlySubscription: {
         findFirst: jest.fn().mockResolvedValue(null),
@@ -65,6 +72,7 @@ describe('MonthlySubscriptionsService register payment methods', () => {
         { provide: PrismaService, useValue: prisma },
         { provide: PayosService, useValue: payos },
         { provide: WalletsService, useValue: wallets },
+        { provide: ContractsService, useValue: { createForSubscription: jest.fn() } },
       ],
     }).compile();
     service = module.get(MonthlySubscriptionsService);

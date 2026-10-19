@@ -99,3 +99,30 @@ export class UpdateProfileDto {
 
   @ApiPropertyOptional() @IsOptional() @IsString() Password?: string;
 }
+
+/** Đổi mật khẩu: phải nhập đúng mật khẩu hiện tại. */
+export class ChangePasswordBodyDto {
+  @ApiPropertyOptional({ type: String, example: 'MatKhauCu@123' })
+  @IsOptional()
+  @IsString()
+  currentPassword?: string;
+
+  @ApiPropertyOptional() @IsOptional() @IsString() CurrentPassword?: string;
+
+  @ApiPropertyOptional({ type: String, example: 'MatKhauMoi@456' })
+  @IsOptional()
+  @IsString()
+  newPassword?: string;
+
+  @ApiPropertyOptional() @IsOptional() @IsString() NewPassword?: string;
+}
+
+/** Xoá tài khoản: nhập lại mật khẩu để xác nhận. */
+export class DeleteAccountBodyDto {
+  @ApiPropertyOptional({ type: String, example: 'MatKhau@123' })
+  @IsOptional()
+  @IsString()
+  password?: string;
+
+  @ApiPropertyOptional() @IsOptional() @IsString() Password?: string;
+}

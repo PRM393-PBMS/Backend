@@ -84,6 +84,8 @@ describe('ParkingsService', () => {
         id: true,
         name: true,
         location: true,
+        latitude: true,
+        longitude: true,
         createdAt: true,
         updatedAt: true,
       },
