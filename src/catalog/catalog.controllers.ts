@@ -45,9 +45,13 @@ import { VehicleTypesService } from './vehicle-types.service';
 export class VehicleTypesController {
   constructor(private readonly vehicleTypes: VehicleTypesService) {}
 
-  @Get()
-  @PbmsRoles('manager', 'staff')
-  @ApiOperation({ summary: 'Danh sách loại phương tiện' })
+    @Get()
+  @PbmsRoles('manager', 'staff', 'customer')
+  @ApiOperation({
+    summary: 'Danh sách loại phương tiện',
+    description:
+      'Yêu cầu đăng nhập. Cho phép customer, staff và manager đọc danh sách loại phương tiện để đăng ký xe.',
+  })
   @ApiPbmsOkResponse('Lấy danh sách loại phương tiện thành công', [
     vehicleTypeExample,
   ])
