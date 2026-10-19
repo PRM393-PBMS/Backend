@@ -277,7 +277,7 @@ export class WalletsService {
             subscription: {
               select: {
                 id: true,
-                licensePlate: true,
+                vehicle: { select: { licensePlate: true } },
                 package: { select: { packageName: true } },
               },
             },
@@ -313,7 +313,7 @@ export class WalletsService {
       transactionReference: string | null;
       subscription: {
         id: string;
-        licensePlate: string;
+        vehicle: { licensePlate: string } | null;
         package: { packageName: string } | null;
       } | null;
     } | null;
@@ -321,7 +321,7 @@ export class WalletsService {
     const signedAmount = toMoney(item.amount);
     const isCredit = item.type === 'TopUp' || signedAmount > 0;
     const packageName = item.payment?.subscription?.package?.packageName ?? null;
-    const licensePlate = item.payment?.subscription?.licensePlate ?? null;
+    const licensePlate = item.payment?.subscription?.vehicle?.licensePlate ?? null;
     const subscriptionId = item.payment?.subscriptionId ?? item.payment?.subscription?.id ?? null;
     return {
       walletTransactionId: item.id,
