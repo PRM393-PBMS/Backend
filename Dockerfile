@@ -41,4 +41,5 @@ USER node
 
 EXPOSE 3000
 
-CMD ["node", "dist/main.js"]
+# Áp migration Prisma lên DB trước khi chạy app, để schema DB luôn khớp code.
+CMD ["sh", "-c", "npx prisma migrate deploy && node dist/main.js"]
