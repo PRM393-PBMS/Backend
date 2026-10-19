@@ -50,8 +50,45 @@ export function sealKeyFromPem(pem: string): SealKey {
 
 /** Khoá ký lấy từ biến môi trường CONTRACT_SIGNING_PRIVATE_KEY (PEM PKCS#8). */
 export function loadSealKey(): SealKey | null {
-  const pem = process.env.CONTRACT_SIGNING_PRIVATE_KEY?.trim();
-  return pem ? sealKeyFromPem(pem) : null;
+  return readSealKey().key;
+}
+
+/**
+ * Chuẩn hoá giá trị biến môi trường về PEM, chịu được các kiểu dán thường gặp trên
+ * Render: dán cả dòng "CONTRACT_SIGNING_PRIVATE_KEY=...", còn dấu ngoặc kép, "\n" dạng
+ * chữ, xuống dòng bị đổi thành dấu cách, hoặc chỉ dán phần base64.
+ */
+export function normalizeSealKeyPem(raw: string): string {
+  let v = raw.trim().replace(/^CONTRACT_SIGNING_PRIVATE_KEY\s*=\s*/, '').trim();
+  if (v.length >= 2 && (v[0] === '"' || v[0] === "'") && v[v.length - 1] === v[0]) {
+    v = v.slice(1, -1);
+  }
+  v = v.replace(/\\n/g, '\n').replace(/\r/g, '').trim();
+  const match = v.match(/-----BEGIN ([A-Z ]+)-----([\s\S]*?)-----END \1-----/);
+  const label = match ? match[1] : 'PRIVATE KEY';
+  const body = (match ? match[2] : v).replace(/\s+/g, '');
+  if (!/^[A-Za-z0-9+/]+=*$/.test(body)) {
+    return v;
+  }
+  return `-----BEGIN ${label}-----\n${body.match(/.{1,64}/g)!.join('\n')}\n-----END ${label}-----\n`;
+}
+
+/** Đọc khoá, không bao giờ ném lỗi: thiếu khoá hoặc khoá sai thì trả lý do. */
+export function readSealKey(): { key: SealKey; problem: null } | { key: null; problem: 'missing' | 'invalid' } {
+  const raw = process.env.CONTRACT_SIGNING_PRIVATE_KEY?.trim();
+  if (!raw) return { key: null, problem: 'missing' };
+  try {
+    return { key: sealKeyFromPem(normalizeSealKeyPem(raw)), problem: null };
+  } catch {
+    return { key: null, problem: 'invalid' };
+  }
+}
+
+/** Thông báo khi chưa ký được vì khoá trên máy chủ. */
+export function sealKeyProblemMessage(problem: 'missing' | 'invalid'): string {
+  return problem === 'missing'
+    ? 'Máy chủ chưa cấu hình khoá niêm phong hợp đồng (CONTRACT_SIGNING_PRIVATE_KEY)'
+    : 'Khoá niêm phong hợp đồng trên máy chủ không hợp lệ (CONTRACT_SIGNING_PRIVATE_KEY); quản trị cần đặt lại khoá';
 }
 
 export function signSeal(payload: string, key: SealKey): string {
