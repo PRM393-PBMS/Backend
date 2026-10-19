@@ -16,6 +16,16 @@ import { isMotorbikeType } from '../common/license-plate';
 import { WalletsService } from '../wallets/wallets.service';
 import { PayosService } from '../integrations/payos-files.service';
 import { issueExitPass } from '../common/exit-pass';
+import type { PaymentResultState, PaymentResultView } from './payment-result.page';
+
+const PAYMENT_TYPE_LABELS: Record<string, string> = {
+  Deposit: 'Tiền cọc đặt chỗ',
+  SubscriptionFee: 'Vé tháng',
+  SubscriptionRenewal: 'Gia hạn vé tháng',
+  CheckoutFee: 'Phí gửi xe',
+  WalletTopUp: 'Nạp ví PBMS',
+  PrepaidCheckout: 'Thanh toán trước khi ra bãi',
+};
 import { NotificationsService, formatTime, formatVnd } from '../notifications/notifications.service';
 
 const METHODS = ['PayOS', 'Cash', 'Wallet'];
@@ -251,6 +261,41 @@ export class PaymentsService {
       await this.dispatchPayment(payment.id);
     }
     return paid ? 'Success' : 'Failed';
+  }
+
+  /**
+   * Kết quả cho trang PayOS chuyển về. Hỏi lại PayOS (syncPayosPayment) nên trạng thái
+   * cập nhật ngay cả khi webhook chưa tới; huỷ trên PayOS sẽ chuyển thanh toán sang Failed.
+   * Chỉ trả loại và số tiền, không lộ thông tin cá nhân.
+   */
+  async resultForOrderCode(orderCode: string | undefined, cancelled: boolean): Promise<PaymentResultView> {
+    const code = (orderCode ?? '').trim();
+    if (!/^\d{1,20}$/.test(code)) {
+      return { state: 'unknown', orderCode: '', amount: null, typeLabel: null };
+    }
+    const payment = await this.prisma.payment.findFirst({
+      where: { transactionReference: code, paymentMethod: 'PayOS' },
+    });
+    if (!payment) {
+      return { state: 'unknown', orderCode: code, amount: null, typeLabel: null };
+    }
+    let status = payment.paymentStatus;
+    try {
+      status = await this.syncPayosPayment(payment.id);
+    } catch {
+      // PayOS không phản hồi: hiện trạng thái đang có, app sẽ kiểm tra lại sau.
+    }
+    const state: PaymentResultState = sameStatus(status, 'Success')
+      ? 'success'
+      : sameStatus(status, 'Failed')
+        ? cancelled ? 'cancelled' : 'failed'
+        : cancelled ? 'cancelled' : 'pending';
+    return {
+      state,
+      orderCode: code,
+      amount: toMoney(payment.amount),
+      typeLabel: PAYMENT_TYPE_LABELS[payment.paymentType ?? ''] ?? 'Thanh toán PBMS',
+    };
   }
 
   /** Khách tự kiểm tra một thanh toán PayOS của mình (nạp ví, thanh toán trước, gói tháng). */

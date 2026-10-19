@@ -53,8 +53,10 @@ export class PayosService {
   }): Promise<PayosLinkResult> {
     const { clientId, apiKey, checksumKey } = this.requireConfig();
     const orderCode = Date.now();
-    const returnUrl = process.env.PAYOS_RETURN_URL ?? 'http://localhost:5173/payment-success';
-    const cancelUrl = process.env.PAYOS_CANCEL_URL ?? 'http://localhost:5173/payment-cancel';
+    // Mặc định về trang kết quả của chính máy chủ (Render tự đặt RENDER_EXTERNAL_URL).
+    const base = (process.env.PUBLIC_BASE_URL || process.env.RENDER_EXTERNAL_URL || 'http://localhost:3000').replace(/\/+$/, '');
+    const returnUrl = process.env.PAYOS_RETURN_URL || `${base}/payment/success`;
+    const cancelUrl = process.env.PAYOS_CANCEL_URL || `${base}/payment/cancel`;
     const amount = Math.round(Number(payment.amount));
     const prefix =
       payment.paymentType === 'CheckoutFee'
