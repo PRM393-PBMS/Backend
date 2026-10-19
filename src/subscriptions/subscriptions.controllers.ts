@@ -199,8 +199,12 @@ export class SubscriptionRenewalsController {
   }
 
   @Post(':id/renew')
-  @ApiOperation({ summary: 'Tạo thanh toán gia hạn' })
-  @ApiPbmsBodyExample(PbmsBodyDto, { months: 1 })
+  @ApiOperation({
+    summary: 'Gia hạn vé tháng',
+    description:
+      'Body: `packageId`, `password` (xác thực lại), `paymentMethod`: `PayOS` (mặc định, trả link + mã QR) hoặc `Wallet` (trừ ví, gia hạn ngay; thiếu tiền trả 402 kèm số dư).',
+  })
+  @ApiPbmsBodyExample(PbmsBodyDto, { packageId: ids.packageId, paymentMethod: 'Wallet', password: 'MatKhau@123' })
   @ApiPbmsOkResponse('Tạo thanh toán gia hạn thành công', subscriptionPaymentExample)
   renew(
     @Param('id') id: string,

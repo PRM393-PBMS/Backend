@@ -1,6 +1,8 @@
 import { HashingService } from '../auth/services/hashing.service';
 import { confirmPassword } from '../common/confirm-password';
-import { Injectable } from '@nestjs/common';
+import { Injectable, Optional } from '@nestjs/common';
+import { InsufficientWalletFundsError, WalletsService } from '../wallets/wallets.service';
+import { NotificationsService, formatVnd } from '../notifications/notifications.service';
 import { Prisma } from '@prisma/client';
 import { PrismaService } from '../prisma/prisma.service';
 import { PayosService } from '../integrations/payos-files.service';
@@ -8,6 +10,7 @@ import { PbmsResponseDto } from '../common/dto/pbms-response.dto';
 import {
   errorMessage,
   isEmptyGuid,
+  pbmsPick,
   pbmsPickDate,
   pbmsPickGuid,
   pbmsPickNumber,
@@ -21,6 +24,8 @@ export class SubscriptionRenewalsService {
     private readonly prisma: PrismaService,
     private readonly payos: PayosService,
     private readonly hashing: HashingService,
+    private readonly wallets: WalletsService,
+    @Optional() private readonly notifications?: NotificationsService,
   ) {}
 
   async renew(subscriptionId: string, userId: string, dto: object): Promise<PbmsResponseDto> {
@@ -49,6 +54,13 @@ export class SubscriptionRenewalsService {
     }
     if (subscription.vehicle.vehicleTypeId !== pkg.vehicleTypeId) {
       return PbmsResponseDto.fail('Gói cước mới không phù hợp với loại xe hiện tại');
+    }
+    const method = pbmsPick(dto, 'paymentMethod', 'PaymentMethod').trim().toLowerCase();
+    if (method && method !== 'payos' && method !== 'wallet') {
+      return PbmsResponseDto.fail('Phương thức gia hạn chỉ được là PayOS hoặc Wallet');
+    }
+    if (method === 'wallet') {
+      return this.renewWithWallet(subscription, pkg, userId);
     }
     try {
       const payment = await this.prisma.payment.create({
@@ -81,6 +93,80 @@ export class SubscriptionRenewalsService {
         201,
       );
     } catch (error: unknown) {
+      return PbmsResponseDto.fail(`Lỗi gia hạn gói: ${errorMessage(error)}`, 500);
+    }
+  }
+
+  /**
+   * Gia hạn trả bằng ví: trừ ví, ghi thanh toán, nối thêm thời hạn của gói đã chọn và
+   * lưu lịch sử gia hạn trong cùng một giao dịch. Thiếu tiền thì không đổi gì (402).
+   */
+  private async renewWithWallet(
+    subscription: { id: string; endDate: Date },
+    pkg: { id: string; price: Prisma.Decimal; durationDays: number },
+    userId: string,
+  ): Promise<PbmsResponseDto> {
+    try {
+      const done = await this.prisma.$transaction(async (tx) => {
+        const payment = await tx.payment.create({
+          data: {
+            userId,
+            subscriptionId: subscription.id,
+            amount: pkg.price,
+            paymentMethod: 'Wallet',
+            paymentStatus: 'Success',
+            paymentType: 'SubscriptionRenewal',
+            paymentTime: new Date(),
+            transactionReference: `WALLET-RNW-${subscription.id.replace(/-/g, '').slice(0, 12)}`,
+          },
+        });
+        const debit = await this.wallets.debitInTransaction(tx, userId, pkg.price, payment.id);
+        // Còn hạn thì nối tiếp từ ngày hết hạn, đã hết hạn thì tính từ hôm nay.
+        const oldEnd = subscription.endDate;
+        const start = oldEnd < new Date() ? new Date() : oldEnd;
+        const newEnd = new Date(start);
+        newEnd.setUTCDate(newEnd.getUTCDate() + pkg.durationDays);
+        await tx.monthlySubscription.update({
+          where: { id: subscription.id },
+          data: { endDate: newEnd, status: 'Active' },
+        });
+        await tx.subscriptionRenewal.create({
+          data: {
+            subscriptionId: subscription.id,
+            oldEndDate: oldEnd,
+            newEndDate: newEnd,
+            amount: pkg.price,
+            renewalDate: new Date(),
+          },
+        });
+        return { payment, debit, newEnd };
+      });
+      await this.notifications?.notify(userId, {
+        title: 'Đã gia hạn vé tháng',
+        message: `Đã trừ ${formatVnd(toMoney(pkg.price))} từ ví PBMS. Vé có hiệu lực đến ${done.newEnd.toLocaleDateString('vi-VN', { timeZone: 'Asia/Ho_Chi_Minh' })}.`,
+        type: 'subscription',
+        metadata: { subscriptionId: subscription.id },
+      });
+      return PbmsResponseDto.ok('Gia hạn bằng ví thành công', {
+        subscriptionId: subscription.id,
+        paymentId: done.payment.id,
+        paymentMethod: 'Wallet',
+        amount: toMoney(pkg.price),
+        walletId: done.debit.walletId,
+        walletBalance: toMoney(done.debit.balanceAfter),
+        endDate: done.newEnd,
+        status: 'Active',
+      });
+    } catch (error: unknown) {
+      if (error instanceof InsufficientWalletFundsError) {
+        const balance = await this.wallets.getBalanceForUser(userId);
+        return new PbmsResponseDto('Số dư ví không đủ để gia hạn, vui lòng nạp thêm', 402, false, {
+          paymentMethod: 'Wallet',
+          walletId: balance.walletId,
+          walletBalance: balance.walletBalance,
+          amount: toMoney(pkg.price),
+        });
+      }
       return PbmsResponseDto.fail(`Lỗi gia hạn gói: ${errorMessage(error)}`, 500);
     }
   }
