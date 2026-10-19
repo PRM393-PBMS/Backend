@@ -1,3 +1,4 @@
+import { PaymentResultController } from './payment-result.controller';
 import { Test, TestingModule } from '@nestjs/testing';
 import { Prisma } from '@prisma/client';
 import { PayosService } from '../integrations/payos-files.service';
@@ -62,5 +63,23 @@ describe('Trang kết quả PayOS', () => {
     expect(html).not.toContain('<b>x</b>');
     expect(html).toContain('50.000 đ');
     expect(appDeepLink(view)).toBe('pbms://payment-result?status=success&orderCode=123');
+  });
+});
+
+describe('API kết quả thanh toán (JSON)', () => {
+  it('trả state, số tiền và loại thanh toán cho app', async () => {
+    const payments = {
+      resultForOrderCode: jest.fn().mockResolvedValue({
+        state: 'cancelled',
+        orderCode: '1',
+        amount: 50000,
+        typeLabel: 'Nạp ví PBMS',
+      }),
+    };
+    const controller = new PaymentResultController(payments as never);
+    const res = await controller.result('1', 'true');
+    expect(payments.resultForOrderCode).toHaveBeenCalledWith('1', true);
+    expect(res.isSuccess).toBe(true);
+    expect(res.result).toMatchObject({ state: 'cancelled', amount: 50000 });
   });
 });
