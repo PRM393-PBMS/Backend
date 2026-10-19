@@ -138,14 +138,20 @@ export class MonthlySubscriptionsController {
   }
 
   @Put(':id/cancel')
-  @ApiOperation({ summary: 'Hủy gói tháng' })
+  @ApiOperation({
+    summary: 'Hủy gói tháng',
+    description:
+      'Khách hàng phải gửi `password` để xác thực lại; quản lý huỷ hộ thì không cần. Huỷ đơn chưa thanh toán sẽ đóng link PayOS và huỷ hợp đồng chưa ký.',
+  })
+  @ApiPbmsBodyExample(PbmsBodyDto, { password: 'MatKhau@123' })
   @ApiPbmsOkResponse('Hủy gói tháng thành công', null)
   cancel(
     @Param('id') id: string,
     @GetPbmsUserId() userId: string,
     @GetPbmsRole() role: string,
+    @Body() dto: PbmsBodyDto,
   ): Promise<PbmsResponseDto> {
-    return this.subscriptions.cancel(id, userId, role);
+    return this.subscriptions.cancel(id, userId, role, dto ?? {});
   }
 
   @Put(':id')
@@ -193,8 +199,12 @@ export class SubscriptionRenewalsController {
   }
 
   @Post(':id/renew')
-  @ApiOperation({ summary: 'Tạo thanh toán gia hạn' })
-  @ApiPbmsBodyExample(PbmsBodyDto, { months: 1 })
+  @ApiOperation({
+    summary: 'Gia hạn vé tháng',
+    description:
+      'Body: `packageId`, `password` (xác thực lại), `paymentMethod`: `PayOS` (mặc định, trả link + mã QR) hoặc `Wallet` (trừ ví, gia hạn ngay; thiếu tiền trả 402 kèm số dư).',
+  })
+  @ApiPbmsBodyExample(PbmsBodyDto, { packageId: ids.packageId, paymentMethod: 'Wallet', password: 'MatKhau@123' })
   @ApiPbmsOkResponse('Tạo thanh toán gia hạn thành công', subscriptionPaymentExample)
   renew(
     @Param('id') id: string,

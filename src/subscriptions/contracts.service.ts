@@ -1,4 +1,4 @@
-import { Injectable, Optional } from '@nestjs/common';
+import { Injectable, Logger, Optional } from '@nestjs/common';
 import { Prisma } from '@prisma/client';
 import { randomBytes } from 'crypto';
 import { PrismaService } from '../prisma/prisma.service';
@@ -10,6 +10,8 @@ import {
   loadSealKey,
   sealPayload,
   sha256Hex,
+  readSealKey,
+  sealKeyProblemMessage,
   signSeal,
   verifySeal,
 } from '../common/contract-seal';
@@ -30,6 +32,8 @@ const vnMoney = (n: number) => `${Math.round(n).toLocaleString('vi-VN')} đồng
 
 @Injectable()
 export class ContractsService {
+  private readonly logger = new Logger(ContractsService.name);
+
   constructor(
     private readonly prisma: PrismaService,
     @Optional() private readonly notifications?: NotificationsService,
@@ -227,10 +231,12 @@ export class ContractsService {
     if (!png) {
       return PbmsResponseDto.fail('Chữ ký không hợp lệ (ảnh PNG, tối đa 200KB)');
     }
-    const key = loadSealKey();
-    if (!key) {
-      return PbmsResponseDto.fail('Máy chủ chưa cấu hình khoá niêm phong hợp đồng', 503);
+    const sealKey = readSealKey();
+    if (!sealKey.key) {
+      this.logger.error(`Không ký được hợp đồng ${c.contractNumber}: ${sealKeyProblemMessage(sealKey.problem)}`);
+      return PbmsResponseDto.fail(sealKeyProblemMessage(sealKey.problem), 503);
     }
+    const key = sealKey.key;
     const signedAt = new Date();
     const signatureImageHash = sha256Hex(png);
     const seal = signSeal(
@@ -316,10 +322,11 @@ export class ContractsService {
 
   /** Khoá công khai để bên thứ ba tự kiểm tra niêm phong. */
   publicKey(): PbmsResponseDto {
-    const key = loadSealKey();
-    if (!key) {
-      return PbmsResponseDto.fail('Máy chủ chưa cấu hình khoá niêm phong hợp đồng', 503);
+    const sealKey = readSealKey();
+    if (!sealKey.key) {
+      return PbmsResponseDto.fail(sealKeyProblemMessage(sealKey.problem), 503);
     }
+    const key = sealKey.key;
     return PbmsResponseDto.ok('Lấy khoá công khai thành công', {
       keyId: key.keyId,
       algorithm: 'ECDSA P-256 SHA-256',

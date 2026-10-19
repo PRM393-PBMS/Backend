@@ -16,6 +16,8 @@ import { isMotorbikeType } from '../common/license-plate';
 import { InsufficientWalletFundsError, WalletsService } from '../wallets/wallets.service';
 import { requiresContract } from '../common/contract-seal';
 import { ContractsService } from './contracts.service';
+import { HashingService } from '../auth/services/hashing.service';
+import { confirmPassword } from '../common/confirm-password';
 import { NotificationsService, formatTime, formatVnd } from '../notifications/notifications.service';
 
 type CustomerPaymentMethod = 'PayOS' | 'Wallet';
@@ -27,6 +29,7 @@ export class MonthlySubscriptionsService {
     private readonly payos: PayosService,
     private readonly wallets: WalletsService,
     private readonly contracts: ContractsService,
+    private readonly hashing: HashingService,
     @Optional() private readonly notifications?: NotificationsService,
   ) {}
 
@@ -77,7 +80,16 @@ export class MonthlySubscriptionsService {
       },
     });
     if (plateExists) {
-      return PbmsResponseDto.fail('Biển số này đã có gói đang hiệu lực hoặc đang chờ thanh toán');
+      // Đơn cũ chưa thanh toán: trả thông tin để app cho khách chọn trả đơn cũ hoặc huỷ đơn cũ.
+      if (sameStatus(plateExists.status, 'PendingPayment')) {
+        return new PbmsResponseDto(
+          'Xe này đang có một đơn vé tháng chưa thanh toán. Hãy thanh toán đơn cũ hoặc huỷ đơn cũ để đăng ký đơn mới.',
+          409,
+          false,
+          { existingSubscriptionId: plateExists.id, status: plateExists.status },
+        );
+      }
+      return PbmsResponseDto.fail('Biển số này đã có gói đang hiệu lực');
     }
 
     // Bãi áp dụng: gói mọi bãi thì không gắn bãi; gói một bãi thì khách chọn bãi
@@ -305,7 +317,7 @@ export class MonthlySubscriptionsService {
     return PbmsResponseDto.ok('Cập nhật gói tháng thành công', item ? this.mapSubscription(item) : null);
   }
 
-  async cancel(id: string, userId: string, role: string): Promise<PbmsResponseDto> {
+  async cancel(id: string, userId: string, role: string, dto: object = {}): Promise<PbmsResponseDto> {
     const existing = await this.prisma.monthlySubscription.findUnique({ where: { id } });
     if (!existing) {
       return PbmsResponseDto.fail('Không tìm thấy gói tháng', 404);
@@ -316,10 +328,24 @@ export class MonthlySubscriptionsService {
     if (sameStatus(existing.status, 'Cancelled')) {
       return PbmsResponseDto.fail('Gói đã được hủy');
     }
+    // Khách tự huỷ: xác thực lại mật khẩu (quản lý huỷ hộ thì không cần).
+    if (!this.canManage(role)) {
+      const denied = await confirmPassword(this.prisma, this.hashing, userId, dto);
+      if (denied) return denied;
+    }
     await this.prisma.monthlySubscription.update({
       where: { id },
       data: { status: 'Cancelled' },
     });
+    // Đơn chưa thanh toán: đóng link PayOS và thanh toán treo, huỷ hợp đồng chưa ký,
+    // để link cũ không kích hoạt lại vé đã huỷ.
+    if (sameStatus(existing.status, 'PendingPayment')) {
+      await this.closePendingPayments(id);
+      await this.prisma.subscriptionContract.updateMany({
+        where: { subscriptionId: id, status: 'PendingSignature' },
+        data: { status: 'Void' },
+      });
+    }
     if (existing.fixedSlotId) {
       await this.prisma.parkingSlot.update({
         where: { id: existing.fixedSlotId },
@@ -327,6 +353,35 @@ export class MonthlySubscriptionsService {
       });
     }
     return PbmsResponseDto.ok('Hủy gói tháng thành công');
+  }
+
+  /**
+   * Đóng các thanh toán PayOS đang chờ của một vé: huỷ link trên PayOS, đánh dấu Failed.
+   * [checkPaid]: hỏi PayOS trước; nếu một link đã được trả thì giữ nguyên và trả true.
+   */
+  private async closePendingPayments(subscriptionId: string, checkPaid = false): Promise<boolean> {
+    const pending = await this.prisma.payment.findMany({
+      where: { subscriptionId, paymentStatus: 'Pending', paymentMethod: 'PayOS' },
+    });
+    for (const p of pending) {
+      const orderCode = p.transactionReference?.trim();
+      if (orderCode && checkPaid) {
+        try {
+          const remote = await this.payos.getPaymentStatus(orderCode);
+          if (remote.status === 'PAID') return true;
+        } catch {
+          // PayOS không phản hồi: vẫn đóng ở phía mình, huỷ link bên dưới.
+        }
+      }
+      if (orderCode) {
+        await this.payos.cancelPaymentLink(orderCode).catch(() => undefined);
+      }
+      await this.prisma.payment.updateMany({
+        where: { id: p.id, paymentStatus: 'Pending' },
+        data: { paymentStatus: 'Failed' },
+      });
+    }
+    return false;
   }
 
   async remove(id: string): Promise<PbmsResponseDto> {
@@ -365,6 +420,11 @@ export class MonthlySubscriptionsService {
       return PbmsResponseDto.fail('Vui lòng ký hợp đồng trước khi thanh toán', 409);
     }
     if (method.value === 'Wallet') {
+      // Đổi sang trả bằng ví: link PayOS cũ phải đóng trước, nếu không khách có thể trả hai lần.
+      const paidElsewhere = await this.closePendingPayments(subscriptionId, true);
+      if (paidElsewhere) {
+        return PbmsResponseDto.fail('Đơn này đã được thanh toán qua PayOS, vui lòng chờ hệ thống cập nhật', 409);
+      }
       return this.payPendingWithWallet(subscription, userId);
     }
     let payment = await this.prisma.payment.findFirst({

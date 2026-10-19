@@ -1,3 +1,5 @@
+import { HashingService } from '../auth/services/hashing.service';
+import { confirmPassword } from '../common/confirm-password';
 import { Injectable } from '@nestjs/common';
 import { PrismaService } from '../prisma/prisma.service';
 import { PbmsResponseDto } from '../common/dto/pbms-response.dto';
@@ -6,9 +8,14 @@ import { isValidLicensePlate, normalizeLicensePlate } from '../common/license-pl
 
 @Injectable()
 export class VehicleChangeRequestsService {
-  constructor(private readonly prisma: PrismaService) {}
+  constructor(
+    private readonly prisma: PrismaService,
+    private readonly hashing: HashingService,
+  ) {}
 
   async create(userId: string, dto: object): Promise<PbmsResponseDto> {
+    const denied = await confirmPassword(this.prisma, this.hashing, userId, dto);
+    if (denied) return denied;
     const subscriptionId = pbmsPickGuid(dto, 'subscriptionId', 'SubscriptionId');
     const newPlate = normalizeLicensePlate(pbmsPick(dto, 'newLicensePlate', 'NewLicensePlate'));
     const reason = pbmsPick(dto, 'reason', 'Reason').trim();
@@ -126,6 +133,8 @@ export class VehicleChangeRequestsService {
   }
 
   async update(id: string, userId: string, dto: object): Promise<PbmsResponseDto> {
+    const denied = await confirmPassword(this.prisma, this.hashing, userId, dto);
+    if (denied) return denied;
     const item = await this.loadRecord(id);
     if (!item) {
       return PbmsResponseDto.fail('Không tìm thấy yêu cầu đổi xe', 404);
