@@ -34,6 +34,7 @@ describe('MonthlySubscriptionsService register payment methods', () => {
     monthlySubscription: { findFirst: jest.Mock; create: jest.Mock; update: jest.Mock };
     payment: { create: jest.Mock; update: jest.Mock };
     user: { findUnique: jest.Mock };
+    wallet: { findUnique: jest.Mock };
     parking: { findMany: jest.Mock; findUnique: jest.Mock };
     $transaction: jest.Mock;
   };
@@ -56,6 +57,7 @@ describe('MonthlySubscriptionsService register payment methods', () => {
       },
       payment: { create: jest.fn(), update: jest.fn() },
       user: { findUnique: jest.fn() },
+      wallet: { findUnique: jest.fn() },
       $transaction: jest.fn(),
     };
     payos = { createPaymentLink: jest.fn() };
