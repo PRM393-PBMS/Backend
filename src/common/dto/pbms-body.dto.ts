@@ -202,6 +202,14 @@ export class PbmsBodyDto {
   licensePlate?: unknown;
   @ApiPropertyOptional() @IsOptional() LicensePlate?: unknown;
 
+  @ApiPropertyOptional({
+    type: String,
+    description: 'Mật khẩu xác thực lại cho thao tác nhạy cảm (huỷ vé tháng, gia hạn, đổi biển số)',
+  })
+  @IsOptional()
+  password?: unknown;
+  @ApiPropertyOptional() @IsOptional() Password?: unknown;
+
   @ApiPropertyOptional({ type: String, example: 'Xe của mẹ', description: 'Tên khách tự đặt cho xe (tối đa 40 ký tự, chuỗi rỗng để xoá)' })
   @IsOptional()
   nickname?: unknown;

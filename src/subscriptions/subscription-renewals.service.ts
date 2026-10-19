@@ -1,3 +1,5 @@
+import { HashingService } from '../auth/services/hashing.service';
+import { confirmPassword } from '../common/confirm-password';
 import { Injectable } from '@nestjs/common';
 import { Prisma } from '@prisma/client';
 import { PrismaService } from '../prisma/prisma.service';
@@ -18,9 +20,12 @@ export class SubscriptionRenewalsService {
   constructor(
     private readonly prisma: PrismaService,
     private readonly payos: PayosService,
+    private readonly hashing: HashingService,
   ) {}
 
   async renew(subscriptionId: string, userId: string, dto: object): Promise<PbmsResponseDto> {
+    const denied = await confirmPassword(this.prisma, this.hashing, userId, dto);
+    if (denied) return denied;
     const packageId = pbmsPickGuid(dto, 'packageId', 'PackageId');
     if (isEmptyGuid(packageId)) {
       return PbmsResponseDto.fail('Vui lòng chọn gói gia hạn hợp lệ');

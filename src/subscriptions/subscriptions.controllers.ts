@@ -138,14 +138,20 @@ export class MonthlySubscriptionsController {
   }
 
   @Put(':id/cancel')
-  @ApiOperation({ summary: 'Hủy gói tháng' })
+  @ApiOperation({
+    summary: 'Hủy gói tháng',
+    description:
+      'Khách hàng phải gửi `password` để xác thực lại; quản lý huỷ hộ thì không cần. Huỷ đơn chưa thanh toán sẽ đóng link PayOS và huỷ hợp đồng chưa ký.',
+  })
+  @ApiPbmsBodyExample(PbmsBodyDto, { password: 'MatKhau@123' })
   @ApiPbmsOkResponse('Hủy gói tháng thành công', null)
   cancel(
     @Param('id') id: string,
     @GetPbmsUserId() userId: string,
     @GetPbmsRole() role: string,
+    @Body() dto: PbmsBodyDto,
   ): Promise<PbmsResponseDto> {
-    return this.subscriptions.cancel(id, userId, role);
+    return this.subscriptions.cancel(id, userId, role, dto ?? {});
   }
 
   @Put(':id')

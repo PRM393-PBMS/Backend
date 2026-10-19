@@ -1,3 +1,4 @@
+import { HashingService } from '../auth/services/hashing.service';
 import { Test, TestingModule } from '@nestjs/testing';
 import { Prisma } from '@prisma/client';
 import { PayosService } from '../integrations/payos-files.service';
@@ -59,6 +60,7 @@ describe('Vé tháng theo bãi', () => {
         },
         { provide: WalletsService, useValue: {} },
         { provide: ContractsService, useValue: { createForSubscription: jest.fn() } },
+        { provide: HashingService, useValue: { compare: jest.fn().mockResolvedValue(true), hash: jest.fn() } },
       ],
     }).compile();
     service = module.get(MonthlySubscriptionsService);
