@@ -14,6 +14,7 @@ import {
   toMoney,
 } from '../common/pbms-fields';
 import { createTicket } from '../common/qr.util';
+import { isCarType } from '../common/license-plate';
 
 const QUOTA = 0.2;
 
@@ -53,7 +54,7 @@ export class ReservationsService {
     if (!vehicle) {
       return PbmsResponseDto.fail('Không tìm thấy xe hoặc xe không thuộc tài khoản của bạn', 404);
     }
-    if (!sameStatus(vehicle.vehicleType.typeName, 'Ô tô')) {
+    if (!isCarType(vehicle.vehicleType.typeName)) {
       return PbmsResponseDto.fail('Đặt chỗ trước hiện chỉ áp dụng cho xe ô tô');
     }
     const quotaError = await this.assertQuota(vehicle.vehicleTypeId, null);

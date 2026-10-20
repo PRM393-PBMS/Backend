@@ -90,6 +90,8 @@ describe('EntryPassesService', () => {
 describe('Check-in bằng mã vào bãi', () => {
   let ops: ParkingOperationsService;
   let prisma: {
+    $transaction: jest.Mock;
+    vehicleType: { findUnique: jest.Mock };
     gate: { findUnique: jest.Mock };
     floor: { findUnique: jest.Mock };
     entryPass: { findUnique: jest.Mock; updateMany: jest.Mock; update: jest.Mock };
@@ -110,6 +112,8 @@ describe('Check-in bằng mã vào bãi', () => {
 
   beforeEach(async () => {
     prisma = {
+      $transaction: jest.fn((fn) => fn(prisma)),
+      vehicleType: { findUnique: jest.fn().mockResolvedValue({ typeName: 'Ô tô' }) },
       gate: {
         findUnique: jest.fn().mockResolvedValue({ id: gateId, gateType: 'Entry', floorId: 'f1', floor: { parkingId: 'p1' } }),
       },

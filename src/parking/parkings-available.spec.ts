@@ -4,6 +4,13 @@ import { ParkingsService } from './parkings.service';
 describe('ParkingsService.listForCustomers', () => {
   it('đếm tổng và chỗ trống theo từng bãi, từng loại xe; giữ toạ độ null', async () => {
     const prisma = {
+      floor: {
+        findMany: jest.fn().mockResolvedValue([{
+          id: 'f-bike', parkingId: 'p1', floorName: 'Khu xe máy', totalCapacity: 10,
+          dedicatedVehicleType: { id: 'bike', typeName: 'Xe máy' },
+          gates: [{ _count: { entrySessions: 3 } }],
+        }]),
+      },
       parking: {
         findMany: jest.fn().mockResolvedValue([
           { id: 'p1', name: 'Bãi A', location: 'Q1', latitude: 10.77, longitude: 106.7 },
@@ -29,10 +36,10 @@ describe('ParkingsService.listForCustomers', () => {
 
     const [a, b] = await service.listForCustomers();
 
-    expect(a).toMatchObject({ parkingId: 'p1', latitude: 10.77, totalSlots: 15, availableSlots: 13 });
+    expect(a).toMatchObject({ parkingId: 'p1', latitude: 10.77, totalSlots: 15, availableSlots: 10 });
     expect(a.availability).toEqual([
       { vehicleTypeId: 'car', vehicleTypeName: 'Ô tô', totalSlots: 5, availableSlots: 3 },
-      { vehicleTypeId: 'bike', vehicleTypeName: 'Xe máy', totalSlots: 10, availableSlots: 10 },
+      { vehicleTypeId: 'bike', vehicleTypeName: 'Xe máy', totalSlots: 10, availableSlots: 7 },
     ]);
     expect(b).toMatchObject({ parkingId: 'p2', latitude: null, totalSlots: 4, availableSlots: 0 });
   });
