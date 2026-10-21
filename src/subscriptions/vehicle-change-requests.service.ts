@@ -1,16 +1,18 @@
 import { HashingService } from '../auth/services/hashing.service';
 import { confirmPassword } from '../common/confirm-password';
-import { Injectable } from '@nestjs/common';
+import { Injectable, Optional } from '@nestjs/common';
 import { PrismaService } from '../prisma/prisma.service';
 import { PbmsResponseDto } from '../common/dto/pbms-response.dto';
 import { errorMessage, isEmptyGuid, pbmsPick, pbmsPickGuid, sameStatus } from '../common/pbms-fields';
 import { isValidLicensePlate, normalizeLicensePlate } from '../common/license-plate';
+import { NotificationsService } from '../notifications/notifications.service';
 
 @Injectable()
 export class VehicleChangeRequestsService {
   constructor(
     private readonly prisma: PrismaService,
     private readonly hashing: HashingService,
+    @Optional() private readonly notifications?: NotificationsService,
   ) {}
 
   async create(userId: string, dto: object): Promise<PbmsResponseDto> {
@@ -105,6 +107,12 @@ export class VehicleChangeRequestsService {
         data: { licensePlate: item.newLicensePlate },
       });
     });
+    await this.notifications?.notify(item.subscription.userId, {
+      title: 'Yêu cầu đổi biển số đã được duyệt',
+      message: `Vé tháng của bạn đã chuyển từ biển số ${item.oldLicensePlate} sang ${item.newLicensePlate}.`,
+      type: 'subscription',
+      metadata: { requestId: id, subscriptionId: item.subscriptionId, status: 'Approved' },
+    });
     return PbmsResponseDto.ok('Duyệt yêu cầu đổi xe thành công', await this.loadOne(id));
   }
 
@@ -128,6 +136,12 @@ export class VehicleChangeRequestsService {
         processedAt: new Date(),
         handledByStaffId: staffId,
       },
+    });
+    await this.notifications?.notify(item.subscription.userId, {
+      title: 'Yêu cầu đổi biển số bị từ chối',
+      message: `Yêu cầu đổi sang biển số ${item.newLicensePlate} bị từ chối. Lý do: ${reason}`,
+      type: 'subscription',
+      metadata: { requestId: id, subscriptionId: item.subscriptionId, status: 'Rejected', rejectionReason: reason },
     });
     return PbmsResponseDto.ok('Từ chối yêu cầu đổi xe thành công', await this.loadOne(id));
   }
