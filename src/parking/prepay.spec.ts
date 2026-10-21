@@ -60,7 +60,7 @@ function setup(opts: { debit: 'ok' | 'insufficient'; ownerId?: string }) {
     $transaction: jest.fn(async (fn: (t: typeof tx) => Promise<unknown>) => fn(tx)),
   };
   const wallets = {
-    debitInTransaction: jest.fn(() =>
+    debitForUser: jest.fn(() =>
       opts.debit === 'ok'
         ? Promise.resolve({ walletId: 'w1', balanceAfter: new Prisma.Decimal(70000) })
         : Promise.reject(new InsufficientWalletFundsError()),
@@ -89,10 +89,10 @@ describe('Thanh toán trước khi ra bãi', () => {
       paymentMethod: 'Wallet',
       userId: USER_ID,
     });
-    const debitArgs = wallets.debitInTransaction.mock.calls[0] as unknown[];
+    const debitArgs = wallets.debitForUser.mock.calls[0] as unknown[];
     expect(debitArgs[1]).toBe(USER_ID);
     expect((debitArgs[2] as Prisma.Decimal).toNumber()).toBe(30000); // 20k giờ đầu + 10k giờ thứ 2
-    expect(debitArgs[4]).toBe('ParkingFee');
+    expect(debitArgs[3]).toBe('ParkingFee');
     expect(session.exitPassCode).toMatch(/^[A-HJ-NP-Z2-9]{6}$/);
     expect(session.prepaidAt).toBeInstanceOf(Date);
   });
@@ -110,7 +110,7 @@ describe('Thanh toán trước khi ra bãi', () => {
     const res = await service.prepay(SESSION_ID, USER_ID, { paymentMethod: 'Wallet' });
 
     expect(res.statusCode).toBe(403);
-    expect(wallets.debitInTransaction).not.toHaveBeenCalled();
+    expect(wallets.debitForUser).not.toHaveBeenCalled();
   });
 
   it('payload QR mã ra cổng chứa SessionId để đầu đọc cổng nhận diện', () => {

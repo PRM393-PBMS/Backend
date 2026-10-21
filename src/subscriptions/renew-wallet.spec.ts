@@ -13,7 +13,7 @@ describe('Gia hạn vé tháng bằng ví', () => {
   const oldEnd = new Date(Date.now() + 5 * 864e5);
 
   let service: SubscriptionRenewalsService;
-  let wallets: { debitInTransaction: jest.Mock; getBalanceForUser: jest.Mock };
+  let wallets: { debitForUser: jest.Mock; getBalanceForUser: jest.Mock };
   let payos: { createPaymentLink: jest.Mock };
   let tx: {
     payment: { create: jest.Mock };
@@ -28,7 +28,7 @@ describe('Gia hạn vé tháng bằng ví', () => {
       subscriptionRenewal: { create: jest.fn().mockResolvedValue({}) },
     };
     wallets = {
-      debitInTransaction: jest.fn().mockResolvedValue({ walletId: 'w1', balanceAfter: new Prisma.Decimal(100000) }),
+      debitForUser: jest.fn().mockResolvedValue({ walletId: 'w1', balanceAfter: new Prisma.Decimal(100000) }),
       getBalanceForUser: jest.fn().mockResolvedValue({ walletId: 'w1', walletBalance: 5000 }),
     };
     payos = { createPaymentLink: jest.fn() };
@@ -69,7 +69,7 @@ describe('Gia hạn vé tháng bằng ví', () => {
   it('trừ ví, nối thêm 30 ngày từ ngày hết hạn cũ, không tạo link PayOS', async () => {
     const res = await service.renew(subId, userId, { packageId: pkgId, paymentMethod: 'Wallet', password: 'x' });
     expect(res.isSuccess).toBe(true);
-    expect(wallets.debitInTransaction).toHaveBeenCalled();
+    expect(wallets.debitForUser).toHaveBeenCalled();
     expect(payos.createPaymentLink).not.toHaveBeenCalled();
     const newEnd = tx.monthlySubscription.update.mock.calls[0][0].data.endDate as Date;
     expect(Math.round((newEnd.getTime() - oldEnd.getTime()) / 864e5)).toBe(30);
@@ -81,7 +81,7 @@ describe('Gia hạn vé tháng bằng ví', () => {
   });
 
   it('thiếu tiền: 402 kèm số dư, không gia hạn', async () => {
-    wallets.debitInTransaction.mockRejectedValue(new InsufficientWalletFundsError());
+    wallets.debitForUser.mockRejectedValue(new InsufficientWalletFundsError());
     const res = await service.renew(subId, userId, { packageId: pkgId, paymentMethod: 'Wallet', password: 'x' });
     expect(res.statusCode).toBe(402);
     expect(res.result).toMatchObject({ walletBalance: 5000, amount: 1500000 });

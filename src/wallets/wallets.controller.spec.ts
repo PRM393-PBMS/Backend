@@ -38,7 +38,7 @@ describe('WalletsController Swagger', () => {
     expect(getWallet?.description).toContain('Bạn không sở hữu ví này');
     expect(postTopUp?.description).toContain('paymentUrl');
     expect(postTopUp?.description).toContain('payos-webhook');
-    expect(document.paths['/api/wallet/{walletId}/transactions']?.get?.description).toContain('TopUp');
+    expect(document.paths['/api/wallet/{walletId}/transactions']?.get?.description).toContain('TOP_UP');
     expect(document.paths['/api/wallet/{walletId}/top-ups']?.get?.description).toContain('Credit');
     expect(document.paths['/api/wallet/{walletId}/spends']?.get?.description).toContain('Debit');
   });
