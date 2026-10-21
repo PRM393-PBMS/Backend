@@ -120,7 +120,14 @@ export class SubscriptionRenewalsService {
             transactionReference: `WALLET-RNW-${subscription.id.replace(/-/g, '').slice(0, 12)}`,
           },
         });
-        const debit = await this.wallets.debitInTransaction(tx, userId, pkg.price, payment.id);
+        const debit = await this.wallets.debitForUser(
+          tx,
+          userId,
+          pkg.price,
+          'SubscriptionRenewal',
+          payment.id,
+          'Gia hạn gói tháng bằng ví',
+        );
         // Còn hạn thì nối tiếp từ ngày hết hạn, đã hết hạn thì tính từ hôm nay.
         const oldEnd = subscription.endDate;
         const start = oldEnd < new Date() ? new Date() : oldEnd;

@@ -143,6 +143,9 @@ export class HardDeleteAccountService {
           await tx.walletTransaction.deleteMany({
             where: { wallet: { is: { userId } } },
           });
+          await tx.walletAdjustmentLog.deleteMany({
+            where: { wallet: { is: { userId } } },
+          });
           await tx.wallet.deleteMany({ where: { userId } });
           await tx.payment.deleteMany({ where: { userId } });
           await tx.subscriptionContract.deleteMany({ where: { userId } });

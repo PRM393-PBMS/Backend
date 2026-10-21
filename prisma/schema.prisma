@@ -14,6 +14,20 @@ enum UserRole {
   MODERATOR
 }
 
+/// Ngăn ví: CASH = tiền khách nạp qua PayOS (chỉ đổi qua thanh toán/hoàn tiền),
+/// BONUS = tiền bãi tặng/bồi thường (không rút/hoàn, Admin/Manager điều chỉnh có log).
+enum WalletBucket {
+  CASH
+  BONUS
+}
+
+enum AdjustmentReasonType {
+  PROMOTION
+  COMPENSATION
+  CORRECTION
+  EXPIRED
+}
+
 // PBMS Status fields are varchar strings, not SQL enums.
 // Allowed values are documented in comments; stored as String so inserts are not rejected.
 
@@ -39,7 +53,7 @@ model User {
   /// PBMS User.status varchar(20) default Active (Active, Inactive, Banned).
   status      String? @default("Active") @db.VarChar(20)
   /// 1=customer, 2=staff, 3=manager, 4=admin. Đăng ký mặc định 1.
-  roleId String @map("role_id") @db.Uuid
+  roleId      String  @map("role_id") @db.Uuid
   /// Public URL/path of the profile picture (uploads/avatars/...).
   avatarUrl   String? @map("avatar_url") @db.VarChar(2048)
 
@@ -57,6 +71,7 @@ model User {
   handledVehicleChanges VehicleChangeRequest[] @relation("VehicleChangeHandler")
   notifications         Notification[]
   wallet                Wallet?
+  walletAdjustments     WalletAdjustmentLog[]
 
   @@index([role, isActive], name: "idx_users_role_is_active")
   @@index([roleId], name: "idx_users_role_id")
@@ -420,34 +435,65 @@ model Payment {
 }
 
 model Wallet {
-  id        String   @id @default(uuid()) @db.Uuid
-  userId    String   @unique @map("user_id") @db.Uuid
-  balance   Decimal  @default(0) @db.Decimal(15, 2)
-  createdAt DateTime @default(now()) @map("created_at") @db.Timestamptz(6)
-  updatedAt DateTime @updatedAt @map("updated_at") @db.Timestamptz(6)
+  id             String    @id @default(uuid()) @db.Uuid
+  userId         String    @unique @map("user_id") @db.Uuid
+  /// Ngăn CASH: tiền thật khách nạp. Admin không được sửa trực tiếp.
+  balance        Decimal   @default(0) @db.Decimal(15, 2)
+  /// Ngăn BONUS: khuyến mãi/bồi thường, trừ trước CASH.
+  bonusBalance   Decimal   @default(0) @map("bonus_balance") @db.Decimal(15, 2)
+  /// Sau mốc này ngăn BONUS không còn dùng được.
+  bonusExpiresAt DateTime? @map("bonus_expires_at") @db.Timestamptz(6)
+  createdAt      DateTime  @default(now()) @map("created_at") @db.Timestamptz(6)
+  updatedAt      DateTime  @updatedAt @map("updated_at") @db.Timestamptz(6)
 
-  user         User                @relation(fields: [userId], references: [id], onDelete: Restrict)
+  user         User                  @relation(fields: [userId], references: [id], onDelete: Restrict)
   transactions WalletTransaction[]
+  adjustments  WalletAdjustmentLog[]
 
   @@map("wallets")
 }
 
 model WalletTransaction {
-  id           String   @id @default(uuid()) @db.Uuid
-  walletId     String   @map("wallet_id") @db.Uuid
-  paymentId    String?  @unique @map("payment_id") @db.Uuid
-  /// WalletTransactionType: TopUp, SubscriptionFee.
-  type         String   @db.VarChar(30)
+  id            String       @id @default(uuid()) @db.Uuid
+  walletId      String       @map("wallet_id") @db.Uuid
+  paymentId     String?      @map("payment_id") @db.Uuid
+  /// WalletTransactionType: TOP_UP, DEBIT, REFUND, ADJUSTMENT.
+  type          String       @db.VarChar(30)
+  bucket        WalletBucket @default(CASH)
   /// Dương = cộng ví, âm = trừ ví.
-  amount       Decimal  @db.Decimal(15, 2)
-  balanceAfter Decimal  @map("balance_after") @db.Decimal(15, 2)
-  createdAt    DateTime @default(now()) @map("created_at") @db.Timestamptz(6)
+  amount        Decimal      @db.Decimal(15, 2)
+  /// Số dư của ngăn [bucket] sau giao dịch.
+  balanceAfter  Decimal      @map("balance_after") @db.Decimal(15, 2)
+  /// Nghiệp vụ gốc: WalletTopUp, SubscriptionFee, ParkingFee, Adjustment, ...
+  referenceType String?      @map("reference_type") @db.VarChar(30)
+  referenceId   String?      @map("reference_id") @db.VarChar(64)
+  description   String?      @db.VarChar(255)
+  createdAt     DateTime     @default(now()) @map("created_at") @db.Timestamptz(6)
 
   wallet  Wallet   @relation(fields: [walletId], references: [id], onDelete: Restrict)
   payment Payment? @relation(fields: [paymentId], references: [id], onDelete: SetNull)
 
+  @@unique([paymentId, bucket])
   @@index([walletId], name: "idx_wallet_transactions_wallet_id")
+  @@index([referenceType, referenceId], name: "idx_wallet_transactions_reference")
   @@map("wallet_transactions")
+}
+
+/// Nhật ký Admin/Manager điều chỉnh ngăn BONUS (amount âm = thu hồi).
+model WalletAdjustmentLog {
+  id         String               @id @default(uuid()) @db.Uuid
+  walletId   String               @map("wallet_id") @db.Uuid
+  adminId    String               @map("admin_id") @db.Uuid
+  amount     Decimal              @db.Decimal(15, 2)
+  reasonType AdjustmentReasonType @map("reason_type")
+  note       String               @db.VarChar(500)
+  createdAt  DateTime             @default(now()) @map("created_at") @db.Timestamptz(6)
+
+  wallet Wallet @relation(fields: [walletId], references: [id], onDelete: Restrict)
+  admin  User   @relation(fields: [adminId], references: [id], onDelete: Restrict)
+
+  @@index([walletId, createdAt(sort: Desc)], name: "idx_wallet_adjustment_logs_wallet_created")
+  @@map("wallet_adjustment_logs")
 }
 
 model IncidentReport {
