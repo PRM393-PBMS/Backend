@@ -38,6 +38,8 @@ const TYPES = [
   'WalletTopUp',
   'PrepaidCheckout',
 ];
+const MY_PAGE_SIZE_DEFAULT = 20;
+const MY_PAGE_SIZE_MAX = 50;
 /** Loại thanh toán tạo ra tiền hoặc quyền ra bãi: chỉ tin trạng thái tra trực tiếp từ PayOS. */
 const VERIFIED_TYPES = ['WalletTopUp', 'PrepaidCheckout'];
 
@@ -81,6 +83,66 @@ export class PaymentsService {
   async getAll(): Promise<PbmsResponseDto> {
     const payments = await this.prisma.payment.findMany({ orderBy: { paymentTime: 'desc' } });
     return PbmsResponseDto.ok('Lấy danh sách thanh toán thành công', payments.map((p) => this.mapPayment(p)));
+  }
+
+  /**
+   * Lịch sử thanh toán của chính khách (mọi phương thức: PayOS, ví, tiền mặt), mới nhất trước.
+   * [status] lọc theo Pending/Success/Failed; trang bắt đầu từ 1.
+   */
+  async getMine(
+    userId: string,
+    pageRaw?: string,
+    pageSizeRaw?: string,
+    statusRaw?: string,
+  ): Promise<PbmsResponseDto> {
+    if (isEmptyGuid(userId)) {
+      return PbmsResponseDto.fail('Vui lòng đăng nhập', 401);
+    }
+    const page = Math.max(1, Number.parseInt(pageRaw ?? '', 10) || 1);
+    const pageSize = Math.min(
+      MY_PAGE_SIZE_MAX,
+      Math.max(1, Number.parseInt(pageSizeRaw ?? '', 10) || MY_PAGE_SIZE_DEFAULT),
+    );
+    const status = STATUSES.find((s) => sameStatus(s, statusRaw?.trim() ?? ''));
+    if (statusRaw?.trim() && !status) {
+      return PbmsResponseDto.fail(`Trạng thái lọc phải là một trong: ${STATUSES.join(', ')}`);
+    }
+    const where: Prisma.PaymentWhereInput = { userId, ...(status ? { paymentStatus: status } : {}) };
+    const [total, items] = await Promise.all([
+      this.prisma.payment.count({ where }),
+      this.prisma.payment.findMany({
+        where,
+        include: {
+          session: { select: { licensePlateIn: true } },
+          reservation: { select: { vehicle: { select: { licensePlate: true } } } },
+          subscription: {
+            select: {
+              vehicle: { select: { licensePlate: true } },
+              package: { select: { packageName: true } },
+            },
+          },
+        },
+        orderBy: [{ paymentTime: 'desc' }, { id: 'desc' }],
+        skip: (page - 1) * pageSize,
+        take: pageSize,
+      }),
+    ]);
+    return PbmsResponseDto.ok('Lấy lịch sử thanh toán thành công', {
+      items: items.map((p) => ({
+        ...this.mapPayment(p),
+        paymentTypeLabel: PAYMENT_TYPE_LABELS[p.paymentType ?? ''] ?? p.paymentType,
+        licensePlate:
+          p.subscription?.vehicle?.licensePlate ??
+          p.reservation?.vehicle?.licensePlate ??
+          p.session?.licensePlateIn ??
+          null,
+        packageName: p.subscription?.package?.packageName ?? null,
+      })),
+      page,
+      pageSize,
+      total,
+      hasMore: page * pageSize < total,
+    });
   }
 
   async getById(id: string): Promise<PbmsResponseDto> {

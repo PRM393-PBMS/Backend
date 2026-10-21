@@ -17,7 +17,14 @@ import { PbmsStatusInterceptor } from '../common/interceptors/pbms-status.interc
 import { userExample } from '../common/swagger/pbms-example-data';
 import { ApiPbmsOkResponse } from '../common/swagger/pbms-swagger';
 import type { UploadedImage } from '../common/uploaded-image';
-import { ChangePasswordBodyDto, DeleteAccountBodyDto, UpdateProfileDto } from './dto/user.dto';
+import {
+  ChangePasswordBodyDto,
+  DeleteAccountBodyDto,
+  RequestEmailChangeBodyDto,
+  UpdateProfileDto,
+  VerifyEmailChangeBodyDto,
+} from './dto/user.dto';
+import { EmailChangeService } from './email-change.service';
 import { UsersService } from './users.service';
 
 @ApiTags('PBMS Profile')
@@ -25,7 +32,10 @@ import { UsersService } from './users.service';
 @UseInterceptors(PbmsStatusInterceptor)
 @Controller('api/profile')
 export class ProfileController {
-  constructor(private readonly users: UsersService) {}
+  constructor(
+    private readonly users: UsersService,
+    private readonly emailChange: EmailChangeService,
+  ) {}
 
   @Get()
   @ApiOperation({
@@ -45,7 +55,8 @@ export class ProfileController {
   @ApiOperation({
     summary: 'Cập nhật thông tin cá nhân',
     description: [
-      'JWT bắt buộc. Body JSON camelCase tuỳ chọn: `fullName`, `phoneNumber`, `email`, `password` (hash lại nếu gửi). Không đổi `roleName` / `avatarUrl` ở đây — ảnh dùng `POST /api/profile/avatar`.',
+      'JWT bắt buộc. Body JSON camelCase tuỳ chọn: `fullName`, `phoneNumber`. Không đổi `roleName` / `avatarUrl` ở đây — ảnh dùng `POST /api/profile/avatar`.',
+      'Không đổi thông tin đăng nhập ở đây: gửi `password` bị từ chối (dùng `POST /api/profile/change-password`); `email` khác email hiện tại bị từ chối (dùng `POST /api/profile/change-email`).',
       '`result` cùng schema GET `/api/profile`.',
       'Lỗi: 401; email/SĐT trùng; email sai định dạng; 500.',
     ].join('\n\n'),
@@ -90,6 +101,39 @@ export class ProfileController {
     @Body() dto: ChangePasswordBodyDto,
   ): Promise<PbmsResponseDto> {
     return this.users.changePassword(userId, dto);
+  }
+
+  @Post('change-email')
+  @ApiOperation({
+    summary: 'Đổi email — bước 1: gửi OTP tới email mới',
+    description: [
+      'JWT bắt buộc. Body: `newEmail`, `password` (mật khẩu hiện tại). Gửi mã 6 số tới **email mới**, hiệu lực 10 phút. Email chưa đổi cho tới khi xác nhận ở bước 2.',
+      'Lỗi: 400 thiếu dữ liệu / sai định dạng / sai mật khẩu / trùng email hiện tại / email đã được dùng; 401; 404; 500 không gửi được mail.',
+    ].join('\n\n'),
+  })
+  @ApiPbmsOkResponse('Đã gửi mã xác nhận tới email mới', { newEmail: 'email.moi@gmail.com' })
+  requestEmailChange(
+    @GetPbmsUserId() userId: string,
+    @Body() dto: RequestEmailChangeBodyDto,
+  ): Promise<PbmsResponseDto> {
+    return this.emailChange.request(userId, dto);
+  }
+
+  @Post('change-email/verify')
+  @ApiOperation({
+    summary: 'Đổi email — bước 2: xác nhận OTP',
+    description: [
+      'JWT bắt buộc. Body: `otp`. Đúng mã thì email đăng nhập đổi sang email mới (đánh dấu đã xác minh).',
+      'Sai mã quá 5 lần thì mã bị huỷ, phải gửi lại bước 1.',
+      'Lỗi: 400 thiếu mã / mã sai / hết hạn / email đã bị tài khoản khác dùng; 401.',
+    ].join('\n\n'),
+  })
+  @ApiPbmsOkResponse('Đổi email thành công', { email: 'email.moi@gmail.com' })
+  verifyEmailChange(
+    @GetPbmsUserId() userId: string,
+    @Body() dto: VerifyEmailChangeBodyDto,
+  ): Promise<PbmsResponseDto> {
+    return this.emailChange.verify(userId, dto);
   }
 
   @Post('avatar')

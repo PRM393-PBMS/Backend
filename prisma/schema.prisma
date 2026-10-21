@@ -508,6 +508,7 @@ model IncidentReport {
   handledByStaffId String?   @map("handled_by_staff_id") @db.Uuid
   resolvedAt       DateTime? @map("resolved_at") @db.Timestamptz(6)
   resolutionNotes  String?   @map("resolution_notes")
+  createdAt        DateTime  @default(now()) @map("created_at") @db.Timestamptz(6)
 
   session        ParkingSession? @relation(fields: [sessionId], references: [id], onDelete: SetNull)
   reportedByUser User            @relation("IncidentReporter", fields: [reportedByUserId], references: [id], onDelete: Restrict)
@@ -517,6 +518,7 @@ model IncidentReport {
   @@index([handledByStaffId], name: "idx_incident_reports_handler_id")
   @@index([sessionId], name: "idx_incident_reports_session_id")
   @@index([status], name: "idx_incident_reports_status")
+  @@index([reportedByUserId, createdAt(sort: Desc)], name: "idx_incident_reports_reporter_created")
   @@map("incident_reports")
 }
 

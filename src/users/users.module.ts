@@ -5,11 +5,12 @@ import { UsersController } from './users.controller';
 import { UsersService } from './users.service';
 import { AccountDeletionController } from './account-deletion.controller';
 import { HardDeleteAccountService } from './hard-delete-account.service';
+import { EmailChangeService } from './email-change.service';
 
 @Module({
   imports: [AuthModule],
   controllers: [UsersController, ProfileController, AccountDeletionController],
-  providers: [UsersService, HardDeleteAccountService],
+  providers: [UsersService, HardDeleteAccountService, EmailChangeService],
   exports: [UsersService],
 })
 export class UsersModule {}

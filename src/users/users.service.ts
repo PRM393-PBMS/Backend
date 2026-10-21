@@ -196,21 +196,17 @@ export class UsersService {
     const emailRaw = pbmsPick(dto, 'email', 'Email').trim();
     const fullName = pbmsPick(dto, 'fullName', 'FullName').trim();
     const phoneNumber = pbmsPick(dto, 'phoneNumber', 'PhoneNumber').trim() || null;
-    const password = pbmsPick(dto, 'password', 'Password');
+
+    // Mật khẩu và email là thông tin đăng nhập: không đổi qua PUT hồ sơ
+    // (không xác minh mật khẩu cũ / quyền sở hữu email mới).
+    if (pbmsPick(dto, 'password', 'Password')) {
+      return PbmsResponseDto.fail('Đổi mật khẩu qua POST /api/profile/change-password');
+    }
+    if (emailRaw && emailRaw.toLowerCase() !== user.email.toLowerCase()) {
+      return PbmsResponseDto.fail('Đổi email qua POST /api/profile/change-email (xác nhận bằng OTP)');
+    }
 
     const data: Prisma.UserUpdateInput = {};
-    if (emailRaw) {
-      if (!EMAIL_RE.test(emailRaw)) {
-        return PbmsResponseDto.fail('Email sai định dạng');
-      }
-      const dup = await this.prisma.user.findFirst({
-        where: { email: { equals: emailRaw, mode: 'insensitive' }, NOT: { id: userId } },
-      });
-      if (dup) {
-        return PbmsResponseDto.fail('Email đã được sử dụng');
-      }
-      data.email = emailRaw;
-    }
     if (fullName) {
       data.fullName = fullName;
     }
@@ -223,10 +219,6 @@ export class UsersService {
       }
       data.phoneNumber = phoneNumber;
     }
-    if (password) {
-      data.passwordHash = await this.hashing.hash(password);
-    }
-
     try {
       const updated = await this.prisma.user.update({
         where: { id: userId },

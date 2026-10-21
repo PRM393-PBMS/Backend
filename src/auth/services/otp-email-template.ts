@@ -1,4 +1,4 @@
-export type OtpEmailPurpose = 'registration' | 'password-reset';
+export type OtpEmailPurpose = 'registration' | 'password-reset' | 'email-change';
 
 interface OtpEmailTemplateInput {
   readonly brandName: string;
@@ -86,6 +86,13 @@ export function createOtpEmailTemplate({
 }
 
 function getCopy(purpose: OtpEmailPurpose): OtpEmailCopy {
+  if (purpose === 'email-change') {
+    return {
+      subjectPrefix: 'Xác nhận đổi email',
+      heading: 'Đổi email đăng nhập',
+      description: 'Dùng mã bên dưới để xác nhận đây là email mới của tài khoản.',
+    };
+  }
   return purpose === 'registration'
     ? {
         subjectPrefix: 'Xác nhận đăng ký tài khoản',
