@@ -244,6 +244,12 @@ export class SubscriptionRenewalsService {
         },
       });
     });
+    await this.notifications?.notify(subscription.userId, {
+      title: 'Vé tháng đã được gia hạn',
+      message: `Ban quản lý đã gia hạn vé tháng của bạn thêm ${months} tháng, hiệu lực đến ${newEnd.toLocaleDateString('vi-VN', { timeZone: 'Asia/Ho_Chi_Minh' })}.`,
+      type: 'subscription',
+      metadata: { subscriptionId, renewalId: renewal.id },
+    });
     return PbmsResponseDto.ok('Gia hạn trực tiếp thành công', this.map(renewal), 201);
   }
 

@@ -1,4 +1,4 @@
-import { Injectable, Logger } from '@nestjs/common';
+import { Injectable, Logger, Optional } from '@nestjs/common';
 import { Cron } from '@nestjs/schedule';
 import { Prisma } from '@prisma/client';
 import { PrismaService } from '../prisma/prisma.service';
@@ -14,8 +14,19 @@ import {
   toMoney,
 } from '../common/pbms-fields';
 import { createTicket } from '../common/qr.util';
+import { NotificationsService, formatTime } from '../notifications/notifications.service';
 
 const QUOTA = 0.2;
+
+const STATUS_LABELS: Record<string, string> = {
+  pending: 'chờ thanh toán cọc',
+  confirmed: 'đã xác nhận',
+  modified: 'đã đổi giờ',
+  checkedin: 'đã vào bãi',
+  completed: 'đã hoàn tất',
+  cancelled: 'đã bị huỷ',
+  noshow: 'đã hết hiệu lực do không đến',
+};
 
 @Injectable()
 export class ReservationsService {
@@ -24,6 +35,7 @@ export class ReservationsService {
   constructor(
     private readonly prisma: PrismaService,
     private readonly payos: PayosService,
+    @Optional() private readonly notifications?: NotificationsService,
   ) {}
 
   async create(userId: string, dto: object): Promise<PbmsResponseDto> {
@@ -315,6 +327,15 @@ export class ReservationsService {
       data: { status },
       include: { user: true, vehicle: { include: { vehicleType: true, user: true } } },
     });
+    if (!sameStatus(existing.status, status)) {
+      const label = STATUS_LABELS[status.toLowerCase()] ?? status;
+      await this.notifications?.notify(updated.userId, {
+        title: 'Cập nhật đặt chỗ',
+        message: `Đặt chỗ xe ${updated.vehicle.licensePlate} lúc ${formatTime(updated.expectedEntryTime)} ${label}.`,
+        type: 'reservation',
+        metadata: { reservationId: id, status },
+      });
+    }
     return PbmsResponseDto.ok('Cập nhật trạng thái đặt chỗ thành công', await this.map(updated));
   }
 
@@ -326,11 +347,18 @@ export class ReservationsService {
         expectedEntryTime: { lte: cutoff },
         status: { in: ['Pending', 'Confirmed', 'Modified'] },
       },
+      include: { vehicle: true },
     });
     for (const item of overdue) {
       await this.prisma.reservation.update({
         where: { id: item.id },
         data: { status: 'NoShow' },
+      });
+      await this.notifications?.notify(item.userId, {
+        title: 'Đặt chỗ đã hết hiệu lực',
+        message: `Xe ${item.vehicle.licensePlate} không vào bãi trong 30 phút sau giờ hẹn ${formatTime(item.expectedEntryTime)}, đặt chỗ đã bị huỷ.`,
+        type: 'reservation',
+        metadata: { reservationId: item.id, status: 'NoShow' },
       });
     }
     if (overdue.length > 0) {
@@ -392,6 +420,11 @@ export class ReservationsService {
       user: { id: string; fullName: string | null };
     };
   }) {
+    const deposit = await this.prisma.payment.findFirst({
+      where: { reservationId: item.id, paymentType: 'Deposit' },
+      orderBy: { paymentTime: 'desc' },
+      select: { amount: true },
+    });
     return {
       reservationId: item.id,
       userId: item.userId,
@@ -405,6 +438,7 @@ export class ReservationsService {
       expectedEntryTime: item.expectedEntryTime,
       status: item.status,
       createdAt: item.createdAt,
+      depositAmount: deposit ? toMoney(deposit.amount) : null,
       ticket: await createTicket(item.id),
     };
   }

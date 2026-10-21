@@ -1,4 +1,5 @@
-import { Injectable, Optional } from '@nestjs/common';
+import { Injectable, Logger, Optional } from '@nestjs/common';
+import { Cron } from '@nestjs/schedule';
 import { Prisma } from '@prisma/client';
 import { PrismaService } from '../prisma/prisma.service';
 import { PayosService } from '../integrations/payos-files.service';
@@ -24,6 +25,8 @@ type CustomerPaymentMethod = 'PayOS' | 'Wallet';
 
 @Injectable()
 export class MonthlySubscriptionsService {
+  private readonly logger = new Logger(MonthlySubscriptionsService.name);
+
   constructor(
     private readonly prisma: PrismaService,
     private readonly payos: PayosService,
@@ -313,6 +316,14 @@ export class MonthlySubscriptionsService {
         fixedSlotId: pbmsPickGuid(dto, 'fixedSlotId', 'FixedSlotId') || existing.fixedSlotId,
       },
     });
+    if (!sameStatus(existing.status, updated.status) || existing.endDate.getTime() !== updated.endDate.getTime()) {
+      await this.notifications?.notify(updated.userId, {
+        title: 'Vé tháng được cập nhật',
+        message: `Ban quản lý đã cập nhật vé tháng của bạn: trạng thái ${updated.status}, hiệu lực đến ${updated.endDate.toLocaleDateString('vi-VN', { timeZone: 'Asia/Ho_Chi_Minh' })}.`,
+        type: 'subscription',
+        metadata: { subscriptionId: id, status: updated.status },
+      });
+    }
     const item = await this.loadOne(updated.id);
     return PbmsResponseDto.ok('Cập nhật gói tháng thành công', item ? this.mapSubscription(item) : null);
   }
@@ -352,7 +363,38 @@ export class MonthlySubscriptionsService {
         data: { status: 'Available', assignedUserId: null },
       });
     }
+    if (this.canManage(role) && existing.userId !== userId) {
+      await this.notifications?.notify(existing.userId, {
+        title: 'Vé tháng đã bị huỷ',
+        message: 'Ban quản lý bãi đã huỷ vé tháng của bạn. Liên hệ quầy nếu cần hỗ trợ.',
+        type: 'subscription',
+        metadata: { subscriptionId: id, status: 'Cancelled' },
+      });
+    }
     return PbmsResponseDto.ok('Hủy gói tháng thành công');
+  }
+
+  /** Mỗi ngày 00:05 (giờ VN): vé Active đã qua endDate chuyển sang Expired. */
+  @Cron('5 0 * * *', { timeZone: 'Asia/Ho_Chi_Minh' })
+  async expireOverdueSubscriptions(): Promise<void> {
+    const overdue = await this.prisma.monthlySubscription.findMany({
+      where: { status: 'Active', endDate: { lt: new Date() } },
+      select: { id: true, userId: true },
+    });
+    if (overdue.length === 0) return;
+    await this.prisma.monthlySubscription.updateMany({
+      where: { id: { in: overdue.map((item) => item.id) }, status: 'Active' },
+      data: { status: 'Expired' },
+    });
+    for (const item of overdue) {
+      await this.notifications?.notify(item.userId, {
+        title: 'Vé tháng đã hết hạn',
+        message: 'Vé tháng của bạn đã hết hạn. Gia hạn để tiếp tục gửi xe theo tháng.',
+        type: 'subscription',
+        metadata: { subscriptionId: item.id, status: 'Expired' },
+      });
+    }
+    this.logger.log(`Đã chuyển ${overdue.length} vé tháng quá hạn sang Expired`);
   }
 
   /**
