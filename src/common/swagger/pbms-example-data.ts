@@ -351,6 +351,7 @@ export const incidentExample = {
   handledByStaffFullName: null,
   resolvedAt: null,
   resolutionNotes: null,
+  createdAt: '2026-09-17T13:30:00.000Z',
 };
 
 export const reportTypesExample = [

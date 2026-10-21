@@ -7,11 +7,12 @@ import {
   Param,
   Post,
   Put,
+  Query,
   Res,
   UseGuards,
   UseInterceptors,
 } from '@nestjs/common';
-import { ApiBearerAuth, ApiOperation, ApiTags } from '@nestjs/swagger';
+import { ApiBearerAuth, ApiOperation, ApiQuery, ApiTags } from '@nestjs/swagger';
 import type { Response } from 'express';
 import { GetPbmsUserId } from '../auth/common/decorators/get-pbms-user-id.decorator';
 import { Public } from '../auth/common/decorators/public.decorator';
@@ -63,6 +64,37 @@ export class PaymentsController {
   @ApiPbmsOkResponse('Lấy danh sách thanh toán thành công', [paymentExample])
   getAll(): Promise<PbmsResponseDto> {
     return this.payments.getAll();
+  }
+
+  @ApiBearerAuth('JWT-auth')
+  @UseInterceptors(PbmsStatusInterceptor)
+  @Get('my')
+  @ApiOperation({
+    summary: 'Lịch sử thanh toán của tôi (có phân trang)',
+    description: [
+      'JWT bắt buộc. Chỉ trả thanh toán của user trong token: tiền cọc đặt chỗ, phí gửi xe, vé tháng, gia hạn, nạp ví — mọi phương thức (PayOS, Wallet, Cash).',
+      'Query: `page` (từ 1, mặc định 1), `pageSize` (1–50, mặc định 20), `status` (`Pending`|`Success`|`Failed`, tuỳ chọn). Mới nhất trước.',
+      '`result`: `items` (schema như GET `/api/payments/{id}` + `paymentTypeLabel`, `licensePlate`, `packageName`), `page`, `pageSize`, `total`, `hasMore`.',
+      'Lỗi: 401; 400 `status` không hợp lệ.',
+    ].join('\n\n'),
+  })
+  @ApiQuery({ name: 'page', required: false, type: Number })
+  @ApiQuery({ name: 'pageSize', required: false, type: Number })
+  @ApiQuery({ name: 'status', required: false, enum: ['Pending', 'Success', 'Failed'] })
+  @ApiPbmsOkResponse('Lấy lịch sử thanh toán thành công', {
+    items: [{ ...paymentExample, paymentTypeLabel: 'Vé tháng', licensePlate: '59A12345', packageName: 'Gói tháng xe máy' }],
+    page: 1,
+    pageSize: 20,
+    total: 1,
+    hasMore: false,
+  })
+  getMine(
+    @GetPbmsUserId() userId: string,
+    @Query('page') page?: string,
+    @Query('pageSize') pageSize?: string,
+    @Query('status') status?: string,
+  ): Promise<PbmsResponseDto> {
+    return this.payments.getMine(userId, page, pageSize, status);
   }
 
   @ApiBearerAuth('JWT-auth')
