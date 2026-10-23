@@ -6,6 +6,8 @@ import {
 import { Prisma } from '@prisma/client';
 import { PrismaService } from '../prisma/prisma.service';
 import { CreateParkingDto, UpdateParkingDto } from './dto/parking.dto';
+import { isMotorbikeType } from '../common/license-plate';
+import { freeParkingAvailability } from '../common/free-parking-availability';
 
 const parkingSelect = {
   id: true,
@@ -47,21 +49,23 @@ export class ParkingsService {
 
   /**
    * Danh sách bãi cho app khách hàng: toạ độ (nếu có) và chỗ trống theo loại xe,
-   * đếm trực tiếp từ trạng thái ô đỗ.
+   * đếm ô đỗ cho ô tô và sức chứa tầng cho khu xe máy đỗ tự do.
    */
   async listForCustomers() {
-    const [parkings, counts, types] = await Promise.all([
+    const [parkings, counts, types, freeParking] = await Promise.all([
       this.prisma.parking.findMany({ select: parkingSelect, orderBy: [{ name: 'asc' }, { id: 'asc' }] }),
       this.prisma.parkingSlot.groupBy({
         by: ['parkingId', 'vehicleTypeId', 'status'],
         _count: { _all: true },
       }),
       this.prisma.vehicleType.findMany({ select: { id: true, typeName: true } }),
+      freeParkingAvailability(this.prisma),
     ]);
     const typeName = new Map(types.map((t) => [t.id, t.typeName]));
     return parkings.map((p) => {
       const byType = new Map<string, { vehicleTypeId: string; vehicleTypeName: string; totalSlots: number; availableSlots: number }>();
       for (const c of counts.filter((c) => c.parkingId === p.id)) {
+        if (isMotorbikeType(typeName.get(c.vehicleTypeId))) continue;
         const row = byType.get(c.vehicleTypeId) ?? {
           vehicleTypeId: c.vehicleTypeId,
           vehicleTypeName: typeName.get(c.vehicleTypeId) ?? '',
@@ -73,6 +77,17 @@ export class ParkingsService {
           row.availableSlots += c._count._all;
         }
         byType.set(c.vehicleTypeId, row);
+      }
+      for (const floor of freeParking.filter((f) => f.parkingId === p.id)) {
+        const row = byType.get(floor.vehicleTypeId) ?? {
+          vehicleTypeId: floor.vehicleTypeId,
+          vehicleTypeName: floor.vehicleTypeName,
+          totalSlots: 0,
+          availableSlots: 0,
+        };
+        row.totalSlots += floor.totalSlots;
+        row.availableSlots += floor.availableSlots;
+        byType.set(floor.vehicleTypeId, row);
       }
       const availability = [...byType.values()];
       return {
