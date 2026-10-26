@@ -72,6 +72,7 @@ model User {
   notifications         Notification[]
   wallet                Wallet?
   walletAdjustments     WalletAdjustmentLog[]
+  gateScans             GateScan[]
 
   @@index([role, isActive], name: "idx_users_role_is_active")
   @@index([roleId], name: "idx_users_role_id")
@@ -180,6 +181,7 @@ model Gate {
   floor         Floor            @relation(fields: [floorId], references: [id], onDelete: Restrict)
   entrySessions ParkingSession[] @relation("SessionEntryGate")
   exitSessions  ParkingSession[] @relation("SessionExitGate")
+  scans         GateScan[]
 
   @@index([floorId], name: "idx_gates_floor_id")
   @@map("gates")
@@ -591,4 +593,33 @@ model EntryPass {
   @@index([userId, createdAt(sort: Desc)], name: "idx_entry_passes_user_created")
   @@index([vehicleId, status], name: "idx_entry_passes_vehicle_status")
   @@map("entry_passes")
+}
+
+/// Một lượt quét biển số từ điện thoại của nhân viên ở cổng. Web staff nhận real-time
+/// (SSE) rồi đối chiếu và check-in; điện thoại chỉ đóng vai máy quét.
+model GateScan {
+  id            String    @id @default(uuid()) @db.Uuid
+  gateId        String    @map("gate_id") @db.Uuid
+  scannedById   String    @map("scanned_by_id") @db.Uuid
+  imageUrl      String    @map("image_url") @db.VarChar(2048)
+  /// Biển số nhận diện được (đã chuẩn hoá); null nếu không đọc được.
+  licensePlate  String?   @map("license_plate") @db.VarChar(15)
+  confidence    Float?
+  /// Thời điểm chụp trên điện thoại; created_at là lúc máy chủ nhận.
+  capturedAt    DateTime  @map("captured_at") @db.Timestamptz(6)
+  createdAt     DateTime  @default(now()) @map("created_at") @db.Timestamptz(6)
+  /// Gợi ý cách check-in: Reservation, Resident, Guest, Inside (xe đang trong bãi), Unknown.
+  suggestedType String    @map("suggested_type") @db.VarChar(15)
+  reservationId String?   @map("reservation_id") @db.Uuid
+  /// Ảnh chụp kết quả đối chiếu lúc quét (đặt chỗ, gói tháng, phiên đang mở).
+  match         Json?
+  /// New, Handled, Dismissed.
+  status        String    @default("New") @db.VarChar(15)
+  handledAt     DateTime? @map("handled_at") @db.Timestamptz(6)
+
+  gate      Gate @relation(fields: [gateId], references: [id], onDelete: Cascade)
+  scannedBy User @relation(fields: [scannedById], references: [id], onDelete: Restrict)
+
+  @@index([gateId, createdAt(sort: Desc)], name: "idx_gate_scans_gate_created")
+  @@map("gate_scans")
 }
