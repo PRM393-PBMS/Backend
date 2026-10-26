@@ -15,9 +15,17 @@ const parkingSelect = {
   location: true,
   latitude: true,
   longitude: true,
+  imageUrl: true,
+  openingHours: true,
   createdAt: true,
   updatedAt: true,
 } satisfies Prisma.ParkingSelect;
+
+/** Chuỗi rỗng coi như xoá giá trị. */
+const optionalText = (value: string | null | undefined) => {
+  const v = value?.trim();
+  return v ? v : null;
+};
 
 const slotSelect = {
   id: true,
@@ -41,6 +49,8 @@ export class ParkingsService {
           location: dto.location.trim(),
           latitude: dto.latitude ?? null,
           longitude: dto.longitude ?? null,
+          imageUrl: optionalText(dto.imageUrl),
+          openingHours: optionalText(dto.openingHours),
         },
         select: parkingSelect,
       }),
@@ -96,6 +106,8 @@ export class ParkingsService {
         location: p.location,
         latitude: p.latitude,
         longitude: p.longitude,
+        imageUrl: p.imageUrl,
+        openingHours: p.openingHours,
         totalSlots: availability.reduce((s, a) => s + a.totalSlots, 0),
         availableSlots: availability.reduce((s, a) => s + a.availableSlots, 0),
         availability,
@@ -135,6 +147,12 @@ export class ParkingsService {
     }
     if (dto.longitude !== undefined) {
       data.longitude = dto.longitude;
+    }
+    if (dto.imageUrl !== undefined) {
+      data.imageUrl = optionalText(dto.imageUrl);
+    }
+    if (dto.openingHours !== undefined) {
+      data.openingHours = optionalText(dto.openingHours);
     }
     if (Object.keys(data).length === 0) {
       return this.findOne(id);

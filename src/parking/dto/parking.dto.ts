@@ -36,6 +36,23 @@ export class CreateParkingDto {
   @Min(-180)
   @Max(180)
   longitude?: number | null;
+
+  @ApiPropertyOptional({
+    example: '/uploads/parkings/tao-dan.jpg',
+    maxLength: 2048,
+    nullable: true,
+    description: 'Ảnh bãi. Tải file qua POST /parkings/{id}/image hoặc gửi URL có sẵn.',
+  })
+  @IsOptional()
+  @IsString()
+  @MaxLength(2048)
+  imageUrl?: string | null;
+
+  @ApiPropertyOptional({ example: '24/7', maxLength: 50, nullable: true })
+  @IsOptional()
+  @IsString()
+  @MaxLength(50)
+  openingHours?: string | null;
 }
 
 export class UpdateParkingDto {
@@ -69,6 +86,23 @@ export class UpdateParkingDto {
   @Min(-180)
   @Max(180)
   longitude?: number | null;
+
+  @ApiPropertyOptional({
+    example: '/uploads/parkings/tao-dan.jpg',
+    maxLength: 2048,
+    nullable: true,
+    description: 'Ảnh bãi. Tải file qua POST /parkings/{id}/image hoặc gửi URL có sẵn.',
+  })
+  @IsOptional()
+  @IsString()
+  @MaxLength(2048)
+  imageUrl?: string | null;
+
+  @ApiPropertyOptional({ example: '24/7', maxLength: 50, nullable: true })
+  @IsOptional()
+  @IsString()
+  @MaxLength(50)
+  openingHours?: string | null;
 }
 
 export class ParkingResponseDto {
@@ -86,6 +120,12 @@ export class ParkingResponseDto {
 
   @ApiPropertyOptional({ example: 106.8099, nullable: true })
   longitude!: number | null;
+
+  @ApiPropertyOptional({ example: '/uploads/parkings/tao-dan.jpg', nullable: true })
+  imageUrl!: string | null;
+
+  @ApiPropertyOptional({ example: '24/7', nullable: true })
+  openingHours!: string | null;
 
   @ApiProperty({ format: 'date-time' })
   createdAt!: Date;
