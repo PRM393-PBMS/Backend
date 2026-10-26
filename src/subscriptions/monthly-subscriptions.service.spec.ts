@@ -39,7 +39,7 @@ describe('MonthlySubscriptionsService register payment methods', () => {
     $transaction: jest.Mock;
   };
   let payos: { createPaymentLink: jest.Mock };
-  let wallets: { debitInTransaction: jest.Mock; getBalanceForUser: jest.Mock };
+  let wallets: { debitForUser: jest.Mock; getBalanceForUser: jest.Mock };
 
   beforeEach(async () => {
     prisma = {
@@ -62,7 +62,7 @@ describe('MonthlySubscriptionsService register payment methods', () => {
     };
     payos = { createPaymentLink: jest.fn() };
     wallets = {
-      debitInTransaction: jest.fn(),
+      debitForUser: jest.fn(),
       getBalanceForUser: jest.fn().mockResolvedValue({
         walletId: '7c9e6679-7425-40de-944b-e07fc1f90ae7',
         walletBalance: 10000,
@@ -138,7 +138,7 @@ describe('MonthlySubscriptionsService register payment methods', () => {
       fixedSlotId: null,
     });
     prisma.payment.create.mockResolvedValue({ id: 'pay-1', amount: pkg.price });
-    wallets.debitInTransaction.mockRejectedValue(new InsufficientWalletFundsError());
+    wallets.debitForUser.mockRejectedValue(new InsufficientWalletFundsError());
     prisma.wallet = { findUnique: jest.fn() };
     prisma.wallet.findUnique.mockResolvedValue({
       id: '7c9e6679-7425-40de-944b-e07fc1f90ae7',
@@ -174,7 +174,7 @@ describe('MonthlySubscriptionsService register payment methods', () => {
       fixedSlotId: null,
     });
     prisma.payment.create.mockResolvedValue({ id: 'pay-1', amount: pkg.price });
-    wallets.debitInTransaction.mockResolvedValue({
+    wallets.debitForUser.mockResolvedValue({
       walletId: '7c9e6679-7425-40de-944b-e07fc1f90ae7',
       balanceAfter: new Prisma.Decimal(50000),
     });

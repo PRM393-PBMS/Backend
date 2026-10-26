@@ -289,12 +289,13 @@ export class ParkingOperationsService {
           });
           // Dùng ví của module wallets. Thiếu tiền thì ném lỗi và huỷ cả giao dịch,
           // không để lại thanh toán "thành công" ảo.
-          await this.wallets.debitInTransaction(
+          await this.wallets.debitForUser(
             tx,
             userId,
             new Prisma.Decimal(fee.amount),
-            payment.id,
             'ParkingFee',
+            payment.id,
+            'Thanh toán phí gửi xe bằng ví',
           );
           return payment;
         })

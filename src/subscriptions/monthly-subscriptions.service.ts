@@ -550,7 +550,14 @@ export class MonthlySubscriptionsService {
             transactionReference: `WALLET-${subscription.id.replace(/-/g, '').slice(0, 12)}`,
           },
         });
-        const debit = await this.wallets.debitInTransaction(tx, userId, pkg.price, payment.id);
+        const debit = await this.wallets.debitForUser(
+          tx,
+          userId,
+          pkg.price,
+          'SubscriptionFee',
+          payment.id,
+          `Mua gói tháng — ${vehicle.licensePlate}`,
+        );
         await this.activateSubscriptionInTx(tx, {
           ...subscription,
           package: pkg,
@@ -628,11 +635,13 @@ export class MonthlySubscriptionsService {
                 transactionReference: `WALLET-${subscription.id.replace(/-/g, '').slice(0, 12)}`,
               },
             });
-        const debit = await this.wallets.debitInTransaction(
+        const debit = await this.wallets.debitForUser(
           tx,
           userId,
           subscription.price,
+          'SubscriptionFee',
           payment.id,
+          'Thanh toán gói tháng bằng ví',
         );
         await this.activateSubscriptionInTx(tx, {
           id: subscription.id,

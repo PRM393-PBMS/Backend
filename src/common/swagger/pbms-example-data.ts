@@ -189,7 +189,10 @@ export const subscriptionWalletPaymentExample = {
 export const walletTransactionExample = {
   walletTransactionId: '3c5ea4c0-4067-11e9-8bad-9b1deb4d3b7d',
   direction: 'Credit',
-  type: 'TopUp',
+  type: 'TOP_UP',
+  bucket: 'CASH',
+  referenceType: 'WalletTopUp',
+  referenceId: ids.paymentId,
   amount: 150000,
   absoluteAmount: 150000,
   balanceAfter: 150000,
@@ -207,7 +210,10 @@ export const walletTransactionExample = {
 export const walletSpendExample = {
   walletTransactionId: '4c5ea4c0-4067-11e9-8bad-9b1deb4d3b7d',
   direction: 'Debit',
-  type: 'SubscriptionFee',
+  type: 'DEBIT',
+  bucket: 'CASH',
+  referenceType: 'SubscriptionFee',
+  referenceId: ids.paymentId,
   amount: -300000,
   absoluteAmount: 300000,
   balanceAfter: 50000,
@@ -226,6 +232,9 @@ export const walletExample = {
   walletId: ids.walletId,
   userId: ids.userId,
   walletBalance: 150000,
+  cashBalance: 150000,
+  bonusBalance: 0,
+  bonusExpiresAt: null,
   transactions: [walletTransactionExample, walletSpendExample],
 };
 
