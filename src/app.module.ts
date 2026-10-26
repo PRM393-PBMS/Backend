@@ -8,6 +8,7 @@ import { PrismaModule } from './prisma/prisma.module';
 import { AuthModule } from './auth/auth.module';
 import { AtGuard } from './auth/common/guards/at.guard';
 import { CatalogModule } from './catalog/catalog.module';
+import { GateScansModule } from './gate-scans/gate-scans.module';
 import { IncidentsModule } from './incidents/incidents.module';
 import { IntegrationsModule } from './integrations/integrations.module';
 import { NotificationsModule } from './notifications/notifications.module';
@@ -40,6 +41,7 @@ import { VehiclesModule } from './vehicles/vehicles.module';
     ParkingModule,
     IncidentsModule,
     ReportsModule,
+    GateScansModule,
   ],
   controllers: [AppController],
   providers: [
