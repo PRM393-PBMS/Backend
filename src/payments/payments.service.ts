@@ -29,7 +29,7 @@ const PAYMENT_TYPE_LABELS: Record<string, string> = {
 import { NotificationsService, formatTime, formatVnd } from '../notifications/notifications.service';
 
 const METHODS = ['PayOS', 'Cash', 'Wallet'];
-const STATUSES = ['Pending', 'Success', 'Failed'];
+const STATUSES = ['Pending', 'Success', 'Failed', 'Refunded'];
 const TYPES = [
   'Deposit',
   'CheckoutFee',
@@ -438,10 +438,15 @@ export class PaymentsService {
           `Thanh toán ${payment.id} thành công nhưng không tìm thấy đặt chỗ ${payment.reservationId}.`,
         );
       }
-      await this.prisma.reservation.update({
-        where: { id: reservation.id },
-        data: { status: 'Confirmed' },
-      });
+      if (sameStatus(reservation.status, 'Pending')) {
+        await this.prisma.reservation.update({
+          where: { id: reservation.id },
+          data: { status: 'Confirmed' },
+        });
+      } else if (sameStatus(reservation.status, 'Cancelled') || sameStatus(reservation.status, 'NoShow')) {
+        // Cọc về sau khi đơn đã huỷ: không mở lại đơn, hoàn tiền vào ví.
+        await this.refundLateDeposit(payment, reservation.vehicleId);
+      }
       return;
     }
     if (sameStatus(type, 'SubscriptionFee')) {
@@ -479,6 +484,29 @@ export class PaymentsService {
       return;
     }
     throw new Error(`Không có luồng xử lý cho loại thanh toán '${payment.paymentType}'.`);
+  }
+
+  /** Tiền cọc về sau khi đặt chỗ đã huỷ/hết hiệu lực: cộng vào ví (ngăn tiền thật) và báo khách. */
+  private async refundLateDeposit(
+    payment: { id: string; userId: string | null; amount: Prisma.Decimal },
+    vehicleId: string,
+  ): Promise<void> {
+    if (!payment.userId) return;
+    const vehicle = await this.prisma.vehicle.findUnique({ where: { id: vehicleId }, select: { licensePlate: true } });
+    const plate = vehicle?.licensePlate ?? '';
+    const credited = await this.prisma.$transaction(async (tx) => {
+      const done = await this.wallets.creditRefund(tx, payment, 'Deposit', `Hoàn cọc đặt chỗ xe ${plate}`);
+      await tx.payment.update({ where: { id: payment.id }, data: { paymentStatus: 'Refunded' } });
+      return done;
+    });
+    if (credited) {
+      await this.notifications?.notify(payment.userId, {
+        title: 'Đã hoàn tiền cọc',
+        message: `Đặt chỗ xe ${plate} đã huỷ trước khi tiền cọc về. Đã hoàn ${formatVnd(toMoney(payment.amount))} vào ví PBMS.`,
+        type: 'wallet',
+        metadata: { paymentId: payment.id },
+      });
+    }
   }
 
   private async activateSubscription(subscriptionId: string): Promise<void> {

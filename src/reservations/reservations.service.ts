@@ -14,7 +14,8 @@ import {
   toMoney,
 } from '../common/pbms-fields';
 import { createTicket } from '../common/qr.util';
-import { NotificationsService, formatTime } from '../notifications/notifications.service';
+import { NotificationsService, formatTime, formatVnd } from '../notifications/notifications.service';
+import { WalletsService } from '../wallets/wallets.service';
 
 const QUOTA = 0.2;
 
@@ -36,6 +37,7 @@ export class ReservationsService {
     private readonly prisma: PrismaService,
     private readonly payos: PayosService,
     @Optional() private readonly notifications?: NotificationsService,
+    @Optional() private readonly wallets?: WalletsService,
   ) {}
 
   async create(userId: string, dto: object): Promise<PbmsResponseDto> {
@@ -68,7 +70,7 @@ export class ReservationsService {
     if (!sameStatus(vehicle.vehicleType.typeName, 'Ô tô')) {
       return PbmsResponseDto.fail('Đặt chỗ trước hiện chỉ áp dụng cho xe ô tô');
     }
-    const quotaError = await this.assertQuota(vehicle.vehicleTypeId, null);
+    const quotaError = await this.assertQuota(vehicle.vehicleTypeId, vehicle.vehicleType.typeName, null);
     if (quotaError) {
       return quotaError;
     }
@@ -129,7 +131,7 @@ export class ReservationsService {
     }
     const reservation = await this.prisma.reservation.findUnique({
       where: { id: reservationId },
-      include: { vehicle: true },
+      include: { vehicle: { include: { vehicleType: true } } },
     });
     if (!reservation) {
       return PbmsResponseDto.fail('Không tìm thấy thông tin đặt chỗ', 404);
@@ -159,7 +161,11 @@ export class ReservationsService {
     if (now >= new Date(reservation.expectedEntryTime.getTime() - 15 * 60 * 1000)) {
       return PbmsResponseDto.fail('Phải thực hiện đổi lịch trước giờ hẹn cũ ít nhất 15 phút.');
     }
-    const quotaError = await this.assertQuota(reservation.vehicle.vehicleTypeId, reservation.id);
+    const quotaError = await this.assertQuota(
+      reservation.vehicle.vehicleTypeId,
+      reservation.vehicle.vehicleType.typeName,
+      reservation.id,
+    );
     if (quotaError) {
       return quotaError;
     }
@@ -253,8 +259,17 @@ export class ReservationsService {
     return PbmsResponseDto.ok('Lấy thông tin đặt chỗ thành công', await this.map(item));
   }
 
+  /**
+   * Khách huỷ đặt chỗ.
+   * - Chưa trả cọc: đóng link PayOS đang chờ để không trả nhầm sau khi huỷ.
+   * - Đã trả cọc và huỷ trước giờ hẹn: hoàn 100% tiền cọc vào ví (ngăn tiền thật).
+   * - Huỷ sau giờ hẹn: không hoàn cọc.
+   */
   async cancel(id: string, userId: string): Promise<PbmsResponseDto> {
-    const item = await this.prisma.reservation.findUnique({ where: { id } });
+    const item = await this.prisma.reservation.findUnique({
+      where: { id },
+      include: { vehicle: true },
+    });
     if (!item) {
       return PbmsResponseDto.fail('Không tìm thấy thông tin đặt chỗ', 404);
     }
@@ -264,8 +279,73 @@ export class ReservationsService {
     if (sameStatus(item.status, 'CheckedIn') || sameStatus(item.status, 'Completed')) {
       return PbmsResponseDto.fail('Không thể hủy đặt chỗ đã check-in');
     }
+    if (sameStatus(item.status, 'Cancelled') || sameStatus(item.status, 'NoShow')) {
+      return PbmsResponseDto.fail('Đặt chỗ này đã kết thúc');
+    }
     await this.prisma.reservation.update({ where: { id }, data: { status: 'Cancelled' } });
-    return PbmsResponseDto.ok('Hủy đặt chỗ thành công');
+    await this.closePendingDeposits(id);
+
+    const paid = await this.prisma.payment.findFirst({
+      where: { reservationId: id, paymentType: 'Deposit', paymentStatus: 'Success' },
+      orderBy: { paymentTime: 'desc' },
+    });
+    const beforeEntry = new Date() < item.expectedEntryTime;
+    const refunded = paid && beforeEntry ? await this.refundDeposit(paid, item.vehicle.licensePlate) : null;
+    return PbmsResponseDto.ok(
+      refunded
+        ? `Đã hủy đặt chỗ và hoàn ${formatVnd(refunded)} tiền cọc vào ví PBMS`
+        : paid
+          ? 'Đã hủy đặt chỗ. Hủy sau giờ hẹn nên tiền cọc không được hoàn'
+          : 'Hủy đặt chỗ thành công',
+      { reservationId: id, status: 'Cancelled', refundedAmount: refunded ?? 0 },
+    );
+  }
+
+  /**
+   * Hoàn tiền cọc đã trả vào ví và đánh dấu thanh toán là Refunded.
+   * Dùng khi khách huỷ trước giờ hẹn, hoặc khi tiền cọc về sau lúc đặt chỗ đã huỷ.
+   * Trả về số tiền đã hoàn (0 nếu đã hoàn trước đó), null nếu không hoàn được.
+   */
+  async refundDeposit(
+    payment: { id: string; userId: string | null; amount: Prisma.Decimal },
+    licensePlate: string,
+  ): Promise<number | null> {
+    if (!this.wallets || !payment.userId) {
+      return null;
+    }
+    const wallets = this.wallets;
+    const credited = await this.prisma.$transaction(async (tx) => {
+      const done = await wallets.creditRefund(tx, payment, 'Deposit', `Hoàn cọc đặt chỗ xe ${licensePlate}`);
+      await tx.payment.update({ where: { id: payment.id }, data: { paymentStatus: 'Refunded' } });
+      return done;
+    });
+    const amount = toMoney(payment.amount);
+    if (credited) {
+      await this.notifications?.notify(payment.userId, {
+        title: 'Đã hoàn tiền cọc',
+        message: `Đã hoàn ${formatVnd(amount)} tiền cọc đặt chỗ xe ${licensePlate} vào ví PBMS.`,
+        type: 'wallet',
+        metadata: { paymentId: payment.id },
+      });
+    }
+    return amount;
+  }
+
+  /** Đóng link PayOS cọc đang chờ của một đặt chỗ và đánh dấu Failed. */
+  private async closePendingDeposits(reservationId: string): Promise<void> {
+    const pending = await this.prisma.payment.findMany({
+      where: { reservationId, paymentType: 'Deposit', paymentStatus: 'Pending' },
+    });
+    for (const p of pending) {
+      const orderCode = p.transactionReference?.trim();
+      if (orderCode) {
+        await this.payos.cancelPaymentLink(orderCode).catch(() => undefined);
+      }
+      await this.prisma.payment.updateMany({
+        where: { id: p.id, paymentStatus: 'Pending' },
+        data: { paymentStatus: 'Failed' },
+      });
+    }
   }
 
   async checkPaymentStatus(orderCode: string): Promise<PbmsResponseDto> {
@@ -371,17 +451,43 @@ export class ReservationsService {
     return value === 'manager' || value === 'staff';
   }
 
-  private async assertQuota(vehicleTypeId: string, excludeId: string | null) {
-    const totalCarCapacity = await this.prisma.parkingSlot.count({
-      where: { vehicleTypeId, floor: { isResident: false } },
+  /**
+   * Sức chứa vãng lai của một loại xe: cộng các tầng không phải cư dân.
+   * Tầng có ô riêng thì đếm ô đúng loại; tầng dành riêng cho loại xe nhưng chưa sinh ô
+   * thì lấy sức chứa khai báo của tầng. Gộp các loại xe trùng tên (vd. hai loại "Ô tô").
+   */
+  async walkInCapacity(vehicleTypeId: string, typeName: string): Promise<{ capacity: number; typeIds: string[] }> {
+    const types = await this.prisma.vehicleType.findMany({ select: { id: true, typeName: true } });
+    const typeIds = [
+      ...new Set([vehicleTypeId, ...types.filter((t) => sameStatus(t.typeName, typeName)).map((t) => t.id)]),
+    ];
+    const floors = await this.prisma.floor.findMany({
+      where: { isResident: false },
+      select: {
+        totalCapacity: true,
+        dedicatedVehicleTypeId: true,
+        _count: { select: { parkingSlots: { where: { vehicleTypeId: { in: typeIds } } } } },
+      },
     });
-    if (totalCarCapacity === 0) {
-      return PbmsResponseDto.fail('Hệ thống hiện tại không có slot Ô tô vãng lai hợp lệ');
+    const capacity = floors.reduce((sum, f) => {
+      if (f._count.parkingSlots > 0) return sum + f._count.parkingSlots;
+      return f.dedicatedVehicleTypeId && typeIds.includes(f.dedicatedVehicleTypeId)
+        ? sum + Math.max(0, f.totalCapacity)
+        : sum;
+    }, 0);
+    return { capacity, typeIds };
+  }
+
+  private async assertQuota(vehicleTypeId: string, typeName: string, excludeId: string | null) {
+    const { capacity, typeIds } = await this.walkInCapacity(vehicleTypeId, typeName);
+    if (capacity === 0) {
+      this.logger.warn(`Không có chỗ vãng lai cho loại xe ${typeName} (${typeIds.join(', ')})`);
+      return PbmsResponseDto.fail('Bãi chưa mở chỗ ô tô cho khách vãng lai nên chưa nhận đặt trước');
     }
-    const maxSlots = Math.floor(totalCarCapacity * QUOTA);
+    const maxSlots = Math.max(1, Math.floor(capacity * QUOTA));
     const current = await this.prisma.reservation.count({
       where: {
-        vehicle: { is: { vehicleTypeId } },
+        vehicle: { is: { vehicleTypeId: { in: typeIds } } },
         status: { in: ['Confirmed', 'Modified'] },
         ...(excludeId ? { NOT: { id: excludeId } } : {}),
       },

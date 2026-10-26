@@ -416,6 +416,46 @@ export class WalletsService {
     });
   }
 
+  /**
+   * Hoàn một khoản đã trả qua cổng ngoài (vd. tiền cọc PayOS) vào ngăn CASH của ví.
+   * Gọi lại cho cùng thanh toán không cộng thêm. Trả về true nếu lần này đã cộng tiền.
+   */
+  async creditRefund(
+    tx: Prisma.TransactionClient,
+    payment: { id: string; userId: string | null; amount: Prisma.Decimal },
+    referenceType: string,
+    description: string,
+  ): Promise<boolean> {
+    if (!payment.userId) {
+      throw new Error(`Không thể hoàn tiền cho thanh toán ${payment.id}: thiếu UserId.`);
+    }
+    const existing = await tx.walletTransaction.findUnique({
+      where: { paymentId_bucket: { paymentId: payment.id, bucket: WalletBucket.CASH } },
+    });
+    if (existing) {
+      return false;
+    }
+    const wallet = await this.ensureWallet(tx, payment.userId);
+    const updated = await tx.wallet.update({
+      where: { id: wallet.id },
+      data: { balance: { increment: payment.amount } },
+    });
+    await tx.walletTransaction.create({
+      data: {
+        walletId: wallet.id,
+        paymentId: payment.id,
+        type: WalletTxType.Refund,
+        bucket: WalletBucket.CASH,
+        amount: payment.amount,
+        balanceAfter: updated.balance,
+        referenceType,
+        referenceId: payment.id,
+        description,
+      },
+    });
+    return true;
+  }
+
   async getBalanceForUser(userId: string): Promise<{
     walletId: string | null;
     walletBalance: number;
