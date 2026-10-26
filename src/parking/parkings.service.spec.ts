@@ -86,6 +86,8 @@ describe('ParkingsService', () => {
         location: true,
         latitude: true,
         longitude: true,
+        imageUrl: true,
+        openingHours: true,
         createdAt: true,
         updatedAt: true,
       },

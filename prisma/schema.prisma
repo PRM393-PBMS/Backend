@@ -177,6 +177,10 @@ model Parking {
   /// Toạ độ để app vẽ bãi trên bản đồ (quản lý nhập; null thì chỉ hiện trong danh sách).
   latitude  Float?
   longitude Float?
+  /// Ảnh bãi cho thẻ trên app khách (đường dẫn /uploads/parkings/... hoặc URL đầy đủ).
+  imageUrl     String?  @map("image_url") @db.VarChar(2048)
+  /// Giờ mở cửa hiển thị cho khách, ví dụ "24/7" hoặc "06:00 - 22:00".
+  openingHours String?  @map("opening_hours") @db.VarChar(50)
   createdAt DateTime @default(now()) @map("created_at") @db.Timestamptz(6)
   updatedAt DateTime @updatedAt @map("updated_at") @db.Timestamptz(6)
 
