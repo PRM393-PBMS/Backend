@@ -40,7 +40,14 @@ export function resetLegacyColumnsCache() {
 
 export async function createReservationRow(
   tx: Prisma.TransactionClient,
-  data: { userId: string; vehicleId: string; vehicleTypeId: string; expectedEntryTime: Date; status: string },
+  data: {
+    userId: string;
+    vehicleId: string;
+    vehicleTypeId: string;
+    parkingId: string | null;
+    expectedEntryTime: Date;
+    status: string;
+  },
 ) {
   const legacy = await legacyColumnsOf(tx, 'reservations');
   if (!legacy.has('vehicle_type_id')) {
@@ -48,6 +55,7 @@ export async function createReservationRow(
       data: {
         userId: data.userId,
         vehicleId: data.vehicleId,
+        parkingId: data.parkingId,
         expectedEntryTime: data.expectedEntryTime,
         status: data.status,
       },
@@ -55,9 +63,9 @@ export async function createReservationRow(
   }
   const id = randomUUID();
   await tx.$executeRaw`
-    INSERT INTO "reservations" ("id", "user_id", "vehicle_id", "vehicle_type_id", "expected_entry_time", "status")
+    INSERT INTO "reservations" ("id", "user_id", "vehicle_id", "vehicle_type_id", "parking_id", "expected_entry_time", "status")
     VALUES (${id}::uuid, ${data.userId}::uuid, ${data.vehicleId}::uuid, ${data.vehicleTypeId}::uuid,
-            ${data.expectedEntryTime}::timestamptz, ${data.status})`;
+            ${data.parkingId}::uuid, ${data.expectedEntryTime}::timestamptz, ${data.status})`;
   return tx.reservation.findUniqueOrThrow({ where: { id } });
 }
 

@@ -61,10 +61,14 @@ describe('Thông báo cho khách từ thao tác back-office và cron', () => {
   it('cron NoShow: báo từng khách có đặt chỗ quá hạn', async () => {
     const prisma = {
       reservation: {
-        findMany: jest.fn().mockResolvedValue([
-          { id: 'r1', userId, expectedEntryTime: new Date(Date.now() - 40 * 60e3), vehicle: { licensePlate: '51A12345' } },
-        ]),
-        update: jest.fn().mockResolvedValue({}),
+        findMany: jest
+          .fn()
+          // Lần 1: đơn chờ cọc hết giờ giữ chỗ (không có). Lần 2: đơn đã cọc quá giờ hẹn.
+          .mockResolvedValueOnce([])
+          .mockResolvedValueOnce([
+            { id: 'r1', userId, expectedEntryTime: new Date(Date.now() - 40 * 60e3), vehicle: { licensePlate: '51A12345' } },
+          ]),
+        updateMany: jest.fn().mockResolvedValue({ count: 1 }),
       },
     };
     const service = new ReservationsService(
@@ -75,7 +79,10 @@ describe('Thông báo cho khách từ thao tác back-office và cron', () => {
 
     await service.processOverdueReservations();
 
-    expect(prisma.reservation.update).toHaveBeenCalledWith({ where: { id: 'r1' }, data: { status: 'NoShow' } });
+    expect(prisma.reservation.updateMany).toHaveBeenCalledWith({
+      where: { id: 'r1', status: { in: ['Confirmed', 'Modified'] } },
+      data: { status: 'NoShow' },
+    });
     expect(notifications.notify).toHaveBeenCalledWith(
       userId,
       expect.objectContaining({ type: 'reservation', metadata: { reservationId: 'r1', status: 'NoShow' } }),

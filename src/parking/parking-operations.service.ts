@@ -33,6 +33,7 @@ import { effectiveEntryPassStatus, parseEntryPassPayload } from '../common/entry
 import { PaymentsService } from '../payments/payments.service';
 import { InsufficientWalletFundsError, WalletsService } from '../wallets/wallets.service';
 import { NotificationsService, formatTime, formatVnd } from '../notifications/notifications.service';
+import { ENTRY_WINDOW_MS, HELD_STATUSES, inEntryWindow } from '../reservations/reservation-rules';
 
 /** Phiên đã được thanh toán trước bởi một yêu cầu khác. */
 class AlreadyPrepaidError extends Error {}
@@ -727,6 +728,11 @@ export class ParkingOperationsService {
     if (!isValidLicensePlate(plate)) {
       return PbmsResponseDto.fail('Biển số phải gồm 4-15 chữ cái và chữ số');
     }
+    // Xe đã đặt chỗ (đã cọc) đến đúng khung giờ: đọc biển số là đủ, tự dùng đặt chỗ để trừ cọc.
+    const booked = await this.reservationAtGate(plate, gate);
+    if (booked) {
+      return this.checkInReservation({ ...dto, reservationId: booked.id, licensePlate: plate }, gate);
+    }
     // Xe đã đăng ký gửi một lần trên app: camera đọc biển số là đủ, không cần quét mã QR.
     const pass = await this.activeEntryPassOf(plate);
     const chosenTypeId = pbmsPickGuid(dto, 'vehicleTypeId', 'VehicleTypeId');
@@ -789,6 +795,25 @@ export class ParkingOperationsService {
       await this.loadSession(session.id),
       201,
     );
+  }
+
+  /** Đặt chỗ đã cọc của biển số, đang trong khung vào bãi, đặt cho bãi của cổng này (hoặc đơn cũ không gắn bãi). */
+  private async reservationAtGate(plate: string, gate: { floorId: string }) {
+    const now = new Date();
+    const parkingId = await this.parkingOfGate(gate);
+    return this.prisma.reservation.findFirst({
+      where: {
+        status: { in: [...HELD_STATUSES] },
+        vehicle: { is: { licensePlate: plate } },
+        expectedEntryTime: {
+          gte: new Date(now.getTime() - ENTRY_WINDOW_MS),
+          lte: new Date(now.getTime() + ENTRY_WINDOW_MS),
+        },
+        ...(parkingId ? { OR: [{ parkingId }, { parkingId: null }] } : {}),
+      },
+      orderBy: { expectedEntryTime: 'asc' },
+      select: { id: true },
+    });
   }
 
   /** Mã gửi xe một lần còn hiệu lực của biển số (mỗi xe giữ tối đa một mã). */
@@ -982,22 +1007,27 @@ export class ParkingOperationsService {
       );
     }
     const now = new Date();
-    const min = new Date(
-      reservation.expectedEntryTime.getTime() - 30 * 60 * 1000,
-    );
-    const max = new Date(
-      reservation.expectedEntryTime.getTime() + 30 * 60 * 1000,
-    );
-    if (now < min || now > max) {
+    if (!inEntryWindow(reservation.expectedEntryTime, now)) {
       return PbmsResponseDto.fail(
-        'Ngoài khung giờ cho phép check-in đặt trước (Chỉ áp dụng trong khoảng -30p đến +30p so với giờ hẹn)',
+        'Ngoài khung giờ vào bãi của đặt chỗ (từ 30 phút trước đến 30 phút sau giờ hẹn)',
+      );
+    }
+    const gateParkingId = await this.parkingOfGate(gate);
+    if (reservation.parkingId && gateParkingId && reservation.parkingId !== gateParkingId) {
+      const booked = await this.prisma.parking.findUnique({
+        where: { id: reservation.parkingId },
+        select: { name: true },
+      });
+      return PbmsResponseDto.fail(
+        `Đặt chỗ này ở ${booked?.name ?? 'bãi khác'}, không vào được bãi của cổng này`,
+        409,
       );
     }
     const sub = await this.activeSubscription(
       plate,
       reservation.vehicle.vehicleTypeId,
       now,
-      await this.parkingOfGate(gate),
+      gateParkingId,
     );
     if (sub) {
       return PbmsResponseDto.fail(

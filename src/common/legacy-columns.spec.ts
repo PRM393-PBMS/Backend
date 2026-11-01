@@ -29,6 +29,7 @@ const reservationData = {
   userId,
   vehicleId: vehicle.id,
   vehicleTypeId: vehicle.vehicleTypeId,
+  parkingId: 'a3b1c2d4-0000-4000-8000-000000000001',
   expectedEntryTime: new Date('2026-11-03T02:00:00Z'),
   status: 'Pending',
 };
@@ -63,6 +64,7 @@ describe('ghi bản ghi khi database còn / không còn cột cũ', () => {
     const { text, values } = sqlOf(db.$executeRaw.mock.calls[0]);
     expect(text).toContain('"vehicle_type_id"');
     expect(values).toContain(vehicle.vehicleTypeId);
+    expect(values).toContain(reservationData.parkingId);
     expect(created.id).toBe(values[0]);
   });
 

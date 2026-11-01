@@ -27,6 +27,7 @@ const PAYMENT_TYPE_LABELS: Record<string, string> = {
   PrepaidCheckout: 'Thanh toán trước khi ra bãi',
 };
 import { NotificationsService, formatTime, formatVnd } from '../notifications/notifications.service';
+import { entryWindow } from '../reservations/reservation-rules';
 
 const METHODS = ['PayOS', 'Cash', 'Wallet'];
 const STATUSES = ['Pending', 'Success', 'Failed', 'Refunded'];
@@ -438,13 +439,30 @@ export class PaymentsService {
           `Thanh toán ${payment.id} thành công nhưng không tìm thấy đặt chỗ ${payment.reservationId}.`,
         );
       }
-      if (sameStatus(reservation.status, 'Pending')) {
-        await this.prisma.reservation.update({
-          where: { id: reservation.id },
+      // Cọc về khi đơn còn chờ và chưa quá khung vào bãi: giữ chỗ. Quá giờ thì xác nhận cũng vô ích
+      // (cron sẽ chuyển NoShow ngay), nên hoàn cọc vào ví.
+      const stillUsable =
+        sameStatus(reservation.status, 'Pending') &&
+        new Date() <= entryWindow(reservation.expectedEntryTime).until;
+      if (stillUsable) {
+        const confirmed = await this.prisma.reservation.updateMany({
+          where: { id: reservation.id, status: 'Pending' },
           data: { status: 'Confirmed' },
         });
-      } else if (sameStatus(reservation.status, 'Cancelled') || sameStatus(reservation.status, 'NoShow')) {
-        // Cọc về sau khi đơn đã huỷ: không mở lại đơn, hoàn tiền vào ví.
+        if (confirmed.count === 1) return;
+      }
+      const latest = await this.prisma.reservation.findUnique({
+        where: { id: reservation.id },
+        select: { status: true },
+      });
+      if (latest && ['Pending', 'Cancelled', 'NoShow'].some((s) => sameStatus(latest.status, s))) {
+        if (sameStatus(latest.status, 'Pending')) {
+          await this.prisma.reservation.updateMany({
+            where: { id: reservation.id, status: 'Pending' },
+            data: { status: 'Cancelled' },
+          });
+        }
+        // Cọc về sau khi đơn đã huỷ / quá giờ: không mở lại đơn, hoàn tiền vào ví.
         await this.refundLateDeposit(payment, reservation.vehicleId);
       }
       return;
