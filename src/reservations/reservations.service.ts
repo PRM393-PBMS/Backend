@@ -14,6 +14,7 @@ import {
   toMoney,
 } from '../common/pbms-fields';
 import { createTicket } from '../common/qr.util';
+import { createReservationRow } from '../common/legacy-columns';
 import { NotificationsService, formatTime, formatVnd } from '../notifications/notifications.service';
 import { WalletsService } from '../wallets/wallets.service';
 
@@ -100,13 +101,12 @@ export class ReservationsService {
     }
     try {
       const created = await this.prisma.$transaction(async (tx) => {
-        const reservation = await tx.reservation.create({
-          data: {
-            userId,
-            vehicleId: vehicle.id,
-            expectedEntryTime: expected,
-            status: 'Pending',
-          },
+        const reservation = await createReservationRow(tx, {
+          userId,
+          vehicleId: vehicle.id,
+          vehicleTypeId: vehicle.vehicleTypeId,
+          expectedEntryTime: expected,
+          status: 'Pending',
         });
         const payment = await tx.payment.create({
           data: {
