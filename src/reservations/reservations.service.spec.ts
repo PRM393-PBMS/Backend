@@ -142,3 +142,55 @@ describe('ReservationsService: hạn mức vãng lai và huỷ có hoàn cọc',
     });
   });
 });
+
+describe('ReservationsService.create: một xe một chỗ đã cọc', () => {
+  const userId = '9b1deb4d-3b7d-4bad-9bdd-2b0d7b3dcb6d';
+  const vehicleId = '6e2c1c43-5d8a-4b7e-9a39-0f6c4f2d8b22';
+  const inOneHour = () => new Date(Date.now() + 3600_000).toISOString();
+
+  function setup(opts: { inside?: boolean; booked?: Date | null }) {
+    const prisma = {
+      user: { findUnique: jest.fn().mockResolvedValue({ id: userId }) },
+      vehicle: {
+        findFirst: jest.fn().mockResolvedValue({
+          id: vehicleId,
+          licensePlate: '51H12345',
+          vehicleTypeId: 'car',
+          vehicleType: { typeName: 'Ô tô' },
+        }),
+      },
+      parkingSession: { findFirst: jest.fn().mockResolvedValue(opts.inside ? { id: 's1' } : null) },
+      reservation: {
+        findFirst: jest.fn().mockResolvedValue(opts.booked ? { expectedEntryTime: opts.booked } : null),
+        create: jest.fn(),
+      },
+      $transaction: jest.fn(),
+    };
+    const service = new ReservationsService(
+      prisma as unknown as PrismaService,
+      {} as PayosService,
+      undefined,
+      undefined,
+    );
+    return { service, prisma };
+  }
+
+  it('xe đã có đơn đã cọc thì không đặt thêm, không tạo cọc mới', async () => {
+    const { service, prisma } = setup({ booked: new Date(Date.now() + 1800_000) });
+    const res = await service.create(userId, { vehicleId, expectedEntryTime: inOneHour() });
+    expect(res.statusCode).toBe(409);
+    expect(res.message).toContain('đã có đặt chỗ đã cọc');
+    expect(prisma.reservation.findFirst.mock.calls[0][0].where).toEqual({
+      vehicleId,
+      status: { in: ['Confirmed', 'Modified'] },
+    });
+    expect(prisma.$transaction).not.toHaveBeenCalled();
+  });
+
+  it('xe đang trong bãi thì không đặt chỗ', async () => {
+    const { service, prisma } = setup({ inside: true });
+    const res = await service.create(userId, { vehicleId, expectedEntryTime: inOneHour() });
+    expect(res.statusCode).toBe(409);
+    expect(prisma.$transaction).not.toHaveBeenCalled();
+  });
+});

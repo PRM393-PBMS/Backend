@@ -95,7 +95,8 @@ describe('Check-in bằng mã vào bãi', () => {
     vehicleType: { findUnique: jest.Mock };
     gate: { findUnique: jest.Mock };
     floor: { findUnique: jest.Mock };
-    entryPass: { findUnique: jest.Mock; updateMany: jest.Mock; update: jest.Mock };
+    entryPass: { findUnique: jest.Mock; findFirst: jest.Mock; updateMany: jest.Mock; update: jest.Mock };
+    vehicle: { findFirst: jest.Mock };
     monthlySubscription: { findFirst: jest.Mock };
     parkingSession: { findFirst: jest.Mock; create: jest.Mock; findUnique: jest.Mock };
     parkingSlot: { findFirst: jest.Mock; update: jest.Mock; updateMany: jest.Mock };
@@ -122,9 +123,11 @@ describe('Check-in bằng mã vào bãi', () => {
       floor: { findUnique: jest.fn().mockResolvedValue({ id: 'f1', parkingId: 'p1', isResident: false }) },
       entryPass: {
         findUnique: jest.fn().mockResolvedValue(pass()),
+        findFirst: jest.fn().mockResolvedValue(null),
         updateMany: jest.fn().mockResolvedValue({ count: 1 }),
         update: jest.fn().mockResolvedValue({}),
       },
+      vehicle: { findFirst: jest.fn().mockResolvedValue(null) },
       monthlySubscription: { findFirst: jest.fn().mockResolvedValue(null) },
       parkingSession: {
         findFirst: jest.fn().mockResolvedValue(null),
@@ -197,5 +200,51 @@ describe('Check-in bằng mã vào bãi', () => {
     const res = await scan();
     expect(res.statusCode).toBe(409);
     expect(prisma.parkingSession.create).not.toHaveBeenCalled();
+  });
+
+  describe('vào bằng biển số (không quét QR)', () => {
+    const passWithType = () => pass({ vehicle: { ...vehicle, vehicleType: { typeName: 'Ô tô' } } });
+    const byPlate = (extra: Record<string, unknown> = {}) =>
+      ops.checkIn({ gateId, customerType: 'Guest', licensePlate: '51h-123.45', ...extra });
+
+    it('xe đã đăng ký gửi một lần: nhận mã theo biển số, lấy loại xe theo mã', async () => {
+      prisma.entryPass.findFirst.mockResolvedValue(passWithType());
+      const res = await byPlate();
+      expect(res.statusCode).toBe(201);
+      expect(res.message).toContain('đăng ký gửi một lần');
+      expect(prisma.entryPass.findFirst.mock.calls[0][0].where).toMatchObject({
+        status: 'Active',
+        vehicle: { is: { licensePlate: '51H12345' } },
+      });
+      expect(prisma.entryPass.updateMany.mock.calls[0][0].where).toMatchObject({ id: passId, status: 'Active' });
+      expect(prisma.parkingSession.create.mock.calls[0][0].data).toMatchObject({
+        licensePlateIn: '51H12345',
+        vehicleId,
+        vehicleTypeId: vehicle.vehicleTypeId,
+      });
+      expect(prisma.entryPass.update).toHaveBeenCalledWith({ where: { id: passId }, data: { sessionId: 'sess-1' } });
+    });
+
+    it('cổng dành cho loại xe khác loại xe đã đăng ký thì từ chối, không dùng mã', async () => {
+      prisma.entryPass.findFirst.mockResolvedValue(passWithType());
+      const res = await byPlate({ vehicleTypeId: '770e8400-e29b-41d4-a716-446655440000' });
+      expect(res.statusCode).toBe(409);
+      expect(res.message).toContain('không đúng loại xe');
+      expect(prisma.entryPass.updateMany).not.toHaveBeenCalled();
+      expect(prisma.parkingSession.create).not.toHaveBeenCalled();
+    });
+
+    it('không có mã gửi một lần: vẫn là vãng lai, phải chọn loại xe', async () => {
+      const res = await byPlate();
+      expect(res.isSuccess).toBe(false);
+      expect(res.message).toContain('loại phương tiện');
+      expect(prisma.parkingSession.create).not.toHaveBeenCalled();
+    });
+
+    it('không có mã, có chọn loại xe: check-in vãng lai như cũ', async () => {
+      const res = await byPlate({ vehicleTypeId: vehicle.vehicleTypeId });
+      expect(res.statusCode).toBe(201);
+      expect(prisma.entryPass.updateMany).not.toHaveBeenCalled();
+    });
   });
 });
