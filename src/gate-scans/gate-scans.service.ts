@@ -1,4 +1,6 @@
 import { Injectable, Logger, MessageEvent } from '@nestjs/common';
+import { createHash } from 'node:crypto';
+import { isUUID } from 'class-validator';
 import { Prisma } from '@prisma/client';
 import { Observable, Subject, filter, interval, map, merge } from 'rxjs';
 import { PbmsResponseDto } from '../common/dto/pbms-response.dto';
@@ -67,23 +69,61 @@ export class GateScansService {
     file: import('../common/uploaded-image').UploadedImage,
     input: { gateId?: string; capturedAt?: string; baseUrl: string },
   ): Promise<PbmsResponseDto> {
+    if (!input.gateId || !isUUID(input.gateId))
+      return PbmsResponseDto.fail('GateId phải là UUID hợp lệ', 400);
+    const originalTime = input.capturedAt ? new Date(input.capturedAt) : null;
+    // Giữ giờ gốc trong khóa, kể cả khi giờ lưu được điều chỉnh do đồng hồ điện thoại lệch.
+    const deduplicationKey =
+      originalTime && !Number.isNaN(originalTime.getTime())
+        ? createHash('sha256')
+            .update(
+              JSON.stringify([
+                staffId,
+                input.gateId,
+                originalTime.toISOString(),
+              ]),
+            )
+            .update(file.buffer)
+            .digest('hex')
+        : null;
+    if (deduplicationKey) {
+      const existing = await this.prisma.gateScan.findUnique({
+        where: { deduplicationKey },
+        include: scanInclude,
+      });
+      if (existing)
+        return PbmsResponseDto.ok(
+          'Lượt quét này đã được nhận trước đó',
+          this.toDto(existing),
+        );
+    }
     const gate = input.gateId
       ? await this.prisma.gate.findUnique({
           where: { id: input.gateId },
-          select: { id: true, gateType: true, floor: { select: { parkingId: true } } },
+          select: {
+            id: true,
+            gateType: true,
+            floor: { select: { parkingId: true } },
+          },
         })
       : null;
     if (!gate) {
       return PbmsResponseDto.fail('Vui lòng chọn cổng đang đứng quét', 400);
     }
     const capturedAt = this.parseCapturedAt(input.capturedAt);
-    const upload = await this.files.saveUpload(file, input.baseUrl, 'gate-scans');
+    const upload = await this.files.saveUpload(
+      file,
+      input.baseUrl,
+      'gate-scans',
+    );
 
     let plate: string | null = null;
     let confidence: number | null = null;
     try {
       const result = await this.plates.recognize(file, upload.imageUrl);
-      plate = result.licensePlate ? normalizeLicensePlate(result.licensePlate) : null;
+      plate = result.licensePlate
+        ? normalizeLicensePlate(result.licensePlate)
+        : null;
       confidence = result.confidence ?? null;
     } catch (error) {
       // Không đọc được biển số vẫn gửi ảnh lên web để nhân viên tự nhập.
@@ -91,27 +131,54 @@ export class GateScansService {
     }
     if (plate && !isValidLicensePlate(plate)) plate = null;
 
-    const match = plate ? await this.lookup(plate, gate.floor.parkingId, capturedAt) : null;
+    const match = plate
+      ? await this.lookup(plate, gate.floor.parkingId, capturedAt)
+      : null;
     const suggestedType = this.suggest(gate.gateType, plate, match);
 
-    const scan = await this.prisma.gateScan.create({
-      data: {
-        gateId: gate.id,
-        scannedById: staffId,
-        imageUrl: upload.imageUrl,
-        licensePlate: plate,
-        confidence,
-        capturedAt,
-        suggestedType,
-        reservationId: match?.reservation?.reservationId ?? null,
-        match: match ? (match as unknown as Prisma.InputJsonValue) : Prisma.JsonNull,
-      },
-      include: scanInclude,
-    });
+    let scan: ScanRow;
+    try {
+      scan = await this.prisma.gateScan.create({
+        data: {
+          deduplicationKey,
+          gateId: gate.id,
+          scannedById: staffId,
+          imageUrl: upload.imageUrl,
+          licensePlate: plate,
+          confidence,
+          capturedAt,
+          suggestedType,
+          reservationId: match?.reservation?.reservationId ?? null,
+          match: match
+            ? (match as unknown as Prisma.InputJsonValue)
+            : Prisma.JsonNull,
+        },
+        include: scanInclude,
+      });
+    } catch (error) {
+      if (
+        deduplicationKey &&
+        error instanceof Prisma.PrismaClientKnownRequestError &&
+        error.code === 'P2002'
+      ) {
+        const existing = await this.prisma.gateScan.findUnique({
+          where: { deduplicationKey },
+          include: scanInclude,
+        });
+        if (existing)
+          return PbmsResponseDto.ok(
+            'Lượt quét này đã được nhận trước đó',
+            this.toDto(existing),
+          );
+      }
+      throw error;
+    }
     const dto = this.toDto(scan);
     this.events.next({ gateId: gate.id, type: 'scan', data: dto });
     return PbmsResponseDto.ok(
-      plate ? `Đã gửi biển số ${plate} lên web` : 'Đã gửi ảnh lên web, chưa đọc được biển số',
+      plate
+        ? `Đã gửi biển số ${plate} lên web`
+        : 'Đã gửi ảnh lên web, chưa đọc được biển số',
       dto,
       201,
     );

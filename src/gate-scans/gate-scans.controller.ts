@@ -1,3 +1,4 @@
+import { ParseUUIDPipe } from '@nestjs/common';
 import {
   Body,
   Controller,
@@ -81,7 +82,7 @@ export class GateScansController {
     description:
       'Server-Sent Events. `gateId` để chỉ nhận lượt quét của một cổng. Sự kiện: `scan` (lượt quét mới), `scan-updated` (đổi trạng thái), `ping` (giữ kết nối mỗi 25 giây). Gửi token qua header `Authorization` (đọc bằng fetch, không dùng EventSource).',
   })
-  stream(@Query('gateId') gateId?: string): Observable<MessageEvent> {
+  stream(@Query('gateId', new ParseUUIDPipe({ optional: true })) gateId?: string): Observable<MessageEvent> {
     return this.scans.stream(gateId?.trim() || undefined);
   }
 
@@ -93,7 +94,7 @@ export class GateScansController {
   })
   recent(
     @GetPbmsUserId() staffId: string,
-    @Query('gateId') gateId?: string,
+    @Query('gateId', new ParseUUIDPipe({ optional: true })) gateId?: string,
     @Query('mine') mine?: string,
     @Query('limit') limit?: string,
   ): Promise<PbmsResponseDto> {
@@ -107,7 +108,7 @@ export class GateScansController {
   @Patch(':id/status')
   @UseInterceptors(PbmsStatusInterceptor)
   @ApiOperation({ summary: 'Đánh dấu lượt quét: New, Handled (đã check-in/checkout) hoặc Dismissed (bỏ qua)' })
-  setStatus(@Param('id') id: string, @Body() body: { status?: string }): Promise<PbmsResponseDto> {
+  setStatus(@Param('id', new ParseUUIDPipe()) id: string, @Body() body: { status?: string }): Promise<PbmsResponseDto> {
     return this.scans.setStatus(id, body?.status);
   }
 }

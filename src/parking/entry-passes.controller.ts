@@ -1,3 +1,4 @@
+import { ParseUUIDPipe } from '@nestjs/common';
 import { Body, Controller, Delete, Get, Param, Post, UseGuards, UseInterceptors } from '@nestjs/common';
 import { ApiBearerAuth, ApiOperation, ApiTags } from '@nestjs/swagger';
 import { GetPbmsUserId } from '../auth/common/decorators/get-pbms-user-id.decorator';
@@ -36,7 +37,7 @@ export class EntryPassesController {
 
   @Delete(':id')
   @ApiOperation({ summary: 'Huỷ mã vào bãi còn hiệu lực' })
-  cancel(@GetPbmsUserId() userId: string, @Param('id') id: string): Promise<PbmsResponseDto> {
+  cancel(@GetPbmsUserId() userId: string, @Param('id', new ParseUUIDPipe()) id: string): Promise<PbmsResponseDto> {
     return this.passes.cancel(userId, id);
   }
 }

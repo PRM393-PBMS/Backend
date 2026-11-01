@@ -90,12 +90,15 @@ describe('EntryPassesService', () => {
 describe('Check-in bằng mã vào bãi', () => {
   let ops: ParkingOperationsService;
   let prisma: {
+    $transaction: jest.Mock;
+    $queryRaw: jest.Mock;
+    vehicleType: { findUnique: jest.Mock };
     gate: { findUnique: jest.Mock };
     floor: { findUnique: jest.Mock };
     entryPass: { findUnique: jest.Mock; updateMany: jest.Mock; update: jest.Mock };
     monthlySubscription: { findFirst: jest.Mock };
     parkingSession: { findFirst: jest.Mock; create: jest.Mock; findUnique: jest.Mock };
-    parkingSlot: { findFirst: jest.Mock; update: jest.Mock };
+    parkingSlot: { findFirst: jest.Mock; update: jest.Mock; updateMany: jest.Mock };
   };
   const pass = (over: Record<string, unknown> = {}) => ({
     id: passId,
@@ -110,10 +113,13 @@ describe('Check-in bằng mã vào bãi', () => {
 
   beforeEach(async () => {
     prisma = {
+      $transaction: jest.fn((fn) => fn(prisma)),
+      $queryRaw: jest.fn().mockResolvedValue([]),
+      vehicleType: { findUnique: jest.fn().mockResolvedValue({ typeName: 'Ô tô' }) },
       gate: {
         findUnique: jest.fn().mockResolvedValue({ id: gateId, gateType: 'Entry', floorId: 'f1', floor: { parkingId: 'p1' } }),
       },
-      floor: { findUnique: jest.fn().mockResolvedValue({ parkingId: 'p1' }) },
+      floor: { findUnique: jest.fn().mockResolvedValue({ id: 'f1', parkingId: 'p1', isResident: false }) },
       entryPass: {
         findUnique: jest.fn().mockResolvedValue(pass()),
         updateMany: jest.fn().mockResolvedValue({ count: 1 }),
@@ -127,6 +133,7 @@ describe('Check-in bằng mã vào bãi', () => {
       },
       parkingSlot: {
         findFirst: jest.fn().mockResolvedValue({ id: 'slot-1' }),
+        updateMany: jest.fn().mockResolvedValue({ count: 1 }),
         update: jest.fn().mockResolvedValue({}),
       },
     };

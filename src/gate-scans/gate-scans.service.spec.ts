@@ -29,6 +29,7 @@ function setup(opts: {
     monthlySubscription: { findFirst: jest.fn().mockResolvedValue(opts.subscription ?? null) },
     vehicle: { findFirst: jest.fn().mockResolvedValue(null) },
     gateScan: {
+      findUnique: jest.fn().mockResolvedValue(null),
       create: jest.fn(({ data }: { data: Record<string, unknown> }) => {
         created.push(data);
         return Promise.resolve({
