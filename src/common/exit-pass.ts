@@ -14,6 +14,15 @@ export function generateExitPassCode(): string {
 }
 
 /**
+ * Mã chữ 6 ký tự nhân viên gõ tay khi camera và máy quét QR đều không dùng được.
+ * Trả về mã đã chuẩn hoá (in hoa, bỏ khoảng trắng / gạch) hoặc null nếu không đúng dạng.
+ */
+export function parseShortGateCode(value: string | null | undefined): string | null {
+  const code = (value ?? '').toUpperCase().replace(/[\s-]/g, '');
+  return new RegExp(`^[${ALPHABET}]{6}$`).test(code) ? code : null;
+}
+
+/**
  * Payload QR của mã ra cổng. Chứa SessionId nên đầu đọc ở cổng ra
  * (resolveSessionId) nhận diện được như vé thường.
  */

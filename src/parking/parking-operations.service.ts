@@ -22,7 +22,13 @@ import {
 import { freeParkingAvailability } from '../common/free-parking-availability';
 import { createTicket, extractGuidFromQrPayload } from '../common/qr.util';
 import { ParkingSessionsService } from './parking-sessions.service';
-import { exitPassPayload, generateExitPassCode, issueExitPass, mapExitPass } from '../common/exit-pass';
+import {
+  exitPassPayload,
+  generateExitPassCode,
+  issueExitPass,
+  mapExitPass,
+  parseShortGateCode,
+} from '../common/exit-pass';
 import { effectiveEntryPassStatus, parseEntryPassPayload } from '../common/entry-pass';
 import { PaymentsService } from '../payments/payments.service';
 import { InsufficientWalletFundsError, WalletsService } from '../wallets/wallets.service';
@@ -44,8 +50,15 @@ export class ParkingOperationsService {
   ) {}
 
   async checkIn(dto: object): Promise<PbmsResponseDto> {
-    // Quét mã QR gửi xe một lần của khách: không cần chọn loại khách.
-    const entryPass = parseEntryPassPayload(pbmsPick(dto, 'qrPayload', 'QrPayload'));
+    // Quét mã QR gửi xe một lần của khách (hoặc gõ tay mã chữ 6 ký tự): không cần chọn loại khách.
+    const scanned = pbmsPick(dto, 'qrPayload', 'QrPayload');
+    const shortCode = parseShortGateCode(scanned);
+    const entryPass = shortCode
+      ? await this.entryPassByShortCode(shortCode)
+      : parseEntryPassPayload(scanned);
+    if (entryPass instanceof PbmsResponseDto) {
+      return entryPass;
+    }
     if (entryPass) {
       const gate = await this.resolveGate(pbmsPickGuid(dto, 'gateId', 'GateId'), 'Entry');
       if ('error' in gate) {
@@ -1356,10 +1369,46 @@ export class ParkingOperationsService {
     return { gate };
   }
 
+  /** Mã chữ trên thẻ gửi xe một lần → mã QR tương ứng (chỉ mã còn hiệu lực). */
+  private async entryPassByShortCode(code: string) {
+    const passes = await this.prisma.entryPass.findMany({
+      where: { code, status: 'Active', expiresAt: { gt: new Date() } },
+      select: { id: true, code: true },
+      take: 2,
+    });
+    if (passes.length !== 1) {
+      return PbmsResponseDto.fail(
+        passes.length === 0
+          ? 'Mã vào bãi không đúng hoặc đã hết hiệu lực'
+          : 'Mã vào bãi bị trùng, vui lòng quét mã QR hoặc đọc biển số',
+        404,
+      );
+    }
+    return { passId: passes[0].id, code: passes[0].code };
+  }
+
   private async resolveSessionId(dto: object): Promise<string | PbmsResponseDto> {
     const direct = pbmsPickGuid(dto, 'sessionId', 'SessionId');
     if (direct) {
       return direct;
+    }
+    // Nhân viên gõ tay mã ra cổng 6 ký tự của khách đã trả trước.
+    const exitCode = parseShortGateCode(pbmsPick(dto, 'qrPayload', 'QrPayload'));
+    if (exitCode) {
+      const sessions = await this.prisma.parkingSession.findMany({
+        where: { exitPassCode: exitCode, status: 'Active' },
+        select: { id: true },
+        take: 2,
+      });
+      if (sessions.length === 1) {
+        return sessions[0].id;
+      }
+      return PbmsResponseDto.fail(
+        sessions.length === 0
+          ? 'Mã ra cổng không đúng hoặc xe đã ra khỏi bãi'
+          : 'Mã ra cổng bị trùng, vui lòng quét mã QR hoặc đọc biển số',
+        404,
+      );
     }
     const fromQr = extractGuidFromQrPayload(pbmsPick(dto, 'qrPayload', 'QrPayload'));
     if (fromQr) {

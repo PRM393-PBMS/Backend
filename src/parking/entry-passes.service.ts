@@ -35,6 +35,14 @@ export class EntryPassesService {
       return PbmsResponseDto.fail('Xe đang ở trong bãi, không cần mã vào bãi', 409);
     }
     const now = new Date();
+    // Vé tháng còn hạn: cổng nhận xe theo vé tháng, đăng ký gửi một lần sẽ không được dùng tới.
+    const monthly = await this.prisma.monthlySubscription.findFirst({
+      where: { vehicleId, status: 'Active', startDate: { lte: now }, endDate: { gte: now } },
+      select: { id: true },
+    });
+    if (monthly) {
+      return PbmsResponseDto.fail('Xe đang có vé tháng còn hạn, tới cổng là vào bằng vé tháng, không cần đăng ký gửi một lần', 409);
+    }
     const expiresAt = new Date(now.getTime() + ENTRY_PASS_TTL_HOURS * 36e5);
     // Mỗi xe chỉ giữ một mã còn hiệu lực: mã cũ bị huỷ khi tạo mã mới.
     const pass = await this.prisma.$transaction(async (tx) => {
