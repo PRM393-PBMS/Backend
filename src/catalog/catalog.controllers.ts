@@ -1,3 +1,4 @@
+import { ParseUUIDPipe } from '@nestjs/common';
 import {
   Body,
   Controller,
@@ -63,7 +64,7 @@ export class VehicleTypesController {
   @PbmsRoles('manager', 'staff')
   @ApiOperation({ summary: 'Chi tiết loại phương tiện' })
   @ApiPbmsOkResponse('Lấy loại phương tiện thành công', vehicleTypeExample)
-  getById(@Param('id') id: string): Promise<PbmsResponseDto> {
+  getById(@Param('id', new ParseUUIDPipe()) id: string): Promise<PbmsResponseDto> {
     return this.vehicleTypes.getById(id);
   }
 
@@ -96,7 +97,7 @@ export class VehicleTypesController {
   @PbmsRoles('manager')
   @ApiOperation({ summary: 'Xóa loại phương tiện' })
   @ApiPbmsOkResponse('Xóa loại phương tiện thành công', null)
-  remove(@Param('id') id: string): Promise<PbmsResponseDto> {
+  remove(@Param('id', new ParseUUIDPipe()) id: string): Promise<PbmsResponseDto> {
     return this.vehicleTypes.remove(id);
   }
 }
@@ -120,7 +121,7 @@ export class FloorsController {
   @Get(':id')
   @ApiOperation({ summary: 'Chi tiết tầng' })
   @ApiPbmsOkResponse('Lấy thông tin tầng thành công', floorExample)
-  getById(@Param('id') id: string): Promise<PbmsResponseDto> {
+  getById(@Param('id', new ParseUUIDPipe()) id: string): Promise<PbmsResponseDto> {
     return this.floors.getById(id);
   }
 
@@ -162,7 +163,7 @@ export class FloorsController {
   @PbmsRoles('manager')
   @ApiOperation({ summary: 'Xóa tầng' })
   @ApiPbmsOkResponse('Xóa tầng thành công', null)
-  remove(@Param('id') id: string): Promise<PbmsResponseDto> {
+  remove(@Param('id', new ParseUUIDPipe()) id: string): Promise<PbmsResponseDto> {
     return this.floors.remove(id);
   }
 }
@@ -186,7 +187,7 @@ export class GatesController {
   @Get(':id')
   @ApiOperation({ summary: 'Chi tiết cổng' })
   @ApiPbmsOkResponse('Lấy thông tin cổng thành công', gateExample)
-  getById(@Param('id') id: string): Promise<PbmsResponseDto> {
+  getById(@Param('id', new ParseUUIDPipe()) id: string): Promise<PbmsResponseDto> {
     return this.gates.getById(id);
   }
 
@@ -224,7 +225,7 @@ export class GatesController {
   @PbmsRoles('manager')
   @ApiOperation({ summary: 'Xóa cổng' })
   @ApiPbmsOkResponse('Xóa cổng thành công', null)
-  remove(@Param('id') id: string): Promise<PbmsResponseDto> {
+  remove(@Param('id', new ParseUUIDPipe()) id: string): Promise<PbmsResponseDto> {
     return this.gates.remove(id);
   }
 }
@@ -248,7 +249,7 @@ export class ParkingSlotsController {
   @Get(':id')
   @ApiOperation({ summary: 'Chi tiết ô đỗ' })
   @ApiPbmsOkResponse('Lấy thông tin ô đỗ thành công', slotExample)
-  getById(@Param('id') id: string): Promise<PbmsResponseDto> {
+  getById(@Param('id', new ParseUUIDPipe()) id: string): Promise<PbmsResponseDto> {
     return this.parkingSlots.getById(id);
   }
 
@@ -295,7 +296,7 @@ export class ParkingSlotsController {
     status: 'Occupied',
   })
   updateStatus(
-    @Param('id') id: string,
+    @Param('id', new ParseUUIDPipe()) id: string,
     @Body() dto: PbmsBodyDto,
   ): Promise<PbmsResponseDto> {
     return this.parkingSlots.updateStatus(id, dto);
@@ -306,7 +307,7 @@ export class ParkingSlotsController {
   @PbmsRoles('manager')
   @ApiOperation({ summary: 'Xóa ô đỗ' })
   @ApiPbmsOkResponse('Xóa ô đỗ thành công', null)
-  remove(@Param('id') id: string): Promise<PbmsResponseDto> {
+  remove(@Param('id', new ParseUUIDPipe()) id: string): Promise<PbmsResponseDto> {
     return this.parkingSlots.remove(id);
   }
 }
@@ -332,7 +333,7 @@ export class PricingPoliciesController {
   @Get(':id')
   @ApiOperation({ summary: 'Chi tiết chính sách giá' })
   @ApiPbmsOkResponse('Lấy chính sách giá thành công', pricingPolicyExample)
-  getById(@Param('id') id: string): Promise<PbmsResponseDto> {
+  getById(@Param('id', new ParseUUIDPipe()) id: string): Promise<PbmsResponseDto> {
     return this.pricing.getById(id);
   }
 
@@ -377,7 +378,7 @@ export class PricingPoliciesController {
   @PbmsRoles('manager')
   @ApiOperation({ summary: 'Xóa chính sách giá' })
   @ApiPbmsOkResponse('Xóa chính sách giá thành công', null)
-  remove(@Param('id') id: string): Promise<PbmsResponseDto> {
+  remove(@Param('id', new ParseUUIDPipe()) id: string): Promise<PbmsResponseDto> {
     return this.pricing.remove(id);
   }
 }
@@ -401,7 +402,7 @@ export class SubscriptionPackagesController {
   @Get(':id')
   @ApiOperation({ summary: 'Chi tiết gói thuê bao' })
   @ApiPbmsOkResponse('Lấy gói thuê bao thành công', packageExample)
-  getById(@Param('id') id: string): Promise<PbmsResponseDto> {
+  getById(@Param('id', new ParseUUIDPipe()) id: string): Promise<PbmsResponseDto> {
     return this.packages.getById(id);
   }
 
@@ -438,7 +439,7 @@ export class SubscriptionPackagesController {
   })
   @ApiPbmsOkResponse('Cập nhật gói thuê bao thành công', packageExample)
   update(
-    @Param('id') id: string,
+    @Param('id', new ParseUUIDPipe()) id: string,
     @Body() dto: PbmsBodyDto,
   ): Promise<PbmsResponseDto> {
     return this.packages.update(id, dto);
@@ -449,7 +450,7 @@ export class SubscriptionPackagesController {
   @PbmsRoles('manager')
   @ApiOperation({ summary: 'Xóa gói thuê bao' })
   @ApiPbmsOkResponse('Xóa gói thuê bao thành công', null)
-  remove(@Param('id') id: string): Promise<PbmsResponseDto> {
+  remove(@Param('id', new ParseUUIDPipe()) id: string): Promise<PbmsResponseDto> {
     return this.packages.remove(id);
   }
 }

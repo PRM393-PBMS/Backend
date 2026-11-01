@@ -1,5 +1,5 @@
 import { ApiPropertyOptional } from '@nestjs/swagger';
-import { IsOptional } from 'class-validator';
+import { IsOptional, IsUUID, ValidateIf } from 'class-validator';
 import { ids } from '../swagger/pbms-example-data';
 
 /**
@@ -13,8 +13,14 @@ export class PbmsBodyDto {
     example: ids.roleStaffId,
   })
   @IsOptional()
+  @ValidateIf((_object, value) => value !== '')
+  @IsUUID()
   roleId?: unknown;
-  @ApiPropertyOptional() @IsOptional() RoleId?: unknown;
+  @ApiPropertyOptional()
+  @IsOptional()
+  @ValidateIf((_object, value) => value !== '')
+  @IsUUID()
+  RoleId?: unknown;
 
   @ApiPropertyOptional({ type: String, example: 'staff' })
   @IsOptional()
@@ -32,8 +38,14 @@ export class PbmsBodyDto {
     example: ids.vehicleTypeId,
   })
   @IsOptional()
+  @ValidateIf((_object, value) => value !== '')
+  @IsUUID()
   vehicleTypeId?: unknown;
-  @ApiPropertyOptional() @IsOptional() VehicleTypeId?: unknown;
+  @ApiPropertyOptional()
+  @IsOptional()
+  @ValidateIf((_object, value) => value !== '')
+  @IsUUID()
+  VehicleTypeId?: unknown;
 
   @ApiPropertyOptional({ type: String, example: 'Xe máy' })
   @IsOptional()
@@ -47,8 +59,14 @@ export class PbmsBodyDto {
 
   @ApiPropertyOptional({ type: String, format: 'uuid', example: ids.floorId })
   @IsOptional()
+  @ValidateIf((_object, value) => value !== '')
+  @IsUUID()
   floorId?: unknown;
-  @ApiPropertyOptional() @IsOptional() FloorId?: unknown;
+  @ApiPropertyOptional()
+  @IsOptional()
+  @ValidateIf((_object, value) => value !== '')
+  @IsUUID()
+  FloorId?: unknown;
 
   @ApiPropertyOptional({ type: String, example: 'Tầng B1' })
   @IsOptional()
@@ -61,8 +79,14 @@ export class PbmsBodyDto {
     example: ids.vehicleTypeId,
   })
   @IsOptional()
+  @ValidateIf((_object, value) => value !== '')
+  @IsUUID()
   dedicatedVehicleTypeId?: unknown;
-  @ApiPropertyOptional() @IsOptional() DedicatedVehicleTypeId?: unknown;
+  @ApiPropertyOptional()
+  @IsOptional()
+  @ValidateIf((_object, value) => value !== '')
+  @IsUUID()
+  DedicatedVehicleTypeId?: unknown;
 
   @ApiPropertyOptional({ type: Number, example: 120 })
   @IsOptional()
@@ -80,8 +104,14 @@ export class PbmsBodyDto {
     example: ids.gateEntryId,
   })
   @IsOptional()
+  @ValidateIf((_object, value) => value !== '')
+  @IsUUID()
   gateId?: unknown;
-  @ApiPropertyOptional() @IsOptional() GateId?: unknown;
+  @ApiPropertyOptional()
+  @IsOptional()
+  @ValidateIf((_object, value) => value !== '')
+  @IsUUID()
+  GateId?: unknown;
 
   @ApiPropertyOptional({ type: String, example: 'Cổng vào A' })
   @IsOptional()
@@ -95,13 +125,25 @@ export class PbmsBodyDto {
 
   @ApiPropertyOptional({ type: String, format: 'uuid', example: ids.slotId })
   @IsOptional()
+  @ValidateIf((_object, value) => value !== '')
+  @IsUUID()
   parkingSlotId?: unknown;
-  @ApiPropertyOptional() @IsOptional() ParkingSlotId?: unknown;
+  @ApiPropertyOptional()
+  @IsOptional()
+  @ValidateIf((_object, value) => value !== '')
+  @IsUUID()
+  ParkingSlotId?: unknown;
 
   @ApiPropertyOptional({ type: String, format: 'uuid', example: ids.slotId })
   @IsOptional()
+  @ValidateIf((_object, value) => value !== '')
+  @IsUUID()
   slotId?: unknown;
-  @ApiPropertyOptional() @IsOptional() SlotId?: unknown;
+  @ApiPropertyOptional()
+  @IsOptional()
+  @ValidateIf((_object, value) => value !== '')
+  @IsUUID()
+  SlotId?: unknown;
 
   @ApiPropertyOptional({ type: String, example: 'B1-A12' })
   @IsOptional()
@@ -110,8 +152,14 @@ export class PbmsBodyDto {
 
   @ApiPropertyOptional({ type: String, format: 'uuid', example: ids.parkingId })
   @IsOptional()
+  @ValidateIf((_object, value) => value !== '')
+  @IsUUID()
   parkingId?: unknown;
-  @ApiPropertyOptional() @IsOptional() ParkingId?: unknown;
+  @ApiPropertyOptional()
+  @IsOptional()
+  @ValidateIf((_object, value) => value !== '')
+  @IsUUID()
+  ParkingId?: unknown;
 
   @ApiPropertyOptional({ type: String, example: 'Available' })
   @IsOptional()
@@ -120,13 +168,25 @@ export class PbmsBodyDto {
 
   @ApiPropertyOptional({ type: String, format: 'uuid', example: ids.policyId })
   @IsOptional()
+  @ValidateIf((_object, value) => value !== '')
+  @IsUUID()
   pricingPolicyId?: unknown;
-  @ApiPropertyOptional() @IsOptional() PricingPolicyId?: unknown;
+  @ApiPropertyOptional()
+  @IsOptional()
+  @ValidateIf((_object, value) => value !== '')
+  @IsUUID()
+  PricingPolicyId?: unknown;
 
   @ApiPropertyOptional({ type: String, format: 'uuid', example: ids.policyId })
   @IsOptional()
+  @ValidateIf((_object, value) => value !== '')
+  @IsUUID()
   policyId?: unknown;
-  @ApiPropertyOptional() @IsOptional() PolicyId?: unknown;
+  @ApiPropertyOptional()
+  @IsOptional()
+  @ValidateIf((_object, value) => value !== '')
+  @IsUUID()
+  PolicyId?: unknown;
 
   @ApiPropertyOptional({ type: Number, example: 5000 })
   @IsOptional()
@@ -159,8 +219,14 @@ export class PbmsBodyDto {
 
   @ApiPropertyOptional({ type: String, format: 'uuid', example: ids.packageId })
   @IsOptional()
+  @ValidateIf((_object, value) => value !== '')
+  @IsUUID()
   packageId?: unknown;
-  @ApiPropertyOptional() @IsOptional() PackageId?: unknown;
+  @ApiPropertyOptional()
+  @IsOptional()
+  @ValidateIf((_object, value) => value !== '')
+  @IsUUID()
+  PackageId?: unknown;
 
   @ApiPropertyOptional({ type: String, example: 'Gói tháng xe máy' })
   @IsOptional()
@@ -189,13 +255,25 @@ export class PbmsBodyDto {
 
   @ApiPropertyOptional({ type: String, format: 'uuid', example: ids.userId })
   @IsOptional()
+  @ValidateIf((_object, value) => value !== '')
+  @IsUUID()
   userId?: unknown;
-  @ApiPropertyOptional() @IsOptional() UserId?: unknown;
+  @ApiPropertyOptional()
+  @IsOptional()
+  @ValidateIf((_object, value) => value !== '')
+  @IsUUID()
+  UserId?: unknown;
 
   @ApiPropertyOptional({ type: String, format: 'uuid', example: ids.vehicleId })
   @IsOptional()
+  @ValidateIf((_object, value) => value !== '')
+  @IsUUID()
   vehicleId?: unknown;
-  @ApiPropertyOptional() @IsOptional() VehicleId?: unknown;
+  @ApiPropertyOptional()
+  @IsOptional()
+  @ValidateIf((_object, value) => value !== '')
+  @IsUUID()
+  VehicleId?: unknown;
 
   @ApiPropertyOptional({ type: String, example: '59A12345' })
   @IsOptional()
@@ -222,8 +300,14 @@ export class PbmsBodyDto {
 
   @ApiPropertyOptional({ type: String, format: 'uuid', example: ids.slotId })
   @IsOptional()
+  @ValidateIf((_object, value) => value !== '')
+  @IsUUID()
   fixedSlotId?: unknown;
-  @ApiPropertyOptional() @IsOptional() FixedSlotId?: unknown;
+  @ApiPropertyOptional()
+  @IsOptional()
+  @ValidateIf((_object, value) => value !== '')
+  @IsUUID()
+  FixedSlotId?: unknown;
 
   @ApiPropertyOptional({
     type: String,
@@ -259,13 +343,25 @@ export class PbmsBodyDto {
     example: ids.subscriptionId,
   })
   @IsOptional()
+  @ValidateIf((_object, value) => value !== '')
+  @IsUUID()
   subscriptionId?: unknown;
-  @ApiPropertyOptional() @IsOptional() SubscriptionId?: unknown;
+  @ApiPropertyOptional()
+  @IsOptional()
+  @ValidateIf((_object, value) => value !== '')
+  @IsUUID()
+  SubscriptionId?: unknown;
 
   @ApiPropertyOptional({ type: String, format: 'uuid', example: ids.renewalId })
   @IsOptional()
+  @ValidateIf((_object, value) => value !== '')
+  @IsUUID()
   renewalId?: unknown;
-  @ApiPropertyOptional() @IsOptional() RenewalId?: unknown;
+  @ApiPropertyOptional()
+  @IsOptional()
+  @ValidateIf((_object, value) => value !== '')
+  @IsUUID()
+  RenewalId?: unknown;
 
   @ApiPropertyOptional({
     type: String,
@@ -306,13 +402,25 @@ export class PbmsBodyDto {
 
   @ApiPropertyOptional({ type: String, format: 'uuid', example: ids.paymentId })
   @IsOptional()
+  @ValidateIf((_object, value) => value !== '')
+  @IsUUID()
   paymentId?: unknown;
-  @ApiPropertyOptional() @IsOptional() PaymentId?: unknown;
+  @ApiPropertyOptional()
+  @IsOptional()
+  @ValidateIf((_object, value) => value !== '')
+  @IsUUID()
+  PaymentId?: unknown;
 
   @ApiPropertyOptional({ type: String, format: 'uuid', example: ids.sessionId })
   @IsOptional()
+  @ValidateIf((_object, value) => value !== '')
+  @IsUUID()
   sessionId?: unknown;
-  @ApiPropertyOptional() @IsOptional() SessionId?: unknown;
+  @ApiPropertyOptional()
+  @IsOptional()
+  @ValidateIf((_object, value) => value !== '')
+  @IsUUID()
+  SessionId?: unknown;
 
   @ApiPropertyOptional({
     type: String,
@@ -320,8 +428,14 @@ export class PbmsBodyDto {
     example: ids.reservationId,
   })
   @IsOptional()
+  @ValidateIf((_object, value) => value !== '')
+  @IsUUID()
   reservationId?: unknown;
-  @ApiPropertyOptional() @IsOptional() ReservationId?: unknown;
+  @ApiPropertyOptional()
+  @IsOptional()
+  @ValidateIf((_object, value) => value !== '')
+  @IsUUID()
+  ReservationId?: unknown;
 
   @ApiPropertyOptional({ type: String, example: 'Cash' })
   @IsOptional()
@@ -428,8 +542,14 @@ export class PbmsBodyDto {
     example: ids.gateEntryId,
   })
   @IsOptional()
+  @ValidateIf((_object, value) => value !== '')
+  @IsUUID()
   entryGateId?: unknown;
-  @ApiPropertyOptional() @IsOptional() EntryGateId?: unknown;
+  @ApiPropertyOptional()
+  @IsOptional()
+  @ValidateIf((_object, value) => value !== '')
+  @IsUUID()
+  EntryGateId?: unknown;
 
   @ApiPropertyOptional({
     type: String,
@@ -437,18 +557,36 @@ export class PbmsBodyDto {
     example: ids.gateExitId,
   })
   @IsOptional()
+  @ValidateIf((_object, value) => value !== '')
+  @IsUUID()
   exitGateId?: unknown;
-  @ApiPropertyOptional() @IsOptional() ExitGateId?: unknown;
+  @ApiPropertyOptional()
+  @IsOptional()
+  @ValidateIf((_object, value) => value !== '')
+  @IsUUID()
+  ExitGateId?: unknown;
 
   @ApiPropertyOptional({ type: String, format: 'uuid', example: ids.slotId })
   @IsOptional()
+  @ValidateIf((_object, value) => value !== '')
+  @IsUUID()
   assignedSlotId?: unknown;
-  @ApiPropertyOptional() @IsOptional() AssignedSlotId?: unknown;
+  @ApiPropertyOptional()
+  @IsOptional()
+  @ValidateIf((_object, value) => value !== '')
+  @IsUUID()
+  AssignedSlotId?: unknown;
 
   @ApiPropertyOptional({ type: String, format: 'uuid', example: ids.slotId })
   @IsOptional()
+  @ValidateIf((_object, value) => value !== '')
+  @IsUUID()
   actualSlotId?: unknown;
-  @ApiPropertyOptional() @IsOptional() ActualSlotId?: unknown;
+  @ApiPropertyOptional()
+  @IsOptional()
+  @ValidateIf((_object, value) => value !== '')
+  @IsUUID()
+  ActualSlotId?: unknown;
 
   @ApiPropertyOptional({
     type: String,
@@ -456,13 +594,25 @@ export class PbmsBodyDto {
     example: ids.incidentId,
   })
   @IsOptional()
+  @ValidateIf((_object, value) => value !== '')
+  @IsUUID()
   incidentId?: unknown;
-  @ApiPropertyOptional() @IsOptional() IncidentId?: unknown;
+  @ApiPropertyOptional()
+  @IsOptional()
+  @ValidateIf((_object, value) => value !== '')
+  @IsUUID()
+  IncidentId?: unknown;
 
   @ApiPropertyOptional({ type: String, format: 'uuid', example: ids.userId })
   @IsOptional()
+  @ValidateIf((_object, value) => value !== '')
+  @IsUUID()
   reportedByUserId?: unknown;
-  @ApiPropertyOptional() @IsOptional() ReportedByUserId?: unknown;
+  @ApiPropertyOptional()
+  @IsOptional()
+  @ValidateIf((_object, value) => value !== '')
+  @IsUUID()
+  ReportedByUserId?: unknown;
 
   @ApiPropertyOptional({ type: String, example: 'SlotOccupied' })
   @IsOptional()
@@ -479,8 +629,14 @@ export class PbmsBodyDto {
 
   @ApiPropertyOptional({ type: String, format: 'uuid', example: ids.staffId })
   @IsOptional()
+  @ValidateIf((_object, value) => value !== '')
+  @IsUUID()
   handledByStaffId?: unknown;
-  @ApiPropertyOptional() @IsOptional() HandledByStaffId?: unknown;
+  @ApiPropertyOptional()
+  @IsOptional()
+  @ValidateIf((_object, value) => value !== '')
+  @IsUUID()
+  HandledByStaffId?: unknown;
 
   @ApiPropertyOptional({
     type: String,

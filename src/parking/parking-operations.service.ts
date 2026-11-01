@@ -1,5 +1,5 @@
-import { Injectable, Optional } from '@nestjs/common';
-import { Prisma } from '@prisma/client';
+import { Injectable, Logger, Optional } from '@nestjs/common';
+import { Prisma, type ParkingSession } from '@prisma/client';
 import jsQR from 'jsqr';
 import sharp from 'sharp';
 import { PrismaService } from '../prisma/prisma.service';
@@ -14,7 +14,12 @@ import {
   sameStatus,
   toMoney,
 } from '../common/pbms-fields';
-import { isValidLicensePlate, normalizeLicensePlate } from '../common/license-plate';
+import {
+  isMotorbikeType,
+  isValidLicensePlate,
+  normalizeLicensePlate,
+} from '../common/license-plate';
+import { freeParkingAvailability } from '../common/free-parking-availability';
 import { createTicket, extractGuidFromQrPayload } from '../common/qr.util';
 import { ParkingSessionsService } from './parking-sessions.service';
 import { exitPassPayload, issueExitPass, mapExitPass } from '../common/exit-pass';
@@ -597,12 +602,22 @@ export class ParkingOperationsService {
     });
   }
 
-  async availability(vehicleTypeId?: string, floorKeyword?: string): Promise<PbmsResponseDto> {
+  async availability(
+    vehicleTypeId?: string,
+    floorKeyword?: string,
+  ): Promise<PbmsResponseDto> {
     const slots = await this.prisma.parkingSlot.findMany({
       where: {
         ...(vehicleTypeId ? { vehicleTypeId } : {}),
         ...(floorKeyword
-          ? { floor: { floorName: { contains: floorKeyword.trim(), mode: 'insensitive' } } }
+          ? {
+              floor: {
+                floorName: {
+                  contains: floorKeyword.trim(),
+                  mode: 'insensitive',
+                },
+              },
+            }
           : {}),
       },
       include: { floor: true, vehicleType: true },
@@ -621,6 +636,7 @@ export class ParkingOperationsService {
       }
     >();
     for (const slot of slots) {
+      if (isMotorbikeType(slot.vehicleType.typeName)) continue;
       const key = `${slot.floorId}:${slot.vehicleTypeId}`;
       const current = grouped.get(key) ?? {
         floorId: slot.floorId,
@@ -638,9 +654,28 @@ export class ParkingOperationsService {
       if (sameStatus(slot.status, 'Assigned')) current.assignedSlots += 1;
       grouped.set(key, current);
     }
+    const requestedType = vehicleTypeId
+      ? await this.prisma.vehicleType.findUnique({
+          where: { id: vehicleTypeId },
+        })
+      : null;
+    for (const floor of await freeParkingAvailability(
+      this.prisma,
+      floorKeyword,
+    )) {
+      if (vehicleTypeId && !isMotorbikeType(requestedType?.typeName)) continue;
+      const { parkingId: _parkingId, ...row } = floor;
+      if (requestedType) {
+        row.vehicleTypeId = requestedType.id;
+        row.vehicleTypeName = requestedType.typeName;
+      }
+      grouped.set(`${row.floorId}:${row.vehicleTypeId}`, row);
+    }
     return PbmsResponseDto.ok(
       'Lấy tình trạng chỗ trống thành công',
-      [...grouped.values()].sort((a, b) => a.floorName.localeCompare(b.floorName)),
+      [...grouped.values()].sort((a, b) =>
+        a.floorName.localeCompare(b.floorName),
+      ),
     );
   }
 
@@ -648,7 +683,9 @@ export class ParkingOperationsService {
     dto: object,
     gate: { id: string; floorId: string },
   ): Promise<PbmsResponseDto> {
-    const plate = normalizeLicensePlate(pbmsPick(dto, 'licensePlate', 'LicensePlate'));
+    const plate = normalizeLicensePlate(
+      pbmsPick(dto, 'licensePlate', 'LicensePlate'),
+    );
     const vehicleTypeId = pbmsPickGuid(dto, 'vehicleTypeId', 'VehicleTypeId');
     if (!isValidLicensePlate(plate)) {
       return PbmsResponseDto.fail('Biển số phải gồm 4-15 chữ cái và chữ số');
@@ -656,19 +693,26 @@ export class ParkingOperationsService {
     if (isEmptyGuid(vehicleTypeId)) {
       return PbmsResponseDto.fail('Vui lòng chọn loại phương tiện');
     }
-    const sub = await this.activeSubscription(plate, vehicleTypeId, new Date(), await this.parkingOfGate(gate));
+    const sub = await this.activeSubscription(
+      plate,
+      vehicleTypeId,
+      new Date(),
+      await this.parkingOfGate(gate),
+    );
     if (sub) {
-      return PbmsResponseDto.fail('Biển số này đang có gói tháng hợp lệ. Vui lòng check-in Resident', 403);
+      return PbmsResponseDto.fail(
+        'Biển số này đang có gói tháng hợp lệ. Vui lòng check-in Resident',
+        403,
+      );
     }
     const busy = await this.prisma.parkingSession.findFirst({
       where: { licensePlateIn: plate, status: 'Active' },
     });
     if (busy) {
-      return PbmsResponseDto.fail('Xe này đang có phiên gửi xe chưa checkout', 409);
-    }
-    const slot = await this.findGuestSlot(vehicleTypeId, gate.floorId);
-    if (!slot) {
-      return PbmsResponseDto.fail('Hệ thống hết vị trí trống khả dụng cho xe vãng lai', 409);
+      return PbmsResponseDto.fail(
+        'Xe này đang có phiên gửi xe chưa checkout',
+        409,
+      );
     }
     const registeredVehicle = await this.prisma.vehicle.findFirst({
       where: { licensePlate: plate, vehicleTypeId },
@@ -676,13 +720,17 @@ export class ParkingOperationsService {
     const session = await this.createActiveSession({
       licensePlate: plate,
       vehicleTypeId,
-      gateId: gate.id,
-      slotId: slot.id,
+      gate,
+      customerType: 'Guest',
       dto,
       vehicleId: registeredVehicle?.id ?? null,
     });
-    await this.prisma.parkingSlot.update({ where: { id: slot.id }, data: { status: 'Occupied' } });
-    return PbmsResponseDto.ok('Check-in xe vãng lai thành công', await this.loadSession(session.id), 201);
+    if (session instanceof PbmsResponseDto) return session;
+    return PbmsResponseDto.ok(
+      'Check-in xe vãng lai thành công',
+      await this.loadSession(session.id),
+      201,
+    );
   }
 
   /** Check-in bằng mã gửi xe một lần: như xe vãng lai nhưng biển số / loại xe lấy theo mã. */
@@ -701,56 +749,76 @@ export class ParkingOperationsService {
     const status = effectiveEntryPassStatus(pass);
     if (status !== 'Active') {
       const reason =
-        status === 'Used' ? 'đã được sử dụng' : status === 'Cancelled' ? 'đã bị huỷ' : 'đã hết hạn';
+        status === 'Used'
+          ? 'đã được sử dụng'
+          : status === 'Cancelled'
+            ? 'đã bị huỷ'
+            : 'đã hết hạn';
       return PbmsResponseDto.fail(`Mã vào bãi ${reason}`, 409);
     }
     const plate = pass.vehicle.licensePlate;
     // Camera / nhân viên đọc được biển số khác biển trên mã: không cho vào bằng mã này.
-    const seen = normalizeLicensePlate(pbmsPick(dto, 'licensePlate', 'LicensePlate', 'licensePlateIn', 'LicensePlateIn'));
+    const seen = normalizeLicensePlate(
+      pbmsPick(
+        dto,
+        'licensePlate',
+        'LicensePlate',
+        'licensePlateIn',
+        'LicensePlateIn',
+      ),
+    );
     if (seen && seen !== plate) {
-      return PbmsResponseDto.fail(`Biển số xe (${seen}) không khớp mã vào bãi (${plate})`, 409);
+      return PbmsResponseDto.fail(
+        `Biển số xe (${seen}) không khớp mã vào bãi (${plate})`,
+        409,
+      );
     }
     const vehicleTypeId = pass.vehicle.vehicleTypeId;
-    const sub = await this.activeSubscription(plate, vehicleTypeId, new Date(), await this.parkingOfGate(gate));
+    const sub = await this.activeSubscription(
+      plate,
+      vehicleTypeId,
+      new Date(),
+      await this.parkingOfGate(gate),
+    );
     if (sub) {
-      return PbmsResponseDto.fail('Xe đang có vé tháng hợp lệ, vui lòng check-in khách tháng', 409);
+      return PbmsResponseDto.fail(
+        'Xe đang có vé tháng hợp lệ, vui lòng check-in khách tháng',
+        409,
+      );
     }
     const busy = await this.prisma.parkingSession.findFirst({
       where: { licensePlateIn: plate, status: 'Active' },
     });
     if (busy) {
-      return PbmsResponseDto.fail('Xe này đang có phiên gửi xe chưa checkout', 409);
-    }
-    const slot = await this.findGuestSlot(vehicleTypeId, gate.floorId);
-    if (!slot) {
-      return PbmsResponseDto.fail('Hệ thống hết vị trí trống khả dụng cho xe vãng lai', 409);
-    }
-    // Đánh dấu đã dùng trước (có điều kiện) để hai lần quét cùng lúc chỉ một lần vào được.
-    const claimed = await this.prisma.entryPass.updateMany({
-      where: { id: pass.id, status: 'Active', expiresAt: { gt: new Date() } },
-      data: { status: 'Used', usedAt: new Date() },
-    });
-    if (claimed.count !== 1) {
-      return PbmsResponseDto.fail('Mã vào bãi đã được sử dụng', 409);
+      return PbmsResponseDto.fail(
+        'Xe này đang có phiên gửi xe chưa checkout',
+        409,
+      );
     }
     const session = await this.createActiveSession({
       licensePlate: plate,
       vehicleTypeId,
-      gateId: gate.id,
-      slotId: slot.id,
+      gate,
+      customerType: 'Guest',
+      entryPassId: pass.id,
       dto,
       vehicleId: pass.vehicleId,
     });
-    await this.prisma.parkingSlot.update({ where: { id: slot.id }, data: { status: 'Occupied' } });
-    await this.prisma.entryPass.update({ where: { id: pass.id }, data: { sessionId: session.id } });
-    return PbmsResponseDto.ok('Check-in bằng mã vào bãi thành công', await this.loadSession(session.id), 201);
+    if (session instanceof PbmsResponseDto) return session;
+    return PbmsResponseDto.ok(
+      'Check-in bằng mã vào bãi thành công',
+      await this.loadSession(session.id),
+      201,
+    );
   }
 
   private async checkInResident(
     dto: object,
     gate: { id: string; floorId: string },
   ): Promise<PbmsResponseDto> {
-    const plate = normalizeLicensePlate(pbmsPick(dto, 'licensePlate', 'LicensePlate'));
+    const plate = normalizeLicensePlate(
+      pbmsPick(dto, 'licensePlate', 'LicensePlate'),
+    );
     if (!isValidLicensePlate(plate)) {
       return PbmsResponseDto.fail('Biển số phải gồm 4-15 chữ cái và chữ số');
     }
@@ -763,31 +831,40 @@ export class ParkingOperationsService {
         endDate: { gte: now },
         ...this.validAtParking(await this.parkingOfGate(gate)),
       },
-      include: { vehicle: { include: { vehicleType: true } } },
+      include: { vehicle: { include: { vehicleType: true } }, package: true },
     });
     if (!sub) {
-      return PbmsResponseDto.fail('Không tìm thấy gói tháng hiệu lực tại bãi này cho biển số này', 404);
+      return PbmsResponseDto.fail(
+        'Không tìm thấy gói tháng hiệu lực tại bãi này cho biển số này',
+        404,
+      );
     }
     const busy = await this.prisma.parkingSession.findFirst({
       where: { licensePlateIn: plate, status: 'Active' },
     });
     if (busy) {
-      return PbmsResponseDto.fail('Xe này đang có phiên gửi xe chưa checkout', 409);
-    }
-    const slotId = sub.fixedSlotId;
-    if (slotId) {
-      await this.prisma.parkingSlot.update({ where: { id: slotId }, data: { status: 'Occupied' } });
+      return PbmsResponseDto.fail(
+        'Xe này đang có phiên gửi xe chưa checkout',
+        409,
+      );
     }
     const session = await this.createActiveSession({
       licensePlate: plate,
       vehicleTypeId: sub.vehicle.vehicleTypeId,
-      gateId: gate.id,
-      slotId,
+      gate,
+      customerType: 'Resident',
+      fixedSlotId: sub.fixedSlotId,
+      allowAnyResidentSlot: sub.package?.allParkings ?? false,
+      userId: sub.userId,
       dto,
       vehicleId: sub.vehicleId,
     });
-    void gate;
-    return PbmsResponseDto.ok('Check-in khách tháng thành công', await this.loadSession(session.id), 201);
+    if (session instanceof PbmsResponseDto) return session;
+    return PbmsResponseDto.ok(
+      'Check-in khách tháng thành công',
+      await this.loadSession(session.id),
+      201,
+    );
   }
 
   private async checkInReservation(
@@ -798,9 +875,13 @@ export class ParkingOperationsService {
       pbmsPickGuid(dto, 'reservationId', 'ReservationId') ||
       extractGuidFromQrPayload(pbmsPick(dto, 'qrPayload', 'QrPayload')) ||
       '';
-    const plate = normalizeLicensePlate(pbmsPick(dto, 'licensePlate', 'LicensePlate'));
+    const plate = normalizeLicensePlate(
+      pbmsPick(dto, 'licensePlate', 'LicensePlate'),
+    );
     if (isEmptyGuid(reservationId)) {
-      return PbmsResponseDto.fail('Vui lòng quét mã đặt chỗ hoặc gửi QrPayload');
+      return PbmsResponseDto.fail(
+        'Vui lòng quét mã đặt chỗ hoặc gửi QrPayload',
+      );
     }
     if (!isValidLicensePlate(plate)) {
       return PbmsResponseDto.fail('Vui lòng nhập biển số');
@@ -816,20 +897,37 @@ export class ParkingOperationsService {
       return PbmsResponseDto.fail('Đặt chỗ chưa được liên kết với xe', 409);
     }
     if (reservation.vehicle.licensePlate !== plate) {
-      return PbmsResponseDto.fail('Biển số không khớp với xe đã chọn khi đặt chỗ', 403);
+      return PbmsResponseDto.fail(
+        'Biển số không khớp với xe đã chọn khi đặt chỗ',
+        403,
+      );
     }
-    if (!sameStatus(reservation.status, 'Confirmed') && !sameStatus(reservation.status, 'Modified')) {
-      return PbmsResponseDto.fail('Đặt chỗ phải ở trạng thái Confirmed hoặc Modified để check-in');
+    if (
+      !sameStatus(reservation.status, 'Confirmed') &&
+      !sameStatus(reservation.status, 'Modified')
+    ) {
+      return PbmsResponseDto.fail(
+        'Đặt chỗ phải ở trạng thái Confirmed hoặc Modified để check-in',
+      );
     }
     const now = new Date();
-    const min = new Date(reservation.expectedEntryTime.getTime() - 30 * 60 * 1000);
-    const max = new Date(reservation.expectedEntryTime.getTime() + 30 * 60 * 1000);
+    const min = new Date(
+      reservation.expectedEntryTime.getTime() - 30 * 60 * 1000,
+    );
+    const max = new Date(
+      reservation.expectedEntryTime.getTime() + 30 * 60 * 1000,
+    );
     if (now < min || now > max) {
       return PbmsResponseDto.fail(
         'Ngoài khung giờ cho phép check-in đặt trước (Chỉ áp dụng trong khoảng -30p đến +30p so với giờ hẹn)',
       );
     }
-    const sub = await this.activeSubscription(plate, reservation.vehicle.vehicleTypeId, now, await this.parkingOfGate(gate));
+    const sub = await this.activeSubscription(
+      plate,
+      reservation.vehicle.vehicleTypeId,
+      now,
+      await this.parkingOfGate(gate),
+    );
     if (sub) {
       return PbmsResponseDto.fail(
         'Biển số này đang có gói tháng hợp lệ. Không thể check-in bằng vé đặt trước; vui lòng check-in tại tầng cư dân / khách tháng',
@@ -840,80 +938,240 @@ export class ParkingOperationsService {
       where: { licensePlateIn: plate, status: 'Active' },
     });
     if (busy) {
-      return PbmsResponseDto.fail('Xe này đang có phiên gửi xe chưa checkout', 409);
+      return PbmsResponseDto.fail(
+        'Xe này đang có phiên gửi xe chưa checkout',
+        409,
+      );
     }
-    const slot = await this.findReservationSlot(reservation.vehicle.vehicleTypeId, gate.floorId);
-    if (!slot) {
-      return PbmsResponseDto.fail('Hệ thống hết vị trí trống khả dụng cho xe đặt trước tại thời điểm này', 409);
-    }
-    const session = await this.prisma.$transaction(async (tx) => {
-      const created = await tx.parkingSession.create({
-        data: {
-          reservationId: reservation.id,
-          vehicleId: reservation.vehicleId,
-          licensePlateIn: plate,
-          entryImageUrl: pbmsPick(dto, 'entryImageUrl', 'EntryImageUrl').trim() || null,
-          driverEntryImageUrl: pbmsPick(dto, 'driverEntryImageUrl', 'DriverEntryImageUrl').trim() || null,
-          vehicleTypeId: reservation.vehicle.vehicleTypeId,
-          entryTime: now,
-          entryGateId: gate.id,
-          assignedSlotId: slot.id,
-          actualSlotId: slot.id,
-          status: 'Active',
-        },
-      });
-      await tx.reservation.update({ where: { id: reservation.id }, data: { status: 'CheckedIn' } });
-      await tx.parkingSlot.update({ where: { id: slot.id }, data: { status: 'Occupied' } });
-      return created;
+    const session = await this.createActiveSession({
+      licensePlate: plate,
+      vehicleTypeId: reservation.vehicle.vehicleTypeId,
+      vehicleId: reservation.vehicleId,
+      gate,
+      customerType: 'Reservation',
+      reservationId: reservation.id,
+      dto,
     });
-    return PbmsResponseDto.ok('Check-in xe đặt trước thành công', await this.loadSession(session.id), 201);
+    if (session instanceof PbmsResponseDto) return session;
+    return PbmsResponseDto.ok(
+      'Check-in xe đặt trước thành công',
+      await this.loadSession(session.id),
+      201,
+    );
   }
 
   private async createActiveSession(input: {
     licensePlate: string;
     vehicleTypeId: string;
-    gateId: string;
-    slotId: string | null;
+    gate: { id: string; floorId: string };
+    customerType: 'Guest' | 'Resident' | 'Reservation';
+    fixedSlotId?: string | null;
+    allowAnyResidentSlot?: boolean;
+    userId?: string;
+    entryPassId?: string;
+    reservationId?: string;
     dto: object;
     vehicleId?: string | null;
   }) {
-    const created = await this.prisma.parkingSession.create({
-      data: {
-        vehicleId: input.vehicleId ?? null,
-        licensePlateIn: input.licensePlate,
-        entryImageUrl: pbmsPick(input.dto, 'entryImageUrl', 'EntryImageUrl').trim() || null,
-        driverEntryImageUrl: pbmsPick(input.dto, 'driverEntryImageUrl', 'DriverEntryImageUrl').trim() || null,
-        vehicleTypeId: input.vehicleTypeId,
-        entryTime: new Date(),
-        entryGateId: input.gateId,
-        assignedSlotId: input.slotId,
-        actualSlotId: input.slotId,
-        status: 'Active',
-      },
-    });
-    await this.notifications?.notifyPlateOwner(created.licensePlateIn, {
-      title: 'Xe đã vào bãi',
-      message: `Xe ${created.licensePlateIn} vào bãi lúc ${formatTime(created.entryTime)}. Thanh toán trước trên app để ra cổng nhanh.`,
-      type: 'parking',
-      metadata: { sessionId: created.id },
-    });
+    let created: ParkingSession;
+    try {
+      created = await this.prisma.$transaction(async (tx) => {
+        // Cùng biển số được tuần tự hóa giữa các cổng, kể cả xe chưa đăng ký tài khoản.
+        await tx.$queryRaw`SELECT pg_advisory_xact_lock(hashtextextended(${input.licensePlate}, 0))::text`;
+        const busy = await tx.parkingSession.findFirst({
+          where: { licensePlateIn: input.licensePlate, status: 'Active' },
+        });
+        if (busy)
+          throw PbmsResponseDto.fail(
+            'Xe này đang có phiên gửi xe chưa checkout',
+            409,
+          );
+
+        const floor = await tx.floor.findUnique({
+          where: { id: input.gate.floorId },
+          include: { dedicatedVehicleType: true },
+        });
+        if (!floor)
+          throw PbmsResponseDto.fail('Không tìm thấy tầng của cổng', 404);
+        const resident = input.customerType === 'Resident';
+        if (floor.isResident !== resident)
+          throw PbmsResponseDto.fail(
+            'Cổng không thuộc khu dành cho loại khách này',
+            409,
+          );
+        const type = await tx.vehicleType.findUnique({
+          where: { id: input.vehicleTypeId },
+        });
+        if (!type)
+          throw PbmsResponseDto.fail('Không tìm thấy loại phương tiện', 404);
+        let slotId: string | null = null;
+        if (isMotorbikeType(type.typeName)) {
+          if (!isMotorbikeType(floor.dedicatedVehicleType?.typeName)) {
+            throw PbmsResponseDto.fail(
+              'Vui lòng chọn cổng của khu xe máy',
+              409,
+            );
+          }
+          await tx.$queryRaw`SELECT id FROM floors WHERE id = ${floor.id}::uuid FOR UPDATE`;
+          // Đọc lại sức chứa sau khi khóa để không dùng giá trị cũ khi tầng vừa được cập nhật.
+          const capacity = await tx.floor.findUniqueOrThrow({
+            where: { id: floor.id },
+            select: { totalCapacity: true },
+          });
+          const occupied = await tx.parkingSession.count({
+            where: {
+              status: 'Active',
+              entryGate: { is: { floorId: floor.id } },
+            },
+          });
+          if (occupied >= capacity.totalCapacity)
+            throw PbmsResponseDto.fail('Khu xe máy đã hết sức chứa', 409);
+        } else {
+          if (isMotorbikeType(floor.dedicatedVehicleType?.typeName)) {
+            throw PbmsResponseDto.fail('Vui lòng chọn cổng của khu ô tô', 409);
+          }
+          const useFixedSlot = resident && !input.allowAnyResidentSlot;
+          const slot = useFixedSlot
+            ? input.fixedSlotId &&
+              (await tx.parkingSlot.findFirst({
+                where: {
+                  id: input.fixedSlotId,
+                  parkingId: floor.parkingId,
+                  vehicleTypeId: input.vehicleTypeId,
+                  assignedUserId: input.userId,
+                  status: 'Assigned',
+                  floor: { isResident: true },
+                },
+              }))
+            : await this.findAvailableSlot(
+                tx,
+                input.vehicleTypeId,
+                floor.id,
+                floor.parkingId,
+                resident,
+              );
+          if (!slot)
+            throw PbmsResponseDto.fail(
+              'Không có vị trí đỗ khả dụng tại bãi này',
+              409,
+            );
+          const claimed = await tx.parkingSlot.updateMany({
+            where: {
+              id: slot.id,
+              parkingId: floor.parkingId,
+              status: useFixedSlot ? 'Assigned' : 'Available',
+            },
+            data: { status: 'Occupied' },
+          });
+          if (claimed.count !== 1)
+            throw PbmsResponseDto.fail(
+              'Vị trí vừa được xe khác sử dụng, vui lòng thử lại',
+              409,
+            );
+          slotId = slot.id;
+        }
+        if (input.entryPassId) {
+          const pass = await tx.entryPass.updateMany({
+            where: {
+              id: input.entryPassId,
+              status: 'Active',
+              expiresAt: { gt: new Date() },
+            },
+            data: { status: 'Used', usedAt: new Date() },
+          });
+          if (pass.count !== 1)
+            throw PbmsResponseDto.fail(
+              'Mã vào bãi đã được sử dụng hoặc hết hạn',
+              409,
+            );
+        }
+        if (input.reservationId) {
+          const reservation = await tx.reservation.updateMany({
+            where: {
+              id: input.reservationId,
+              status: { in: ['Confirmed', 'Modified'] },
+            },
+            data: { status: 'CheckedIn' },
+          });
+          if (reservation.count !== 1)
+            throw PbmsResponseDto.fail('Đặt chỗ không còn hiệu lực', 409);
+        }
+        const session = await tx.parkingSession.create({
+          data: {
+            reservationId: input.reservationId ?? null,
+            vehicleId: input.vehicleId ?? null,
+            licensePlateIn: input.licensePlate,
+            entryImageUrl:
+              pbmsPick(input.dto, 'entryImageUrl', 'EntryImageUrl').trim() ||
+              null,
+            driverEntryImageUrl:
+              pbmsPick(
+                input.dto,
+                'driverEntryImageUrl',
+                'DriverEntryImageUrl',
+              ).trim() || null,
+            vehicleTypeId: input.vehicleTypeId,
+            entryTime: new Date(),
+            entryGateId: input.gate.id,
+            assignedSlotId: slotId,
+            actualSlotId: slotId,
+            status: 'Active',
+          },
+        });
+        if (input.entryPassId)
+          await tx.entryPass.update({
+            where: { id: input.entryPassId },
+            data: { sessionId: session.id },
+          });
+        return session;
+      });
+    } catch (error) {
+      if (error instanceof PbmsResponseDto) return error;
+      throw error;
+    }
+    await this.notifications
+      ?.notifyPlateOwner(created.licensePlateIn, {
+        title: 'Xe đã vào bãi',
+        message: `Xe ${created.licensePlateIn} vào bãi lúc ${formatTime(created.entryTime)}. Thanh toán trước trên app để ra cổng nhanh.`,
+        type: 'parking',
+        metadata: { sessionId: created.id },
+      })
+      .catch(() =>
+        Logger.warn(
+          'Không gửi được thông báo sau check-in',
+          'ParkingOperationsService',
+        ),
+      );
     return created;
   }
 
-  private async findGuestSlot(vehicleTypeId: string, floorId: string) {
-    const preferred = await this.prisma.parkingSlot.findFirst({
-      where: { vehicleTypeId, floorId, status: 'Available', floor: { isResident: false } },
+  private async findAvailableSlot(
+    tx: Prisma.TransactionClient,
+    vehicleTypeId: string,
+    floorId: string,
+    parkingId: string,
+    isResident: boolean,
+  ) {
+    const preferred = await tx.parkingSlot.findFirst({
+      where: {
+        vehicleTypeId,
+        floorId,
+        parkingId,
+        status: 'Available',
+        floor: { isResident },
+      },
     });
     if (preferred) {
       return preferred;
     }
-    return this.prisma.parkingSlot.findFirst({
-      where: { vehicleTypeId, status: 'Available', floor: { isResident: false } },
+    return tx.parkingSlot.findFirst({
+      where: {
+        vehicleTypeId,
+        parkingId,
+        status: 'Available',
+        floor: { isResident },
+      },
     });
-  }
-
-  private findReservationSlot(vehicleTypeId: string, floorId: string) {
-    return this.findGuestSlot(vehicleTypeId, floorId);
   }
 
   private async closeSession(sessionId: string, assignedFixedSlotId: string | null): Promise<void> {

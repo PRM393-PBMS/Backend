@@ -603,6 +603,7 @@ model EntryPass {
 /// (SSE) rồi đối chiếu và check-in; điện thoại chỉ đóng vai máy quét.
 model GateScan {
   id            String    @id @default(uuid()) @db.Uuid
+  deduplicationKey String? @unique @map("deduplication_key") @db.VarChar(64)
   gateId        String    @map("gate_id") @db.Uuid
   scannedById   String    @map("scanned_by_id") @db.Uuid
   imageUrl      String    @map("image_url") @db.VarChar(2048)

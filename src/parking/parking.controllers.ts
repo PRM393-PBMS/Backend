@@ -1,3 +1,4 @@
+import { ParseUUIDPipe } from '@nestjs/common';
 import {
   Body,
   Controller,
@@ -53,7 +54,7 @@ export class ParkingSessionsController {
   @PbmsRoles('customer')
   @ApiOperation({ summary: 'Xem phí tạm tính phiên của tôi' })
   @ApiPbmsOkResponse('Tính phí gửi xe tạm tính thành công', feeExample)
-  myFee(@Param('id') id: string, @GetPbmsUserId() userId: string): Promise<PbmsResponseDto> {
+  myFee(@Param('id', new ParseUUIDPipe()) id: string, @GetPbmsUserId() userId: string): Promise<PbmsResponseDto> {
     return this.operations.getMyFeePreview(id, userId);
   }
 
@@ -62,7 +63,7 @@ export class ParkingSessionsController {
   @ApiOperation({ summary: 'Thanh toán trước khi ra bãi (Wallet hoặc PayOS), nhận mã ra cổng' })
   @ApiPbmsBodyExample(PbmsBodyDto, { paymentMethod: 'Wallet' })
   prepay(
-    @Param('id') id: string,
+    @Param('id', new ParseUUIDPipe()) id: string,
     @GetPbmsUserId() userId: string,
     @Body() dto: PbmsBodyDto,
   ): Promise<PbmsResponseDto> {
@@ -72,7 +73,7 @@ export class ParkingSessionsController {
   @Get('my/:id/exit-pass')
   @PbmsRoles('customer')
   @ApiOperation({ summary: 'Mã ra cổng sau khi thanh toán trước (đồng bộ trạng thái PayOS)' })
-  myExitPass(@Param('id') id: string, @GetPbmsUserId() userId: string): Promise<PbmsResponseDto> {
+  myExitPass(@Param('id', new ParseUUIDPipe()) id: string, @GetPbmsUserId() userId: string): Promise<PbmsResponseDto> {
     return this.operations.getMyExitPass(id, userId);
   }
 
@@ -83,7 +84,7 @@ export class ParkingSessionsController {
     Payment: paymentExample,
     Fee: feeExample,
   })
-  myCheckout(@Param('id') id: string, @GetPbmsUserId() userId: string): Promise<PbmsResponseDto> {
+  myCheckout(@Param('id', new ParseUUIDPipe()) id: string, @GetPbmsUserId() userId: string): Promise<PbmsResponseDto> {
     return this.operations.getMyCheckoutPayment(id, userId);
   }
 
@@ -107,7 +108,7 @@ export class ParkingSessionsController {
   @PbmsRoles('manager', 'staff')
   @ApiOperation({ summary: 'Chi tiết phiên gửi xe' })
   @ApiPbmsOkResponse('Lấy phiên gửi xe thành công', sessionExample)
-  getById(@Param('id') id: string): Promise<PbmsResponseDto> {
+  getById(@Param('id', new ParseUUIDPipe()) id: string): Promise<PbmsResponseDto> {
     return this.sessions.getById(id);
   }
 
@@ -146,7 +147,7 @@ export class ParkingSessionsController {
   @PbmsRoles('manager', 'staff')
   @ApiOperation({ summary: 'Xóa phiên gửi xe' })
   @ApiPbmsOkResponse('Xóa phiên gửi xe thành công', null)
-  remove(@Param('id') id: string): Promise<PbmsResponseDto> {
+  remove(@Param('id', new ParseUUIDPipe()) id: string): Promise<PbmsResponseDto> {
     return this.sessions.remove(id);
   }
 }
@@ -167,7 +168,7 @@ export class ParkingOperationsController {
     floors: [{ floorName: 'Tầng B1', available: 33, total: 120, vehicleTypeName: 'Xe máy' }],
   })
   availability(
-    @Query('vehicleTypeId') vehicleTypeId?: string,
+    @Query('vehicleTypeId', new ParseUUIDPipe({ optional: true })) vehicleTypeId?: string,
     @Query('floorKeyword') floorKeyword?: string,
   ): Promise<PbmsResponseDto> {
     return this.operations.availability(vehicleTypeId, floorKeyword);
@@ -299,7 +300,7 @@ export class ParkingOperationsController {
   @ApiPbmsOkResponse('Lấy trạng thái thanh toán checkout thành công', {
     Payment: paymentExample,
   })
-  checkoutPayment(@Param('paymentId') paymentId: string): Promise<PbmsResponseDto> {
+  checkoutPayment(@Param('paymentId', new ParseUUIDPipe()) paymentId: string): Promise<PbmsResponseDto> {
     return this.operations.getCheckoutPayment(paymentId);
   }
 
@@ -313,7 +314,7 @@ export class ParkingOperationsController {
     Session: { ...sessionExample, status: 'Completed', exitTime: '2026-09-17T11:45:00.000Z' },
     Payment: paymentExample,
   })
-  confirmCash(@Param('paymentId') paymentId: string): Promise<PbmsResponseDto> {
+  confirmCash(@Param('paymentId', new ParseUUIDPipe()) paymentId: string): Promise<PbmsResponseDto> {
     return this.operations.confirmCash(paymentId);
   }
 
@@ -324,7 +325,7 @@ export class ParkingOperationsController {
   @Post('check-out/payment/:paymentId/cancel')
   @ApiOperation({ summary: 'Hủy checkout' })
   @ApiPbmsOkResponse('Đã hủy yêu cầu checkout', { Payment: { ...paymentExample, paymentStatus: 'Cancelled' } })
-  cancelCheckout(@Param('paymentId') paymentId: string): Promise<PbmsResponseDto> {
+  cancelCheckout(@Param('paymentId', new ParseUUIDPipe()) paymentId: string): Promise<PbmsResponseDto> {
     return this.operations.cancelCheckout(paymentId);
   }
 
@@ -335,7 +336,7 @@ export class ParkingOperationsController {
   @Get('fee-preview/:sessionId')
   @ApiOperation({ summary: 'Phí tạm tính theo phiên' })
   @ApiPbmsOkResponse('Tính phí gửi xe tạm tính thành công', feeExample)
-  feePreview(@Param('sessionId') sessionId: string): Promise<PbmsResponseDto> {
+  feePreview(@Param('sessionId', new ParseUUIDPipe()) sessionId: string): Promise<PbmsResponseDto> {
     return this.operations.getFeePreview(sessionId);
   }
 }
