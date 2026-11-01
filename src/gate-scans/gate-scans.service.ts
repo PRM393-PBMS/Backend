@@ -51,6 +51,16 @@ const scanInclude = {
 
 type ScanRow = Prisma.GateScanGetPayload<{ include: typeof scanInclude }>;
 
+/** Cổng nhân viên đang trực, do web chọn; điện thoại của cùng tài khoản đi theo. */
+export interface StaffGate {
+  gateId: string;
+  gateName: string;
+  gateType: string;
+  floorName: string | null;
+  parkingName: string | null;
+  setAt: string;
+}
+
 interface ScanEvent {
   gateId: string;
   type: 'scan' | 'scan-updated';
@@ -66,6 +76,8 @@ interface ScanEvent {
 export class GateScansService {
   private readonly logger = new Logger(GateScansService.name);
   private readonly events = new Subject<ScanEvent>();
+  /** Theo tài khoản nhân viên. Mất khi máy chủ khởi động lại; web gửi lại mỗi lần mở / kết nối lại luồng. */
+  private readonly staffGates = new Map<string, StaffGate>();
 
   constructor(
     private readonly prisma: PrismaService,
@@ -128,17 +140,29 @@ export class GateScansService {
 
     let plate: string | null = null;
     let confidence: number | null = null;
+    /** Lý do không đọc được biển số, báo cho điện thoại để nhân viên biết chụp lại hay báo quản lý. */
+    let recognitionNote: string | null = null;
     try {
       const result = await this.plates.recognize(file, upload.imageUrl);
       plate = result.licensePlate
         ? normalizeLicensePlate(result.licensePlate)
         : null;
       confidence = result.confidence ?? null;
+      if (!plate) {
+        recognitionNote = this.recognitionNote(result);
+        this.logger.warn(
+          `Không đọc được biển số: ${result.message ?? ''} status=${result.providerStatusCode ?? '-'} ${result.providerError ?? ''}`.trim(),
+        );
+      }
     } catch (error) {
       // Không đọc được biển số vẫn gửi ảnh lên web để nhân viên tự nhập.
       this.logger.warn(`Nhận diện biển số lỗi: ${(error as Error).message}`);
+      recognitionNote = 'Dịch vụ nhận diện không phản hồi';
     }
-    if (plate && !isValidLicensePlate(plate)) plate = null;
+    if (plate && !isValidLicensePlate(plate)) {
+      plate = null;
+      recognitionNote = 'Biển số đọc được không hợp lệ';
+    }
 
     const match = plate
       ? await this.lookup(plate, gate.floor.parkingId, capturedAt)
@@ -187,10 +211,52 @@ export class GateScansService {
     return PbmsResponseDto.ok(
       plate
         ? `Đã gửi biển số ${plate} lên web`
-        : 'Đã gửi ảnh lên web, chưa đọc được biển số',
-      dto,
+        : `Đã gửi ảnh lên web, chưa đọc được biển số${recognitionNote ? ` (${recognitionNote})` : ''}`,
+      { ...dto, recognitionNote },
       201,
     );
+  }
+
+  private recognitionNote(result: {
+    message?: string | null;
+    providerStatusCode?: number | null;
+    candidates?: unknown[];
+  }): string {
+    const status = result.providerStatusCode;
+    if (status == null) return result.message ?? 'Chưa đọc được biển số';
+    if (status === 401 || status === 403) return 'Khoá Plate Recognizer sai hoặc hết hạn';
+    if (status === 429) return 'Plate Recognizer hết lượt hoặc gọi quá nhanh';
+    if (status >= 400) return `Plate Recognizer báo lỗi ${status}`;
+    return 'Không thấy biển số trong ảnh, chụp gần và rõ hơn';
+  }
+
+  /** Web chọn cổng trực; điện thoại cùng tài khoản đọc lại qua `myGate`. */
+  async setMyGate(staffId: string, gateId: string | undefined): Promise<PbmsResponseDto> {
+    if (!gateId || !isUUID(gateId)) return PbmsResponseDto.fail('GateId phải là UUID hợp lệ', 400);
+    const gate = await this.prisma.gate.findUnique({
+      where: { id: gateId },
+      select: {
+        id: true,
+        gateName: true,
+        gateType: true,
+        floor: { select: { floorName: true, parking: { select: { name: true } } } },
+      },
+    });
+    if (!gate) return PbmsResponseDto.fail('Không tìm thấy cổng', 404);
+    const current: StaffGate = {
+      gateId: gate.id,
+      gateName: gate.gateName,
+      gateType: gate.gateType,
+      floorName: gate.floor?.floorName ?? null,
+      parkingName: gate.floor?.parking?.name ?? null,
+      setAt: new Date().toISOString(),
+    };
+    this.staffGates.set(staffId, current);
+    return PbmsResponseDto.ok('Đã đặt cổng trực', current);
+  }
+
+  myGate(staffId: string): PbmsResponseDto {
+    return PbmsResponseDto.ok('Cổng trực hiện tại', this.staffGates.get(staffId) ?? null);
   }
 
   async recent(filters: { gateId?: string; staffId?: string; limit?: number }): Promise<PbmsResponseDto> {

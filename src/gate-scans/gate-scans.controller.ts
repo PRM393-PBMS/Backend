@@ -7,6 +7,7 @@ import {
   Param,
   Patch,
   Post,
+  Put,
   Query,
   Req,
   Sse,
@@ -103,6 +104,24 @@ export class GateScansController {
       staffId: mine === 'true' ? staffId : undefined,
       limit: Number(limit) || 20,
     });
+  }
+
+  @Get('my-gate')
+  @UseInterceptors(PbmsStatusInterceptor)
+  @ApiOperation({
+    summary: 'Cổng trực đang chọn trên web',
+    description: 'Điện thoại máy quét hỏi định kỳ để đi theo cổng mà web của cùng tài khoản đang mở. `result` null khi web chưa chọn.',
+  })
+  myGate(@GetPbmsUserId() staffId: string): PbmsResponseDto {
+    return this.scans.myGate(staffId);
+  }
+
+  @Put('my-gate')
+  @UseInterceptors(PbmsStatusInterceptor)
+  @ApiBody({ schema: { type: 'object', required: ['gateId'], properties: { gateId: { type: 'string', format: 'uuid' } } } })
+  @ApiOperation({ summary: 'Web đặt cổng trực cho tài khoản; điện thoại cùng tài khoản đổi theo' })
+  setMyGate(@GetPbmsUserId() staffId: string, @Body() body: { gateId?: string }): Promise<PbmsResponseDto> {
+    return this.scans.setMyGate(staffId, body?.gateId?.trim());
   }
 
   @Patch(':id/status')
