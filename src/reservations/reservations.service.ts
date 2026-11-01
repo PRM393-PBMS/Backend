@@ -70,6 +70,26 @@ export class ReservationsService {
     if (!sameStatus(vehicle.vehicleType.typeName, 'Ô tô')) {
       return PbmsResponseDto.fail('Đặt chỗ trước hiện chỉ áp dụng cho xe ô tô');
     }
+    const [inside, booked] = await Promise.all([
+      this.prisma.parkingSession.findFirst({
+        where: { licensePlateIn: vehicle.licensePlate, status: 'Active' },
+        select: { id: true },
+      }),
+      // Một xe chỉ giữ một chỗ đã cọc: tránh cọc hai lần và chiếm hai chỗ cho cùng một xe.
+      this.prisma.reservation.findFirst({
+        where: { vehicleId: vehicle.id, status: { in: ['Confirmed', 'Modified'] } },
+        select: { expectedEntryTime: true },
+      }),
+    ]);
+    if (inside) {
+      return PbmsResponseDto.fail('Xe đang ở trong bãi, không cần đặt chỗ', 409);
+    }
+    if (booked) {
+      return PbmsResponseDto.fail(
+        `Xe ${vehicle.licensePlate} đã có đặt chỗ đã cọc lúc ${formatTime(booked.expectedEntryTime)}. Đổi giờ hoặc huỷ đơn đó trước khi đặt mới.`,
+        409,
+      );
+    }
     const quotaError = await this.assertQuota(vehicle.vehicleTypeId, vehicle.vehicleType.typeName, null);
     if (quotaError) {
       return quotaError;

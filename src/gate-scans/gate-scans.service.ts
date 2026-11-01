@@ -18,7 +18,14 @@ const MAX_CLOCK_SKEW_MS = 10 * 60 * 1000;
 const HEARTBEAT_MS = 25_000;
 const SCAN_STATUSES = ['New', 'Handled', 'Dismissed'] as const;
 
-export type SuggestedType = 'Reservation' | 'Resident' | 'Guest' | 'Inside' | 'Checkout' | 'Unknown';
+export type SuggestedType =
+  | 'Reservation'
+  | 'Resident'
+  | 'EntryPass'
+  | 'Guest'
+  | 'Inside'
+  | 'Checkout'
+  | 'Unknown';
 
 export interface GateScanMatch {
   reservation: {
@@ -33,6 +40,8 @@ export interface GateScanMatch {
   subscription: { subscriptionId: string; packageName: string | null; endDate: string } | null;
   activeSession: { sessionId: string; entryTime: string; entryGateName: string | null } | null;
   vehicle: { vehicleTypeId: string; vehicleTypeName: string | null; ownerName: string | null } | null;
+  /** Xe đã đăng ký gửi một lần trên app: vào bằng biển số, không cần quét mã. */
+  entryPass?: { entryPassId: string; expiresAt: string } | null;
 }
 
 const scanInclude = {
@@ -229,7 +238,7 @@ export class GateScansService {
   }
 
   async lookup(plate: string, parkingId: string | null, at: Date): Promise<GateScanMatch> {
-    const [activeSession, reservations, subscription, vehicle] = await Promise.all([
+    const [activeSession, reservations, subscription, vehicle, entryPass] = await Promise.all([
       this.prisma.parkingSession.findFirst({
         where: { licensePlateIn: plate, status: 'Active' },
         select: { id: true, entryTime: true, entryGate: { select: { gateName: true } } },
@@ -268,6 +277,15 @@ export class GateScansService {
           vehicleType: { select: { typeName: true } },
           user: { select: { fullName: true } },
         },
+      }),
+      this.prisma.entryPass.findFirst({
+        where: {
+          status: 'Active',
+          expiresAt: { gt: at },
+          vehicle: { is: { licensePlate: plate } },
+        },
+        orderBy: { createdAt: 'desc' },
+        select: { id: true, expiresAt: true },
       }),
     ]);
 
@@ -308,10 +326,13 @@ export class GateScansService {
             ownerName: vehicle.user?.fullName ?? null,
           }
         : null,
+      entryPass: entryPass
+        ? { entryPassId: entryPass.id, expiresAt: entryPass.expiresAt.toISOString() }
+        : null,
     };
   }
 
-  /** Gợi ý cách xử lý cho web: cổng ra cần phiên đang mở; cổng vào ưu tiên xe đã trong bãi > gói tháng > đặt chỗ > vãng lai. */
+  /** Gợi ý cách xử lý cho web: cổng ra cần phiên đang mở; cổng vào ưu tiên xe đã trong bãi > gói tháng > đặt chỗ > gửi một lần > vãng lai. */
   suggest(gateType: string, plate: string | null, match: GateScanMatch | null): SuggestedType {
     if (!plate || !match) return 'Unknown';
     if (gateType.trim().toLowerCase() === 'exit') {
@@ -320,6 +341,7 @@ export class GateScansService {
     if (match.activeSession) return 'Inside';
     if (match.subscription) return 'Resident';
     if (match.reservation) return 'Reservation';
+    if (match.entryPass) return 'EntryPass';
     return 'Guest';
   }
 

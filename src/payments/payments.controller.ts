@@ -115,6 +115,32 @@ export class PaymentsController {
   @UseGuards(PbmsRolesGuard)
   @PbmsRoles('manager')
   @UseInterceptors(PbmsStatusInterceptor)
+  @Post(':id/reconcile')
+  @ApiOperation({
+    summary: 'Quản lý đối soát một thanh toán PayOS đang chờ (tra trực tiếp PayOS)',
+    description:
+      'Dùng khi webhook PayOS tới trễ hoặc bị mất. Đã thanh toán thì xử lý đúng một lần (cộng ví / cấp mã ra cổng / kích hoạt gói). Trả về thanh toán sau đối soát.',
+  })
+  async reconcile(@Param('id') id: string): Promise<PbmsResponseDto> {
+    const found = await this.payments.getById(id);
+    if (!found.isSuccess) {
+      return found;
+    }
+    try {
+      await this.payments.syncPayosPayment(id);
+    } catch (error: unknown) {
+      return PbmsResponseDto.fail(
+        `Không tra được PayOS: ${error instanceof Error ? error.message : 'lỗi không xác định'}`,
+        502,
+      );
+    }
+    return this.payments.getById(id);
+  }
+
+  @ApiBearerAuth('JWT-auth')
+  @UseGuards(PbmsRolesGuard)
+  @PbmsRoles('manager')
+  @UseInterceptors(PbmsStatusInterceptor)
   @Get(':id')
   @ApiOperation({ summary: 'Chi tiết thanh toán' })
   @ApiPbmsOkResponse('Lấy thông tin thanh toán thành công', paymentExample)

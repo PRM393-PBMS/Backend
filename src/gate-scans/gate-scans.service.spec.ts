@@ -14,6 +14,7 @@ function setup(opts: {
   reservations?: object[];
   subscription?: object | null;
   activeSession?: object | null;
+  entryPass?: object | null;
 } = {}) {
   const created: Record<string, unknown>[] = [];
   const prisma = {
@@ -28,6 +29,7 @@ function setup(opts: {
     reservation: { findMany: jest.fn().mockResolvedValue(opts.reservations ?? []) },
     monthlySubscription: { findFirst: jest.fn().mockResolvedValue(opts.subscription ?? null) },
     vehicle: { findFirst: jest.fn().mockResolvedValue(null) },
+    entryPass: { findFirst: jest.fn().mockResolvedValue(opts.entryPass ?? null) },
     gateScan: {
       findUnique: jest.fn().mockResolvedValue(null),
       create: jest.fn(({ data }: { data: Record<string, unknown> }) => {
@@ -111,6 +113,26 @@ describe('GateScansService.create', () => {
     });
     await service.create(staffId, file, { gateId, baseUrl: 'http://h' });
     expect(created[0].suggestedType).toBe('Inside');
+  });
+
+  it('xe đã đăng ký gửi một lần: báo cho web, không cần quét mã QR', async () => {
+    const expiresAt = new Date(Date.now() + 3600_000);
+    const { service, created } = setup({ entryPass: { id: 'pass-1', expiresAt } });
+    await service.create(staffId, file, { gateId, baseUrl: 'http://h' });
+    expect(created[0].suggestedType).toBe('EntryPass');
+    expect((created[0].match as { entryPass: object }).entryPass).toEqual({
+      entryPassId: 'pass-1',
+      expiresAt: expiresAt.toISOString(),
+    });
+  });
+
+  it('đặt chỗ được ưu tiên hơn mã gửi một lần', async () => {
+    const { service, created } = setup({
+      reservations: [{ id: 'r', status: 'Confirmed', expectedEntryTime: new Date(), user: null, vehicle: null }],
+      entryPass: { id: 'pass-1', expiresAt: new Date(Date.now() + 3600_000) },
+    });
+    await service.create(staffId, file, { gateId, baseUrl: 'http://h' });
+    expect(created[0].suggestedType).toBe('Reservation');
   });
 
   it('cổng ra: có phiên đang mở thì gợi ý checkout', async () => {

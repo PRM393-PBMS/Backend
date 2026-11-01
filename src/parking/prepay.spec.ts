@@ -23,7 +23,18 @@ function setup(opts: { debit: 'ok' | 'insufficient'; ownerId?: string }) {
     exitPassCode: null as string | null,
     vehicle: { userId: opts.ownerId ?? USER_ID },
   };
+  // Thay đổi trong giao dịch chỉ ghi vào phiên khi giao dịch thành công (như rollback thật).
+  let staged: Record<string, unknown> = {};
   const tx = {
+    parkingSession: {
+      updateMany: jest.fn(({ where, data }: { where: { exitPassCode: null }; data: object }) => {
+        if (session.status !== 'Active' || session.exitPassCode !== where.exitPassCode) {
+          return Promise.resolve({ count: 0 });
+        }
+        staged = { ...staged, ...data };
+        return Promise.resolve({ count: 1 });
+      }),
+    },
     payment: {
       create: jest.fn().mockResolvedValue({
         id: 'pay-1',
@@ -46,7 +57,11 @@ function setup(opts: { debit: 'ok' | 'insufficient'; ownerId?: string }) {
         return Promise.resolve(session);
       }),
     },
-    payment: { findFirst: jest.fn().mockResolvedValue(null) },
+    payment: {
+      findFirst: jest.fn().mockResolvedValue(null),
+      findMany: jest.fn().mockResolvedValue([]),
+      updateMany: jest.fn().mockResolvedValue({ count: 1 }),
+    },
     monthlySubscription: { findFirst: jest.fn().mockResolvedValue(null) },
     pricingPolicy: {
       findFirst: jest.fn().mockResolvedValue({
@@ -57,7 +72,12 @@ function setup(opts: { debit: 'ok' | 'insufficient'; ownerId?: string }) {
         nightSurcharge: new Prisma.Decimal(0),
       }),
     },
-    $transaction: jest.fn(async (fn: (t: typeof tx) => Promise<unknown>) => fn(tx)),
+    $transaction: jest.fn(async (fn: (t: typeof tx) => Promise<unknown>) => {
+      staged = {};
+      const result = await fn(tx);
+      Object.assign(session, staged);
+      return result;
+    }),
   };
   const wallets = {
     debitForUser: jest.fn(() =>
@@ -75,7 +95,7 @@ function setup(opts: { debit: 'ok' | 'insufficient'; ownerId?: string }) {
     {} as PaymentsService,
     wallets as unknown as WalletsService,
   );
-  return { service, session, wallets, tx };
+  return { service, session, wallets, tx, prisma };
 }
 
 describe('Thanh toán trước khi ra bãi', () => {
@@ -103,6 +123,33 @@ describe('Thanh toán trước khi ra bãi', () => {
 
     expect(res.statusCode).toBe(402);
     expect(session.exitPassCode).toBeNull();
+  });
+
+  it('hai yêu cầu trả bằng ví cùng lúc: yêu cầu sau không trừ ví lần nữa', async () => {
+    const { service, session, wallets, tx } = setup({ debit: 'ok' });
+    // Yêu cầu khác vừa thanh toán xong sau khi yêu cầu này đọc phiên.
+    tx.parkingSession.updateMany.mockImplementationOnce(() => {
+      session.exitPassCode = 'ABCDEF';
+      session.prepaidAt = new Date();
+      return Promise.resolve({ count: 0 });
+    });
+    const res = await service.prepay(SESSION_ID, USER_ID, { paymentMethod: 'Wallet' });
+
+    expect(res.isSuccess).toBe(true);
+    expect(wallets.debitForUser).not.toHaveBeenCalled();
+    expect(tx.payment.create).not.toHaveBeenCalled();
+    expect((res.result as { ExitPass: { code: string } }).ExitPass.code).toBe('ABCDEF');
+  });
+
+  it('trả bằng ví thì huỷ link PayOS trả trước đang chờ', async () => {
+    const { service, prisma } = setup({ debit: 'ok' });
+    prisma.payment.findMany.mockResolvedValue([{ id: 'old-payos', transactionReference: '' }]);
+    await service.prepay(SESSION_ID, USER_ID, { paymentMethod: 'Wallet' });
+
+    expect(prisma.payment.updateMany).toHaveBeenCalledWith({
+      where: { id: 'old-payos', paymentStatus: 'Pending' },
+      data: { paymentStatus: 'Failed' },
+    });
   });
 
   it('người khác không thanh toán hộ được (chủ xe theo vehicle.userId)', async () => {

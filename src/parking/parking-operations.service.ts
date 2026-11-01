@@ -22,11 +22,20 @@ import {
 import { freeParkingAvailability } from '../common/free-parking-availability';
 import { createTicket, extractGuidFromQrPayload } from '../common/qr.util';
 import { ParkingSessionsService } from './parking-sessions.service';
-import { exitPassPayload, issueExitPass, mapExitPass } from '../common/exit-pass';
+import {
+  exitPassPayload,
+  generateExitPassCode,
+  issueExitPass,
+  mapExitPass,
+  parseShortGateCode,
+} from '../common/exit-pass';
 import { effectiveEntryPassStatus, parseEntryPassPayload } from '../common/entry-pass';
 import { PaymentsService } from '../payments/payments.service';
 import { InsufficientWalletFundsError, WalletsService } from '../wallets/wallets.service';
 import { NotificationsService, formatTime, formatVnd } from '../notifications/notifications.service';
+
+/** Phiên đã được thanh toán trước bởi một yêu cầu khác. */
+class AlreadyPrepaidError extends Error {}
 
 @Injectable()
 export class ParkingOperationsService {
@@ -41,8 +50,15 @@ export class ParkingOperationsService {
   ) {}
 
   async checkIn(dto: object): Promise<PbmsResponseDto> {
-    // Quét mã QR gửi xe một lần của khách: không cần chọn loại khách.
-    const entryPass = parseEntryPassPayload(pbmsPick(dto, 'qrPayload', 'QrPayload'));
+    // Quét mã QR gửi xe một lần của khách (hoặc gõ tay mã chữ 6 ký tự): không cần chọn loại khách.
+    const scanned = pbmsPick(dto, 'qrPayload', 'QrPayload');
+    const shortCode = parseShortGateCode(scanned);
+    const entryPass = shortCode
+      ? await this.entryPassByShortCode(shortCode)
+      : parseEntryPassPayload(scanned);
+    if (entryPass instanceof PbmsResponseDto) {
+      return entryPass;
+    }
     if (entryPass) {
       const gate = await this.resolveGate(pbmsPickGuid(dto, 'gateId', 'GateId'), 'Entry');
       if ('error' in gate) {
@@ -279,6 +295,15 @@ export class ParkingOperationsService {
     if (method === 'wallet') {
       const paid = await this.prisma
         .$transaction(async (tx) => {
+          // Giữ phiên trước khi trừ ví: hai yêu cầu cùng lúc (bấm lại khi mạng chậm, hai máy)
+          // thì yêu cầu sau không chiếm được và không bị trừ tiền lần nữa.
+          const claimed = await tx.parkingSession.updateMany({
+            where: { id: session.id, status: 'Active', exitPassCode: null },
+            data: { prepaidAt: now, exitPassCode: generateExitPassCode() },
+          });
+          if (claimed.count !== 1) {
+            throw new AlreadyPrepaidError();
+          }
           const payment = await tx.payment.create({
             data: {
               userId,
@@ -308,8 +333,16 @@ export class ParkingOperationsService {
           if (error instanceof InsufficientWalletFundsError) {
             return null;
           }
+          if (error instanceof AlreadyPrepaidError) {
+            return 'already' as const;
+          }
           throw error;
         });
+      if (paid === 'already') {
+        return PbmsResponseDto.ok('Bạn đã thanh toán, dùng mã ra cổng để lấy xe', {
+          ExitPass: await this.exitPassOf(session.id),
+        });
+      }
       if (!paid) {
         const balance = await this.wallets.getBalanceForUser(userId);
         return new PbmsResponseDto('Số dư ví không đủ, vui lòng nạp thêm', 402, false, {
@@ -319,7 +352,8 @@ export class ParkingOperationsService {
           amount: fee.amount,
         });
       }
-      await issueExitPass(this.prisma, session.id);
+      // Đã trả bằng ví: link PayOS mở trước đó không được thu thêm lần nữa.
+      await this.cancelPendingPrepayLinks(session.id);
       await this.notifications?.notify(userId, {
         title: 'Đã thanh toán trước bằng ví',
         message: `Đã trừ ${formatVnd(fee.amount)} từ ví PBMS. Mã ra cổng dùng được tới khi xe rời bãi.`,
@@ -338,18 +372,7 @@ export class ParkingOperationsService {
     }
 
     // Phí tăng theo giờ: huỷ các link cũ để khách không trả theo số tiền đã lỗi thời.
-    const stale = await this.prisma.payment.findMany({
-      where: { sessionId, paymentType: 'PrepaidCheckout', paymentStatus: 'Pending' },
-    });
-    for (const old of stale) {
-      await this.prisma.payment.updateMany({
-        where: { id: old.id, paymentStatus: 'Pending' },
-        data: { paymentStatus: 'Failed' },
-      });
-      if (old.transactionReference) {
-        await this.payos.cancelPaymentLink(old.transactionReference).catch(() => undefined);
-      }
-    }
+    await this.cancelPendingPrepayLinks(sessionId);
     const payment = await this.prisma.payment.create({
       data: {
         userId,
@@ -382,6 +405,21 @@ export class ParkingOperationsService {
     } catch (error: unknown) {
       await this.prisma.payment.update({ where: { id: payment.id }, data: { paymentStatus: 'Failed' } });
       return PbmsResponseDto.fail(`Không thể tạo liên kết thanh toán: ${errorMessage(error)}`, 502);
+    }
+  }
+
+  private async cancelPendingPrepayLinks(sessionId: string) {
+    const stale = await this.prisma.payment.findMany({
+      where: { sessionId, paymentType: 'PrepaidCheckout', paymentStatus: 'Pending' },
+    });
+    for (const old of stale) {
+      await this.prisma.payment.updateMany({
+        where: { id: old.id, paymentStatus: 'Pending' },
+        data: { paymentStatus: 'Failed' },
+      });
+      if (old.transactionReference) {
+        await this.payos.cancelPaymentLink(old.transactionReference).catch(() => undefined);
+      }
     }
   }
 
@@ -686,10 +724,25 @@ export class ParkingOperationsService {
     const plate = normalizeLicensePlate(
       pbmsPick(dto, 'licensePlate', 'LicensePlate'),
     );
-    const vehicleTypeId = pbmsPickGuid(dto, 'vehicleTypeId', 'VehicleTypeId');
     if (!isValidLicensePlate(plate)) {
       return PbmsResponseDto.fail('Biển số phải gồm 4-15 chữ cái và chữ số');
     }
+    // Xe đã đăng ký gửi một lần trên app: camera đọc biển số là đủ, không cần quét mã QR.
+    const pass = await this.activeEntryPassOf(plate);
+    const chosenTypeId = pbmsPickGuid(dto, 'vehicleTypeId', 'VehicleTypeId');
+    if (
+      pass &&
+      !isEmptyGuid(chosenTypeId) &&
+      chosenTypeId !== pass.vehicle.vehicleTypeId
+    ) {
+      return PbmsResponseDto.fail(
+        `Xe ${plate} đã đăng ký gửi một lần là ${pass.vehicle.vehicleType?.typeName ?? 'loại xe khác'}, không đúng loại xe của cổng này`,
+        409,
+      );
+    }
+    const vehicleTypeId = isEmptyGuid(chosenTypeId)
+      ? pass?.vehicle.vehicleTypeId ?? ''
+      : chosenTypeId;
     if (isEmptyGuid(vehicleTypeId)) {
       return PbmsResponseDto.fail('Vui lòng chọn loại phương tiện');
     }
@@ -714,23 +767,41 @@ export class ParkingOperationsService {
         409,
       );
     }
-    const registeredVehicle = await this.prisma.vehicle.findFirst({
-      where: { licensePlate: plate, vehicleTypeId },
-    });
+    const registeredVehicle = pass
+      ? pass.vehicle
+      : await this.prisma.vehicle.findFirst({
+          where: { licensePlate: plate, vehicleTypeId },
+        });
     const session = await this.createActiveSession({
       licensePlate: plate,
       vehicleTypeId,
       gate,
       customerType: 'Guest',
+      entryPassId: pass?.id,
       dto,
       vehicleId: registeredVehicle?.id ?? null,
     });
     if (session instanceof PbmsResponseDto) return session;
     return PbmsResponseDto.ok(
-      'Check-in xe vãng lai thành công',
+      pass
+        ? 'Check-in thành công (xe đã đăng ký gửi một lần)'
+        : 'Check-in xe vãng lai thành công',
       await this.loadSession(session.id),
       201,
     );
+  }
+
+  /** Mã gửi xe một lần còn hiệu lực của biển số (mỗi xe giữ tối đa một mã). */
+  private activeEntryPassOf(plate: string) {
+    return this.prisma.entryPass.findFirst({
+      where: {
+        status: 'Active',
+        expiresAt: { gt: new Date() },
+        vehicle: { is: { licensePlate: plate } },
+      },
+      include: { vehicle: { include: { vehicleType: true } } },
+      orderBy: { createdAt: 'desc' },
+    });
   }
 
   /** Check-in bằng mã gửi xe một lần: như xe vãng lai nhưng biển số / loại xe lấy theo mã. */
@@ -1298,10 +1369,46 @@ export class ParkingOperationsService {
     return { gate };
   }
 
+  /** Mã chữ trên thẻ gửi xe một lần → mã QR tương ứng (chỉ mã còn hiệu lực). */
+  private async entryPassByShortCode(code: string) {
+    const passes = await this.prisma.entryPass.findMany({
+      where: { code, status: 'Active', expiresAt: { gt: new Date() } },
+      select: { id: true, code: true },
+      take: 2,
+    });
+    if (passes.length !== 1) {
+      return PbmsResponseDto.fail(
+        passes.length === 0
+          ? 'Mã vào bãi không đúng hoặc đã hết hiệu lực'
+          : 'Mã vào bãi bị trùng, vui lòng quét mã QR hoặc đọc biển số',
+        404,
+      );
+    }
+    return { passId: passes[0].id, code: passes[0].code };
+  }
+
   private async resolveSessionId(dto: object): Promise<string | PbmsResponseDto> {
     const direct = pbmsPickGuid(dto, 'sessionId', 'SessionId');
     if (direct) {
       return direct;
+    }
+    // Nhân viên gõ tay mã ra cổng 6 ký tự của khách đã trả trước.
+    const exitCode = parseShortGateCode(pbmsPick(dto, 'qrPayload', 'QrPayload'));
+    if (exitCode) {
+      const sessions = await this.prisma.parkingSession.findMany({
+        where: { exitPassCode: exitCode, status: 'Active' },
+        select: { id: true },
+        take: 2,
+      });
+      if (sessions.length === 1) {
+        return sessions[0].id;
+      }
+      return PbmsResponseDto.fail(
+        sessions.length === 0
+          ? 'Mã ra cổng không đúng hoặc xe đã ra khỏi bãi'
+          : 'Mã ra cổng bị trùng, vui lòng quét mã QR hoặc đọc biển số',
+        404,
+      );
     }
     const fromQr = extractGuidFromQrPayload(pbmsPick(dto, 'qrPayload', 'QrPayload'));
     if (fromQr) {
