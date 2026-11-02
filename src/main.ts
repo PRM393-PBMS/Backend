@@ -20,6 +20,10 @@ async function bootstrap() {
   }
 
   const app = await NestFactory.create<NestExpressApplication>(AppModule);
+  // Render (và mọi proxy HTTPS) chuyển tiếp bằng http: tin X-Forwarded-Proto để req.protocol là https.
+  // Không có dòng này, link ảnh tải lên lưu thành http://..., trình duyệt bị Render chuyển hướng 301
+  // không kèm CORS nên web không đọc được ảnh (nhận diện biển số trên web thất bại).
+  app.set('trust proxy', 1);
 
   // Bật CORS trước thư mục ảnh: web staff đọc ảnh lượt quét bằng canvas để nhận diện biển số.
   const corsOrigin = process.env.CORS_ORIGIN ?? 'http://localhost:5173';
