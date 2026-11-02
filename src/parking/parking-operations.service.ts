@@ -109,9 +109,16 @@ export class ParkingOperationsService {
     ) {
       return PbmsResponseDto.fail('Mã ra cổng không hợp lệ hoặc đã hết hiệu lực', 403);
     }
+    const plateOutRead = normalizeLicensePlate(pbmsPick(dto, 'licensePlateOut', 'LicensePlateOut'));
+    // Xe ra phải đúng xe đã vào: chặn ở máy chủ, không chỉ dựa vào web.
+    if (plateOutRead && plateOutRead !== session.licensePlateIn) {
+      return PbmsResponseDto.fail(
+        `Biển số xe ra ${plateOutRead} không khớp biển số lúc vào ${session.licensePlateIn}`,
+        409,
+      );
+    }
     const exitTime = new Date();
-    const plateOut =
-      normalizeLicensePlate(pbmsPick(dto, 'licensePlateOut', 'LicensePlateOut')) || session.licensePlateIn;
+    const plateOut = plateOutRead || session.licensePlateIn;
     await this.prisma.parkingSession.update({
       where: { id: session.id },
       data: {
@@ -156,6 +163,8 @@ export class ParkingOperationsService {
     }
 
     const method = this.normalizeMethod(pbmsPick(dto, 'paymentMethod', 'PaymentMethod')) || 'Cash';
+    const stale = await this.closePendingCheckoutPayments(session.id);
+    if (stale) return stale;
     const payment = await this.prisma.payment.create({
       data: {
         userId: session.vehicle?.userId ?? null,
@@ -197,6 +206,35 @@ export class ParkingOperationsService {
       Payment: this.mapPayment(payment),
       Fee: fee,
     });
+  }
+
+  /**
+   * Bấm checkout lại (bấm hai lần, đổi tiền mặt sang PayOS, thử lại khi mạng chập chờn): đóng yêu cầu
+   * thanh toán cũ còn chờ trước khi tạo yêu cầu mới, để mỗi phiên chỉ có một khoản đang chờ trả.
+   * Link PayOS cũ không huỷ được (có thể khách đang trả) thì dừng, không tạo thêm.
+   */
+  private async closePendingCheckoutPayments(sessionId: string): Promise<PbmsResponseDto | null> {
+    const pending = await this.prisma.payment.findMany({
+      where: { sessionId, paymentType: 'CheckoutFee', paymentStatus: 'Pending' },
+    });
+    for (const p of pending) {
+      const orderCode = p.transactionReference?.trim();
+      if (sameStatus(p.paymentMethod, 'PayOS') && orderCode) {
+        try {
+          await this.payos.cancelPaymentLink(orderCode);
+        } catch {
+          return PbmsResponseDto.fail(
+            'Đang có yêu cầu thanh toán PayOS cho xe này. Chờ khách trả xong hoặc huỷ yêu cầu đó trước khi checkout lại.',
+            409,
+          );
+        }
+      }
+      await this.prisma.payment.updateMany({
+        where: { id: p.id, paymentStatus: 'Pending' },
+        data: { paymentStatus: 'Failed' },
+      });
+    }
+    return null;
   }
 
   async getFeePreview(sessionId: string): Promise<PbmsResponseDto> {
