@@ -189,3 +189,60 @@ describe('GateScansService.stream', () => {
     expect(mine).toHaveLength(1);
   });
 });
+
+describe('GateScansService: lý do không đọc được biển số', () => {
+  it('thiếu khoá API: báo rõ cho điện thoại', async () => {
+    const { service, plates } = setup();
+    plates.recognize.mockResolvedValue({ licensePlate: null, message: 'Chưa cấu hình Plate Recognizer API key', candidates: [] });
+    const res = await service.create(staffId, file, { gateId, baseUrl: 'http://h' });
+    expect(res.isSuccess).toBe(true);
+    expect((res.result as { recognitionNote: string }).recognitionNote).toBe('Chưa cấu hình Plate Recognizer API key');
+  });
+
+  it('khoá sai (403) và ảnh không có biển', async () => {
+    const { service, plates } = setup();
+    plates.recognize.mockResolvedValue({ licensePlate: null, providerStatusCode: 403, candidates: [] });
+    const denied = await service.create(staffId, file, { gateId, baseUrl: 'http://h' });
+    expect((denied.result as { recognitionNote: string }).recognitionNote).toContain('Khoá Plate Recognizer');
+    plates.recognize.mockResolvedValue({ licensePlate: null, providerStatusCode: 201, candidates: [] });
+    const empty = await service.create(staffId, file, { gateId, baseUrl: 'http://h' });
+    expect((empty.result as { recognitionNote: string }).recognitionNote).toContain('Không thấy biển số');
+  });
+
+  it('đọc được biển thì không có ghi chú', async () => {
+    const { service } = setup();
+    const res = await service.create(staffId, file, { gateId, baseUrl: 'http://h' });
+    expect((res.result as { recognitionNote: string | null }).recognitionNote).toBeNull();
+  });
+});
+
+describe('GateScansService: cổng trực theo web', () => {
+  it('web đặt cổng, điện thoại cùng tài khoản đọc được; tài khoản khác không thấy', async () => {
+    const { service, prisma } = setup();
+    prisma.gate.findUnique.mockResolvedValue({
+      id: gateId,
+      gateName: 'Cổng B',
+      gateType: 'Exit',
+      floor: { floorName: 'B2', parking: { name: 'Bãi 1' } },
+    });
+    expect(service.myGate(staffId).result).toBeNull();
+    const set = await service.setMyGate(staffId, gateId);
+    expect(set.isSuccess).toBe(true);
+    expect(service.myGate(staffId).result).toMatchObject({
+      gateId,
+      gateName: 'Cổng B',
+      gateType: 'Exit',
+      floorName: 'B2',
+      parkingName: 'Bãi 1',
+    });
+    expect(service.myGate('other-staff').result).toBeNull();
+  });
+
+  it('cổng không hợp lệ hoặc không tồn tại thì từ chối, giữ cổng cũ', async () => {
+    const { service, prisma } = setup();
+    expect((await service.setMyGate(staffId, 'abc')).statusCode).toBe(400);
+    prisma.gate.findUnique.mockResolvedValue(null);
+    expect((await service.setMyGate(staffId, gateId)).statusCode).toBe(404);
+    expect(service.myGate(staffId).result).toBeNull();
+  });
+});

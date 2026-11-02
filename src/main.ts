@@ -21,6 +21,15 @@ async function bootstrap() {
 
   const app = await NestFactory.create<NestExpressApplication>(AppModule);
 
+  // Bật CORS trước thư mục ảnh: web staff đọc ảnh lượt quét bằng canvas để nhận diện biển số.
+  const corsOrigin = process.env.CORS_ORIGIN ?? 'http://localhost:5173';
+  app.enableCors({
+    origin: corsOrigin,
+    credentials: true,
+    allowedHeaders: ['Content-Type', 'Authorization'],
+    methods: ['GET', 'HEAD', 'PUT', 'PATCH', 'POST', 'DELETE', 'OPTIONS'],
+  });
+
   const uploadDir = process.env.UPLOAD_DIR ?? './public/uploads';
   const uploadAbs = isAbsolute(uploadDir) ? uploadDir : resolve(process.cwd(), uploadDir);
   await mkdir(uploadAbs, { recursive: true });
@@ -66,14 +75,6 @@ async function bootstrap() {
     swaggerOptions: {
       persistAuthorization: true,
     },
-  });
-
-  const corsOrigin = process.env.CORS_ORIGIN ?? 'http://localhost:5173';
-  app.enableCors({
-    origin: corsOrigin,
-    credentials: true,
-    allowedHeaders: ['Content-Type', 'Authorization'],
-    methods: ['GET', 'HEAD', 'PUT', 'PATCH', 'POST', 'DELETE', 'OPTIONS'],
   });
 
   const port = process.env.PORT ?? 3000;
