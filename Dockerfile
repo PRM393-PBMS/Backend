@@ -33,6 +33,8 @@ COPY --from=build --chown=node:node /app/package.json ./package.json
 COPY --from=build --chown=node:node /app/node_modules ./node_modules
 COPY --from=build --chown=node:node /app/dist ./dist
 COPY --from=build --chown=node:node /app/prisma ./prisma
+# Font tiếng Việt cho biên nhận PDF.
+COPY --from=build --chown=node:node /app/assets ./assets
 
 RUN mkdir -p /app/public/uploads \
     && chown -R node:node /app/public

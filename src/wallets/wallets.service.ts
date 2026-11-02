@@ -3,9 +3,10 @@ import { Prisma, WalletBucket } from '@prisma/client';
 import { PrismaService } from '../prisma/prisma.service';
 import { PayosService } from '../integrations/payos-files.service';
 import { PbmsResponseDto } from '../common/dto/pbms-response.dto';
-import { isEmptyGuid, pbmsPickNumber, toMoney } from '../common/pbms-fields';
+import { isEmptyGuid, pbmsPick, pbmsPickNumber, toMoney } from '../common/pbms-fields';
 import { NotificationsService, formatVnd } from '../notifications/notifications.service';
 import { CreateWalletAdjustmentDto } from './dto/create-wallet-adjustment.dto';
+import { checkPromoCode, grantPromoBonus } from './promo-codes';
 
 export class InsufficientWalletFundsError extends BadRequestException {
   constructor() {
@@ -120,6 +121,12 @@ export class WalletsService {
         `Số tiền nạp phải là số nguyên từ ${TOP_UP_MIN} đến ${TOP_UP_MAX} VND`,
       );
     }
+    // Mã sai thì báo lý do, không lặng lẽ bỏ qua: khách tưởng được tặng mà không được.
+    const promoCode = pbmsPick(dto, 'promoCode', 'PromoCode').trim();
+    const promo = promoCode ? await checkPromoCode(this.prisma, userId, promoCode, amount) : null;
+    if (promo?.error !== undefined) {
+      return PbmsResponseDto.fail(promo.error);
+    }
 
     const payment = await this.prisma.payment.create({
       data: {
@@ -130,6 +137,7 @@ export class WalletsService {
         paymentType: 'WalletTopUp',
         paymentTime: new Date(),
         transactionReference: '',
+        promoCodeId: promo?.promo.id ?? null,
       },
     });
 
@@ -147,6 +155,8 @@ export class WalletsService {
           paymentMethod: 'PayOS',
           paymentType: 'WalletTopUp',
           amount,
+          promoCode: promo?.promo.code ?? null,
+          bonusAmount: promo ? toMoney(promo.promo.bonusAmount) : 0,
           walletBalance: toMoney(owned.wallet.balance.plus(usableBonus(owned.wallet))),
           paymentLinkId: link.paymentLinkId,
           paymentUrl: link.paymentUrl,
@@ -385,7 +395,7 @@ export class WalletsService {
 
   async creditFromPayment(
     tx: Prisma.TransactionClient,
-    payment: { id: string; userId: string | null; amount: Prisma.Decimal },
+    payment: { id: string; userId: string | null; amount: Prisma.Decimal; promoCodeId?: string | null },
   ): Promise<void> {
     if (!payment.userId) {
       throw new Error(`Không thể cộng ví cho thanh toán ${payment.id}: thiếu UserId.`);
@@ -414,6 +424,9 @@ export class WalletsService {
         description: 'Nạp ví qua PayOS',
       },
     });
+    if (payment.promoCodeId) {
+      await grantPromoBonus(tx, { id: payment.id, userId: payment.userId, promoCodeId: payment.promoCodeId }, updated);
+    }
   }
 
   /**

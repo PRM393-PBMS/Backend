@@ -160,6 +160,12 @@ model Floor {
   dedicatedVehicleTypeId String? @map("dedicated_vehicle_type_id") @db.Uuid
   totalCapacity          Int     @map("total_capacity")
   isResident             Boolean @default(false) @map("is_resident")
+  /// Sơ đồ đã xuất bản (app khách đọc) và bản nháp admin đang vẽ: JSON lưới (src/parking/floor-layout.ts).
+  layout                 Json?
+  layoutDraft            Json?     @map("layout_draft")
+  /// Tăng mỗi lần lưu: hai admin cùng sửa thì người lưu sau được báo, không ghi đè.
+  layoutVersion          Int       @default(0) @map("layout_version")
+  layoutPublishedAt      DateTime? @map("layout_published_at") @db.Timestamptz(6)
 
   parking              Parking       @relation(fields: [parkingId], references: [id], onDelete: Restrict)
   dedicatedVehicleType VehicleType?  @relation(fields: [dedicatedVehicleTypeId], references: [id], onDelete: SetNull)
@@ -289,8 +295,8 @@ model MonthlySubscription {
   parkingId   String?   @map("parking_id") @db.Uuid
   /// MonthlySubscriptionStatus: PendingPayment, Active, Cancelled, Expired. Default Active. varchar(30).
   status      String    @default("Active") @db.VarChar(30)
-  /// false = hết hạn không tạo renew (cron). Không loại gói khỏi trạng thái đang hiệu lực theo ngày.
-  autoRenew   Boolean   @default(true) @map("auto_renew")
+  /// Khách tự bật: true thì cron trừ ví gia hạn khi vé còn dưới 1 ngày. Mặc định tắt.
+  autoRenew   Boolean   @default(false) @map("auto_renew")
   cancelledAt DateTime? @map("cancelled_at") @db.Timestamptz(6)
 
   user                  User                   @relation(fields: [userId], references: [id], onDelete: Restrict)
@@ -430,6 +436,10 @@ model Payment {
   /// PaymentStatus: Pending, Success, Failed. Default Pending. varchar(10).
   paymentStatus        String   @default("Pending") @map("payment_status") @db.VarChar(10)
   transactionReference String?  @map("transaction_reference") @db.VarChar(100)
+  /// Gói khách chọn khi gia hạn: thời hạn cộng thêm lấy theo gói đã trả, không theo gói cũ của vé.
+  packageId            String?  @map("package_id") @db.Uuid
+  /// Mã khuyến mãi khách nhập khi nạp ví: tiền tặng cộng vào ngăn BONUS khi tiền nạp về.
+  promoCodeId          String?  @map("promo_code_id") @db.Uuid
 
   user               User?                @relation(fields: [userId], references: [id], onDelete: SetNull)
   session            ParkingSession?      @relation(fields: [sessionId], references: [id], onDelete: SetNull)
@@ -463,6 +473,63 @@ model Wallet {
   adjustments  WalletAdjustmentLog[]
 
   @@map("wallets")
+}
+
+/// Mã khuyến mãi nạp ví: nạp từ [minTopUp] trở lên được tặng [bonusAmount] vào ngăn BONUS.
+model PromoCode {
+  id             String    @id @default(uuid()) @db.Uuid
+  /// Chữ in hoa và số, khách gõ không phân biệt hoa thường.
+  code           String    @unique @db.VarChar(30)
+  description    String?   @db.VarChar(255)
+  minTopUp       Decimal   @map("min_top_up") @db.Decimal(15, 2)
+  bonusAmount    Decimal   @map("bonus_amount") @db.Decimal(15, 2)
+  /// Tiền tặng dùng được trong bao nhiêu ngày kể từ lúc cộng.
+  bonusValidDays Int       @default(30) @map("bonus_valid_days")
+  /// Tổng số lượt dùng tối đa; null = không giới hạn.
+  maxUses        Int?      @map("max_uses")
+  usedCount      Int       @default(0) @map("used_count")
+  startsAt       DateTime  @map("starts_at") @db.Timestamptz(6)
+  endsAt         DateTime  @map("ends_at") @db.Timestamptz(6)
+  isActive       Boolean   @default(true) @map("is_active")
+  createdAt      DateTime  @default(now()) @map("created_at") @db.Timestamptz(6)
+
+  redemptions PromoRedemption[]
+
+  @@map("promo_codes")
+}
+
+/// Một khách đã dùng một mã (mỗi khách mỗi mã một lần).
+model PromoRedemption {
+  id          String   @id @default(uuid()) @db.Uuid
+  promoCodeId String   @map("promo_code_id") @db.Uuid
+  userId      String   @map("user_id") @db.Uuid
+  paymentId   String   @unique @map("payment_id") @db.Uuid
+  bonusAmount Decimal  @map("bonus_amount") @db.Decimal(15, 2)
+  createdAt   DateTime @default(now()) @map("created_at") @db.Timestamptz(6)
+
+  promoCode PromoCode @relation(fields: [promoCodeId], references: [id], onDelete: Restrict)
+
+  @@unique([promoCodeId, userId])
+  @@map("promo_redemptions")
+}
+
+/// Yêu cầu xuất hoá đơn GTGT (hoá đơn đỏ) cho một thanh toán; kế toán xuất qua nhà cung cấp hoá đơn điện tử.
+model InvoiceRequest {
+  id          String    @id @default(uuid()) @db.Uuid
+  paymentId   String    @unique @map("payment_id") @db.Uuid
+  userId      String    @map("user_id") @db.Uuid
+  companyName String    @map("company_name") @db.VarChar(200)
+  taxCode     String    @map("tax_code") @db.VarChar(14)
+  address     String    @db.VarChar(300)
+  email       String    @db.VarChar(100)
+  /// Pending: chờ kế toán xuất; Issued: đã xuất (ghi số hoá đơn).
+  status      String    @default("Pending") @db.VarChar(20)
+  invoiceNo   String?   @map("invoice_no") @db.VarChar(50)
+  createdAt   DateTime  @default(now()) @map("created_at") @db.Timestamptz(6)
+  issuedAt    DateTime? @map("issued_at") @db.Timestamptz(6)
+
+  @@index([status], name: "idx_invoice_requests_status")
+  @@map("invoice_requests")
 }
 
 model WalletTransaction {

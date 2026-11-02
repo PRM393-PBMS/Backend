@@ -31,7 +31,13 @@ describe('MonthlySubscriptionsService register payment methods', () => {
   let prisma: {
     subscriptionPackage: { findUnique: jest.Mock };
     vehicle: { findFirst: jest.Mock };
-    monthlySubscription: { findFirst: jest.Mock; create: jest.Mock; update: jest.Mock };
+    monthlySubscription: {
+      findFirst: jest.Mock;
+      create: jest.Mock;
+      update: jest.Mock;
+      findUnique: jest.Mock;
+      updateMany: jest.Mock;
+    };
     payment: { create: jest.Mock; update: jest.Mock };
     user: { findUnique: jest.Mock };
     wallet: { findUnique: jest.Mock };
@@ -55,6 +61,8 @@ describe('MonthlySubscriptionsService register payment methods', () => {
         findFirst: jest.fn().mockResolvedValue(null),
         create: jest.fn(),
         update: jest.fn(),
+        findUnique: jest.fn(),
+        updateMany: jest.fn(),
       },
       payment: { create: jest.fn(), update: jest.fn() },
       user: { findUnique: jest.fn() },
@@ -181,7 +189,16 @@ describe('MonthlySubscriptionsService register payment methods', () => {
       walletId: '7c9e6679-7425-40de-944b-e07fc1f90ae7',
       balanceAfter: new Prisma.Decimal(50000),
     });
-    prisma.monthlySubscription.update.mockResolvedValue({});
+    prisma.monthlySubscription.findUnique.mockResolvedValue({
+      id: 'sub-1',
+      userId,
+      status: 'PendingPayment',
+      fixedSlotId: null,
+      parkingId: null,
+      package: pkg,
+      vehicle,
+    });
+    prisma.monthlySubscription.updateMany.mockResolvedValue({ count: 1 });
 
     const result = await service.register(
       userId,

@@ -154,6 +154,22 @@ export class MonthlySubscriptionsController {
     return this.subscriptions.cancel(id, userId, role, dto ?? {});
   }
 
+  @Put(':id/auto-renew')
+  @ApiOperation({
+    summary: 'Bật/tắt tự gia hạn bằng ví',
+    description:
+      'Body `autoRenew` true/false. Khi bật, vé còn dưới 1 ngày sẽ được trừ ví và gia hạn thêm một kỳ của gói hiện tại (00:01 giờ VN); thiếu tiền thì báo khách.',
+  })
+  @ApiPbmsBodyExample(PbmsBodyDto, { autoRenew: true })
+  @ApiPbmsOkResponse('Đã bật tự gia hạn bằng ví', { subscriptionId: ids.subscriptionId, autoRenew: true })
+  setAutoRenew(
+    @Param('id') id: string,
+    @GetPbmsUserId() userId: string,
+    @Body() dto: PbmsBodyDto,
+  ): Promise<PbmsResponseDto> {
+    return this.subscriptions.setAutoRenew(id, userId, dto ?? {});
+  }
+
   @Put(':id')
   @PbmsRoles('manager')
   @ApiOperation({ summary: 'Cập nhật gói tháng' })

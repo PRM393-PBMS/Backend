@@ -12,6 +12,8 @@ import { ParkingsController } from './parkings.controller';
 import { ParkingsService } from './parkings.service';
 import { EntryPassesController } from './entry-passes.controller';
 import { EntryPassesService } from './entry-passes.service';
+import { FloorLayoutsController } from './floor-layouts.controller';
+import { FloorLayoutsService } from './floor-layouts.service';
 
 @Module({
   imports: [AuthModule, PaymentsModule, WalletsModule],
@@ -20,12 +22,14 @@ import { EntryPassesService } from './entry-passes.service';
     ParkingOperationsController,
     ParkingsController,
     EntryPassesController,
+    FloorLayoutsController,
   ],
   providers: [
     EntryPassesService,
     ParkingSessionsService,
     ParkingOperationsService,
     ParkingsService,
+    FloorLayoutsService,
   ],
 })
 export class ParkingModule {}

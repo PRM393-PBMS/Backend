@@ -19,6 +19,10 @@ import {
 } from './dto/pbms-auth.dto';
 
 const OTP_TTL_MS = 10 * 60 * 1000;
+/** Mã 6 số: sai quá số lần này thì huỷ mã, và mỗi email chỉ xin mã mới sau OTP_RESEND_MS (chống dò mã). */
+const MAX_OTP_ATTEMPTS = 5;
+const OTP_RESEND_MS = 60 * 1000;
+const OTP_RESEND_WAIT = 'Vui lòng chờ 1 phút trước khi yêu cầu mã OTP mới';
 const ACCESS_TOKEN_EXPIRATION = '15m';
 const REFRESH_TOKEN_EXPIRATION_DAYS = 7;
 const PHONE_REGEX = /^(0|\+84)(3|5|7|8|9)[0-9]{8}$/;
@@ -30,6 +34,14 @@ interface CachedRegister {
   phoneNumber: string;
   password: string;
   otpHash: string;
+  attempts?: number;
+  sentAt?: number;
+}
+
+interface CachedOtp {
+  otpHash: string;
+  attempts?: number;
+  sentAt?: number;
 }
 
 @Injectable()
@@ -138,6 +150,10 @@ export class PbmsAuthService {
     if (!password) {
       return new PbmsResponseDto('Vui lòng nhập mật khẩu', 400, false);
     }
+    const weak = this.passwordRuleError(password);
+    if (weak) {
+      return weak;
+    }
     if (password !== confirmPassword) {
       return new PbmsResponseDto('Mật khẩu không khớp', 400, false);
     }
@@ -165,11 +181,14 @@ export class PbmsAuthService {
       return new PbmsResponseDto('Số điện thoại đã được đăng ký', 409, false);
     }
 
+    if (await this.resentTooSoon(`Register_${email}`)) {
+      return new PbmsResponseDto(OTP_RESEND_WAIT, 429, false);
+    }
     const otp = randomInt(100000, 1000000).toString();
     const otpHash = this.hashSha256(otp);
     await this.otpStore.set<CachedRegister>(
       `Register_${email}`,
-      { userName, fullName, email, phoneNumber, password, otpHash },
+      { userName, fullName, email, phoneNumber, password, otpHash, attempts: 0, sentAt: Date.now() },
       OTP_TTL_MS,
     );
 
@@ -208,8 +227,9 @@ export class PbmsAuthService {
         false,
       );
     }
-    if (this.hashSha256(otp) !== cached.otpHash) {
-      return new PbmsResponseDto('Mã OTP không đúng', 400, false);
+    const wrong = await this.rejectWrongOtp(`Register_${email}`, cached, otp);
+    if (wrong) {
+      return wrong;
     }
 
     if (await this.findUserByEmail(cached.email)) {
@@ -312,8 +332,15 @@ export class PbmsAuthService {
       );
     }
 
+    if (await this.resentTooSoon(`Reset_${email}`)) {
+      return new PbmsResponseDto(OTP_RESEND_WAIT, 429, false);
+    }
     const otp = randomInt(100000, 1000000).toString();
-    await this.otpStore.set(`Reset_${email}`, this.hashSha256(otp), OTP_TTL_MS);
+    await this.otpStore.set<CachedOtp>(
+      `Reset_${email}`,
+      { otpHash: this.hashSha256(otp), attempts: 0, sentAt: Date.now() },
+      OTP_TTL_MS,
+    );
 
     try {
       await this.mailService.sendOtpEmail(email, otp, 'password-reset');
@@ -346,18 +373,24 @@ export class PbmsAuthService {
     if (newPassword !== confirmPassword) {
       return new PbmsResponseDto('Mật khẩu xác nhận không khớp', 400, false);
     }
+    const weak = this.passwordRuleError(newPassword);
+    if (weak) {
+      return weak;
+    }
 
     const email = this.normalizeEmail(emailRaw);
-    const cachedOtpHash = await this.otpStore.get<string>(`Reset_${email}`);
-    if (!cachedOtpHash) {
+    const cached = await this.otpStore.get<CachedOtp>(`Reset_${email}`);
+    // Mã cũ trước bản này lưu dạng chuỗi: coi như hết hạn, khách xin mã mới.
+    if (!cached || typeof cached !== 'object') {
       return new PbmsResponseDto(
         'Mã OTP không hợp lệ hoặc đã hết hạn',
         400,
         false,
       );
     }
-    if (this.hashSha256(otp) !== cachedOtpHash) {
-      return new PbmsResponseDto('Mã OTP không đúng', 400, false);
+    const wrong = await this.rejectWrongOtp(`Reset_${email}`, cached, otp);
+    if (wrong) {
+      return wrong;
     }
 
     const user = await this.findUserByEmail(email);
@@ -371,10 +404,14 @@ export class PbmsAuthService {
 
     try {
       const passwordHash = await this.hashingService.hash(newPassword);
-      await this.prisma.user.update({
-        where: { id: user.id },
-        data: { passwordHash },
-      });
+      await this.prisma.$transaction([
+        this.prisma.user.update({
+          where: { id: user.id },
+          data: { passwordHash },
+        }),
+        // Quên mật khẩu thường vì bị lộ: đăng xuất mọi thiết bị đang đăng nhập.
+        this.prisma.refreshToken.deleteMany({ where: { userId: user.id } }),
+      ]);
       await this.otpStore.delete(`Reset_${email}`);
       return new PbmsResponseDto('Đặt lại mật khẩu thành công', 200, true);
     } catch (error: unknown) {
@@ -498,6 +535,37 @@ export class PbmsAuthService {
     }
 
     return new PbmsResponseDto('Đăng xuất thành công', 200, true);
+  }
+
+  /** Cùng quy tắc với đổi mật khẩu: 6-72 ký tự (bcrypt chỉ dùng 72 byte đầu). */
+  private passwordRuleError(password: string): PbmsResponseDto | null {
+    return password.length < 6 || password.length > 72
+      ? new PbmsResponseDto('Mật khẩu phải từ 6 đến 72 ký tự', 400, false)
+      : null;
+  }
+
+  private async resentTooSoon(key: string): Promise<boolean> {
+    const previous = await this.otpStore.get<{ sentAt?: number }>(key);
+    const sentAt = typeof previous === 'object' ? previous?.sentAt : undefined;
+    return sentAt !== undefined && Date.now() - sentAt < OTP_RESEND_MS;
+  }
+
+  /** null khi đúng mã. Sai thì đếm; sai MAX_OTP_ATTEMPTS lần thì huỷ mã để không dò hết 6 số được. */
+  private async rejectWrongOtp<T extends CachedOtp>(
+    key: string,
+    cached: T,
+    otp: string,
+  ): Promise<PbmsResponseDto | null> {
+    if (this.hashSha256(otp) === cached.otpHash) {
+      return null;
+    }
+    const attempts = (cached.attempts ?? 0) + 1;
+    if (attempts >= MAX_OTP_ATTEMPTS) {
+      await this.otpStore.delete(key);
+      return new PbmsResponseDto('Nhập sai quá nhiều lần, vui lòng yêu cầu mã OTP mới', 400, false);
+    }
+    await this.otpStore.set<T>(key, { ...cached, attempts }, OTP_TTL_MS);
+    return new PbmsResponseDto('Mã OTP không đúng', 400, false);
   }
 
   private async issuePbmsTokenPair(user: {

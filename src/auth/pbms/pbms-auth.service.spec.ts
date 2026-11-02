@@ -1,3 +1,4 @@
+import { createHash } from 'crypto';
 import { Test, TestingModule } from '@nestjs/testing';
 import { JwtService } from '@nestjs/jwt';
 import { UserRole } from '@prisma/client';
@@ -21,7 +22,9 @@ describe('PbmsAuthService', () => {
       findMany: jest.Mock;
       create: jest.Mock;
       update: jest.Mock;
+      deleteMany: jest.Mock;
     };
+    $transaction: jest.Mock;
   };
   let hashingService: { compare: jest.Mock; hash: jest.Mock };
   let jwtService: { signAsync: jest.Mock; verifyAsync: jest.Mock };
@@ -55,7 +58,9 @@ describe('PbmsAuthService', () => {
         findMany: jest.fn(),
         create: jest.fn(),
         update: jest.fn(),
+        deleteMany: jest.fn(),
       },
+      $transaction: jest.fn((ops: Promise<unknown>[]) => Promise.all(ops)),
     };
     hashingService = {
       compare: jest.fn(),
@@ -183,6 +188,65 @@ describe('PbmsAuthService', () => {
         expect.stringMatching(/^\d{6}$/),
         'registration',
       );
+    });
+  });
+
+  describe('OTP và mật khẩu', () => {
+    const otpHash = (otp: string) => createHash('sha256').update(otp).digest('hex');
+    const resetDto = (otp: string) => ({
+      email: 'a@example.com',
+      otp,
+      newPassword: 'Secret1',
+      confirmPassword: 'Secret1',
+    });
+
+    it('sai OTP đặt lại mật khẩu thì đếm, sai lần thứ 5 thì huỷ mã', async () => {
+      otpStore.get.mockResolvedValue({ otpHash: otpHash('123456'), attempts: 3, sentAt: 0 });
+      const fourth = await service.verifyResetPasswordOtp(resetDto('000000'));
+      expect(fourth.message).toBe('Mã OTP không đúng');
+      expect(otpStore.set).toHaveBeenCalledWith(
+        'Reset_a@example.com',
+        expect.objectContaining({ attempts: 4 }),
+        expect.any(Number),
+      );
+
+      otpStore.get.mockResolvedValue({ otpHash: otpHash('123456'), attempts: 4, sentAt: 0 });
+      const fifth = await service.verifyResetPasswordOtp(resetDto('000000'));
+      expect(fifth.message).toBe('Nhập sai quá nhiều lần, vui lòng yêu cầu mã OTP mới');
+      expect(otpStore.delete).toHaveBeenCalledWith('Reset_a@example.com');
+      expect(prisma.user.update).not.toHaveBeenCalled();
+    });
+
+    it('đặt lại mật khẩu đúng mã thì đăng xuất mọi thiết bị', async () => {
+      otpStore.get.mockResolvedValue({ otpHash: otpHash('123456'), attempts: 0, sentAt: 0 });
+      prisma.user.findFirst.mockResolvedValue(activeUser);
+      const result = await service.verifyResetPasswordOtp(resetDto('123456'));
+      expect(result.isSuccess).toBe(true);
+      expect(prisma.refreshToken.deleteMany).toHaveBeenCalledWith({ where: { userId: 'user-1' } });
+    });
+
+    it('xin mã mới trong vòng 1 phút thì từ chối, không gửi mail', async () => {
+      prisma.user.findFirst.mockResolvedValue(activeUser);
+      otpStore.get.mockResolvedValue({ otpHash: 'x', attempts: 0, sentAt: Date.now() - 10_000 });
+      const result = await service.requestResetPasswordOtp({ email: 'a@example.com' });
+      expect(result.statusCode).toBe(429);
+      expect(mailService.sendOtpEmail).not.toHaveBeenCalled();
+    });
+
+    it('mật khẩu dưới 6 ký tự thì không cho đăng ký', async () => {
+      prisma.user.findUnique.mockResolvedValue(null);
+      prisma.user.findFirst.mockResolvedValue(null);
+      const result = await service.sendRegisterOtp({
+        userName: 'alice',
+        fullName: 'Alice',
+        email: 'a@example.com',
+        phoneNumber: '0912345678',
+        password: '1',
+        confirmPassword: '1',
+      });
+      expect(result.statusCode).toBe(400);
+      expect(result.message).toBe('Mật khẩu phải từ 6 đến 72 ký tự');
+      expect(mailService.sendOtpEmail).not.toHaveBeenCalled();
     });
   });
 
