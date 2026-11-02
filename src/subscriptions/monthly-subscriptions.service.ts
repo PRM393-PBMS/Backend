@@ -20,6 +20,7 @@ import { ContractsService } from './contracts.service';
 import { HashingService } from '../auth/services/hashing.service';
 import { confirmPassword } from '../common/confirm-password';
 import { NotificationsService, formatTime, formatVnd } from '../notifications/notifications.service';
+import { createSubscriptionRow } from '../common/legacy-columns';
 
 type CustomerPaymentMethod = 'PayOS' | 'Wallet';
 
@@ -181,19 +182,17 @@ export class MonthlySubscriptionsService {
 
     try {
       const created = await this.prisma.$transaction(async (tx) => {
-        const subscription = await tx.monthlySubscription.create({
-          data: {
-            userId,
-            vehicleId,
-            packageId: pkg.id,
-            startDate: start,
-            endDate: end,
-            price: pkg.price,
-            fixedSlotId: selectedSlot?.id ?? null,
-            parkingId,
-            autoRenew: true,
-            status: createPayment ? 'PendingPayment' : 'Active',
-          },
+        const subscription = await createSubscriptionRow(tx, {
+          userId,
+          vehicle,
+          packageId: pkg.id,
+          startDate: start,
+          endDate: end,
+          price: pkg.price,
+          fixedSlotId: selectedSlot?.id ?? null,
+          parkingId,
+          autoRenew: true,
+          status: createPayment ? 'PendingPayment' : 'Active',
         });
         const contract = needsContract
           ? await this.contracts.createForSubscription(tx, subscription.id)
@@ -524,19 +523,17 @@ export class MonthlySubscriptionsService {
   ): Promise<PbmsResponseDto> {
     try {
       const created = await this.prisma.$transaction(async (tx) => {
-        const subscription = await tx.monthlySubscription.create({
-          data: {
-            userId,
-            vehicleId: vehicle.id,
-            packageId: pkg.id,
-            startDate: start,
-            endDate: end,
-            price: pkg.price,
-            fixedSlotId: selectedSlot?.id ?? null,
-            parkingId,
-            autoRenew: true,
-            status: 'PendingPayment',
-          },
+        const subscription = await createSubscriptionRow(tx, {
+          userId,
+          vehicle,
+          packageId: pkg.id,
+          startDate: start,
+          endDate: end,
+          price: pkg.price,
+          fixedSlotId: selectedSlot?.id ?? null,
+          parkingId,
+          autoRenew: true,
+          status: 'PendingPayment',
         });
         const payment = await tx.payment.create({
           data: {

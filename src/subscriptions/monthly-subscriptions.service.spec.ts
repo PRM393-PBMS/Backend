@@ -37,6 +37,7 @@ describe('MonthlySubscriptionsService register payment methods', () => {
     wallet: { findUnique: jest.Mock };
     parking: { findMany: jest.Mock; findUnique: jest.Mock };
     $transaction: jest.Mock;
+    $queryRaw: jest.Mock;
   };
   let payos: { createPaymentLink: jest.Mock };
   let wallets: { debitForUser: jest.Mock; getBalanceForUser: jest.Mock };
@@ -59,6 +60,8 @@ describe('MonthlySubscriptionsService register payment methods', () => {
       user: { findUnique: jest.fn() },
       wallet: { findUnique: jest.fn() },
       $transaction: jest.fn(),
+      // Database đã migrate đúng: không còn cột cũ của bảng vé tháng.
+      $queryRaw: jest.fn().mockResolvedValue([]),
     };
     payos = { createPaymentLink: jest.fn() };
     wallets = {

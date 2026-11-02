@@ -188,22 +188,23 @@ model Gate {
 }
 
 model Parking {
-  id        String   @id @default(uuid()) @db.Uuid
-  name      String   @unique @db.VarChar(255)
-  location  String   @db.VarChar(500)
+  id           String   @id @default(uuid()) @db.Uuid
+  name         String   @unique @db.VarChar(255)
+  location     String   @db.VarChar(500)
   /// Toạ độ để app vẽ bãi trên bản đồ (quản lý nhập; null thì chỉ hiện trong danh sách).
-  latitude  Float?
-  longitude Float?
+  latitude     Float?
+  longitude    Float?
   /// Ảnh bãi cho thẻ trên app khách (đường dẫn /uploads/parkings/... hoặc URL đầy đủ).
   imageUrl     String?  @map("image_url") @db.VarChar(2048)
   /// Giờ mở cửa hiển thị cho khách, ví dụ "24/7" hoặc "06:00 - 22:00".
   openingHours String?  @map("opening_hours") @db.VarChar(50)
-  createdAt DateTime @default(now()) @map("created_at") @db.Timestamptz(6)
-  updatedAt DateTime @updatedAt @map("updated_at") @db.Timestamptz(6)
+  createdAt    DateTime @default(now()) @map("created_at") @db.Timestamptz(6)
+  updatedAt    DateTime @updatedAt @map("updated_at") @db.Timestamptz(6)
 
   floors               Floor[]
   slots                ParkingSlot[]
   monthlySubscriptions MonthlySubscription[]
+  reservations         Reservation[]
 
   @@map("parkings")
 }
@@ -349,18 +350,23 @@ model Reservation {
   userId            String    @map("user_id") @db.Uuid
   /// Xe đã chọn khi đặt chỗ. Loại xe và chủ xe được lấy qua Vehicle.
   vehicleId         String    @map("vehicle_id") @db.Uuid
+  /// Bãi khách chọn khi đặt. Null với đơn cũ trước khi đặt chỗ gắn theo bãi.
+  parkingId         String?   @map("parking_id") @db.Uuid
   expectedEntryTime DateTime  @map("expected_entry_time") @db.Timestamptz(6)
   /// ReservationStatus: Pending, Confirmed, Modified, CheckedIn, Completed, Cancelled, NoShow. Default Pending. varchar(15).
+  /// Pending giữ suất 15 phút kể từ createdAt; quá hạn chưa cọc thì Cancelled.
   status            String    @default("Pending") @db.VarChar(15)
   createdAt         DateTime? @default(now()) @map("created_at") @db.Timestamptz(6)
 
   user            User             @relation(fields: [userId], references: [id], onDelete: Restrict)
   vehicle         Vehicle          @relation(fields: [vehicleId], references: [id], onDelete: Restrict)
+  parking         Parking?         @relation(fields: [parkingId], references: [id], onDelete: Restrict)
   parkingSessions ParkingSession[]
   payments        Payment[]
 
   @@index([userId], name: "idx_reservations_user_id")
   @@index([vehicleId], name: "idx_reservations_vehicle_id")
+  @@index([parkingId, expectedEntryTime], name: "idx_reservations_parking_time")
   @@index([status], name: "idx_reservations_status")
   @@index([expectedEntryTime], name: "idx_reservations_expected_entry_time")
   @@map("reservations")
@@ -602,25 +608,25 @@ model EntryPass {
 /// Một lượt quét biển số từ điện thoại của nhân viên ở cổng. Web staff nhận real-time
 /// (SSE) rồi đối chiếu và check-in; điện thoại chỉ đóng vai máy quét.
 model GateScan {
-  id            String    @id @default(uuid()) @db.Uuid
-  deduplicationKey String? @unique @map("deduplication_key") @db.VarChar(64)
-  gateId        String    @map("gate_id") @db.Uuid
-  scannedById   String    @map("scanned_by_id") @db.Uuid
-  imageUrl      String    @map("image_url") @db.VarChar(2048)
+  id               String    @id @default(uuid()) @db.Uuid
+  deduplicationKey String?   @unique @map("deduplication_key") @db.VarChar(64)
+  gateId           String    @map("gate_id") @db.Uuid
+  scannedById      String    @map("scanned_by_id") @db.Uuid
+  imageUrl         String    @map("image_url") @db.VarChar(2048)
   /// Biển số nhận diện được (đã chuẩn hoá); null nếu không đọc được.
-  licensePlate  String?   @map("license_plate") @db.VarChar(15)
-  confidence    Float?
+  licensePlate     String?   @map("license_plate") @db.VarChar(15)
+  confidence       Float?
   /// Thời điểm chụp trên điện thoại; created_at là lúc máy chủ nhận.
-  capturedAt    DateTime  @map("captured_at") @db.Timestamptz(6)
-  createdAt     DateTime  @default(now()) @map("created_at") @db.Timestamptz(6)
+  capturedAt       DateTime  @map("captured_at") @db.Timestamptz(6)
+  createdAt        DateTime  @default(now()) @map("created_at") @db.Timestamptz(6)
   /// Gợi ý cách check-in: Reservation, Resident, Guest, Inside (xe đang trong bãi), Unknown.
-  suggestedType String    @map("suggested_type") @db.VarChar(15)
-  reservationId String?   @map("reservation_id") @db.Uuid
+  suggestedType    String    @map("suggested_type") @db.VarChar(15)
+  reservationId    String?   @map("reservation_id") @db.Uuid
   /// Ảnh chụp kết quả đối chiếu lúc quét (đặt chỗ, gói tháng, phiên đang mở).
-  match         Json?
+  match            Json?
   /// New, Handled, Dismissed.
-  status        String    @default("New") @db.VarChar(15)
-  handledAt     DateTime? @map("handled_at") @db.Timestamptz(6)
+  status           String    @default("New") @db.VarChar(15)
+  handledAt        DateTime? @map("handled_at") @db.Timestamptz(6)
 
   gate      Gate @relation(fields: [gateId], references: [id], onDelete: Cascade)
   scannedBy User @relation(fields: [scannedById], references: [id], onDelete: Restrict)

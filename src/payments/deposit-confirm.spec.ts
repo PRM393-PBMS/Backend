@@ -17,7 +17,7 @@ describe('Xác nhận tiền cọc đặt chỗ', () => {
   };
   let prisma: {
     payment: { findUnique: jest.Mock; update: jest.Mock };
-    reservation: { findUnique: jest.Mock; update: jest.Mock };
+    reservation: { findUnique: jest.Mock; update: jest.Mock; updateMany: jest.Mock };
     vehicle: { findUnique: jest.Mock };
     $transaction: jest.Mock;
   };
@@ -28,7 +28,11 @@ describe('Xác nhận tiền cọc đặt chỗ', () => {
   beforeEach(() => {
     prisma = {
       payment: { findUnique: jest.fn().mockResolvedValue(deposit), update: jest.fn().mockResolvedValue({}) },
-      reservation: { findUnique: jest.fn(), update: jest.fn().mockResolvedValue({}) },
+      reservation: {
+        findUnique: jest.fn(),
+        update: jest.fn().mockResolvedValue({}),
+        updateMany: jest.fn().mockResolvedValue({ count: 1 }),
+      },
       vehicle: { findUnique: jest.fn().mockResolvedValue({ licensePlate: '51A12345' }) },
       $transaction: jest.fn(),
     };
@@ -44,17 +48,36 @@ describe('Xác nhận tiền cọc đặt chỗ', () => {
     apply = (id) => (service as unknown as { applyPaidPayment(id: string): Promise<void> }).applyPaidPayment(id);
   });
 
+  const soon = () => new Date(Date.now() + 60 * 60e3);
+
   it('đơn đang chờ: chuyển sang Confirmed', async () => {
-    prisma.reservation.findUnique.mockResolvedValue({ id: 'r1', status: 'Pending', vehicleId: 'v1' });
+    prisma.reservation.findUnique.mockResolvedValue({ id: 'r1', status: 'Pending', vehicleId: 'v1', expectedEntryTime: soon() });
     await apply('pay-1');
-    expect(prisma.reservation.update).toHaveBeenCalledWith({ where: { id: 'r1' }, data: { status: 'Confirmed' } });
+    expect(prisma.reservation.updateMany).toHaveBeenCalledWith({
+      where: { id: 'r1', status: 'Pending' },
+      data: { status: 'Confirmed' },
+    });
     expect(wallets.creditRefund).not.toHaveBeenCalled();
   });
 
-  it('đơn đã huỷ trước khi cọc về: không mở lại đơn, hoàn cọc vào ví', async () => {
-    prisma.reservation.findUnique.mockResolvedValue({ id: 'r1', status: 'Cancelled', vehicleId: 'v1' });
+  it('cọc về khi đã quá khung vào bãi: huỷ đơn, hoàn cọc vào ví', async () => {
+    const late = { id: 'r1', status: 'Pending', vehicleId: 'v1', expectedEntryTime: new Date(Date.now() - 31 * 60e3) };
+    prisma.reservation.findUnique.mockResolvedValue(late);
     await apply('pay-1');
-    expect(prisma.reservation.update).not.toHaveBeenCalled();
+    expect(prisma.reservation.updateMany).toHaveBeenCalledWith({
+      where: { id: 'r1', status: 'Pending' },
+      data: { status: 'Cancelled' },
+    });
+    expect(prisma.reservation.updateMany).not.toHaveBeenCalledWith(
+      expect.objectContaining({ data: { status: 'Confirmed' } }),
+    );
+    expect(wallets.creditRefund).toHaveBeenCalled();
+  });
+
+  it('đơn đã huỷ trước khi cọc về: không mở lại đơn, hoàn cọc vào ví', async () => {
+    prisma.reservation.findUnique.mockResolvedValue({ id: 'r1', status: 'Cancelled', vehicleId: 'v1', expectedEntryTime: soon() });
+    await apply('pay-1');
+    expect(prisma.reservation.updateMany).not.toHaveBeenCalled();
     expect(wallets.creditRefund).toHaveBeenCalledWith(prisma, deposit, 'Deposit', expect.stringContaining('51A12345'));
     expect(prisma.payment.update).toHaveBeenCalledWith({ where: { id: 'pay-1' }, data: { paymentStatus: 'Refunded' } });
     expect(notifications.notify).toHaveBeenCalledWith(userId, expect.objectContaining({ title: 'Đã hoàn tiền cọc' }));

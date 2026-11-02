@@ -23,8 +23,12 @@ describe('PaymentsService webhook', () => {
         updateMany: jest.fn().mockResolvedValue({ count: 1 }),
       },
       reservation: {
-        findUnique: jest.fn().mockResolvedValue({ id: 'res-1', status: 'Pending' }),
-        update: jest.fn().mockResolvedValue({ id: 'res-1', status: 'Confirmed' }),
+        findUnique: jest.fn().mockResolvedValue({
+          id: 'res-1',
+          status: 'Pending',
+          expectedEntryTime: new Date(Date.now() + 60 * 60e3),
+        }),
+        updateMany: jest.fn().mockResolvedValue({ count: 1 }),
       },
     };
     const module: TestingModule = await Test.createTestingModule({
@@ -47,11 +51,10 @@ describe('PaymentsService webhook', () => {
         data: expect.objectContaining({ paymentStatus: 'Success' }),
       }),
     );
-    expect(prisma.reservation.update).toHaveBeenCalledWith(
-      expect.objectContaining({
-        data: { status: 'Confirmed' },
-      }),
-    );
+    expect(prisma.reservation.updateMany).toHaveBeenCalledWith({
+      where: { id: 'res-1', status: 'Pending' },
+      data: { status: 'Confirmed' },
+    });
   });
 
   function topUpSetup(remote: { status: string; amountPaid: number }) {

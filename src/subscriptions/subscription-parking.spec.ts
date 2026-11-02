@@ -49,6 +49,8 @@ describe('Vé tháng theo bãi', () => {
       parkingSlot: { findUnique: jest.fn(), count: jest.fn().mockResolvedValue(5) },
       payment: { create: jest.fn().mockResolvedValue({ id: 'pay-1', amount: pkg.price }), update: jest.fn() },
       $transaction: jest.fn((fn: (tx: unknown) => Promise<unknown>) => fn(prisma)),
+      // Database đã migrate đúng: không còn cột cũ của bảng vé tháng.
+      $queryRaw: jest.fn().mockResolvedValue([]),
     };
     const module: TestingModule = await Test.createTestingModule({
       providers: [

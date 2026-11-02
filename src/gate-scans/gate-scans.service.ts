@@ -313,6 +313,8 @@ export class GateScansService {
         where: {
           vehicle: { is: { licensePlate: plate } },
           status: { in: ['Confirmed', 'Modified'] },
+          // Đặt chỗ của bãi khác không áp dụng ở cổng này; đơn cũ không gắn bãi thì vẫn tính.
+          ...(parkingId ? { OR: [{ parkingId }, { parkingId: null }] } : {}),
           expectedEntryTime: {
             gte: new Date(at.getTime() - LOOKUP_WINDOW_MS),
             lte: new Date(at.getTime() + LOOKUP_WINDOW_MS),

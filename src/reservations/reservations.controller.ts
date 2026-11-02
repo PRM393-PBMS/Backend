@@ -50,6 +50,15 @@ export class ReservationsController {
     return this.reservations.getMine(userId);
   }
 
+  @Get('availability')
+  @ApiOperation({
+    summary: 'Suất đặt trước còn lại của một bãi',
+    description: '`parkingId` bãi khách chọn; `time` giờ vào dự kiến (ISO, mặc định 30 phút nữa). Trả hạn mức, số suất đang giữ quanh giờ đó, số còn lại và tiền cọc.',
+  })
+  availability(@Query('parkingId') parkingId?: string, @Query('time') time?: string): Promise<PbmsResponseDto> {
+    return this.reservations.availability(parkingId, time);
+  }
+
   @Get('check-payment-status/:orderCode')
   @ApiOperation({ summary: 'Kiểm tra thanh toán theo orderCode' })
   @ApiPbmsOkResponse('Lấy trạng thái thanh toán thành công', {
@@ -62,10 +71,17 @@ export class ReservationsController {
 
   @Get()
   @PbmsRoles('manager', 'staff')
-  @ApiOperation({ summary: 'Danh sách đặt chỗ' })
+  @ApiOperation({
+    summary: 'Danh sách đặt chỗ',
+    description: '`date` là ngày theo giờ Việt Nam (YYYY-MM-DD); `parkingId` lọc theo bãi; `status` lọc trạng thái.',
+  })
   @ApiPbmsOkResponse('Lấy danh sách đặt chỗ thành công', [reservationExample])
-  getAll(@Query('status') status?: string, @Query('date') date?: string): Promise<PbmsResponseDto> {
-    return this.reservations.getAll(status, date);
+  getAll(
+    @Query('status') status?: string,
+    @Query('date') date?: string,
+    @Query('parkingId') parkingId?: string,
+  ): Promise<PbmsResponseDto> {
+    return this.reservations.getAll(status, date, parkingId);
   }
 
   @Post(':id/recreate-payment')
@@ -81,9 +97,10 @@ export class ReservationsController {
   @ApiPbmsOkResponse('Đổi giờ đặt chỗ thành công', reservationExample)
   changeTime(
     @Param('reservationId') reservationId: string,
+    @GetPbmsUserId() userId: string,
     @Body() body: unknown,
   ): Promise<PbmsResponseDto> {
-    return this.reservations.changeTime(reservationId, body);
+    return this.reservations.changeTime(reservationId, userId, body);
   }
 
   @Put(':reservationId/cancel')
@@ -98,11 +115,15 @@ export class ReservationsController {
 
   @Put(':reservationId/status')
   @PbmsRoles('manager', 'staff')
-  @ApiOperation({ summary: 'Cập nhật trạng thái đặt chỗ' })
-  @ApiPbmsBodyExample(PbmsBodyDto, { status: 'CheckedIn' })
+  @ApiOperation({
+    summary: 'Nhân viên huỷ đơn hoặc đánh dấu khách không đến',
+    description:
+      'Chỉ: Pending → Cancelled; Confirmed/Modified → Cancelled (hoàn 100% cọc vào ví) hoặc NoShow (sau giờ hẹn, không hoàn cọc). Vào bãi / hoàn tất do cổng ghi.',
+  })
+  @ApiPbmsBodyExample(PbmsBodyDto, { status: 'NoShow' })
   @ApiPbmsOkResponse('Cập nhật trạng thái đặt chỗ thành công', {
     ...reservationExample,
-    status: 'CheckedIn',
+    status: 'NoShow',
   })
   updateStatus(
     @Param('reservationId') reservationId: string,
