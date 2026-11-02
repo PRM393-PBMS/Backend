@@ -47,7 +47,7 @@ export class VehicleTypesController {
   constructor(private readonly vehicleTypes: VehicleTypesService) {}
 
     @Get()
-  @PbmsRoles('manager', 'staff', 'customer')
+  @PbmsRoles('admin', 'manager', 'staff', 'customer')
   @ApiOperation({
     summary: 'Danh sách loại phương tiện',
     description:
@@ -61,7 +61,7 @@ export class VehicleTypesController {
   }
 
   @Get(':id')
-  @PbmsRoles('manager', 'staff')
+  @PbmsRoles('admin', 'manager', 'staff')
   @ApiOperation({ summary: 'Chi tiết loại phương tiện' })
   @ApiPbmsOkResponse('Lấy loại phương tiện thành công', vehicleTypeExample)
   getById(@Param('id', new ParseUUIDPipe()) id: string): Promise<PbmsResponseDto> {
@@ -127,7 +127,7 @@ export class FloorsController {
 
   @ApiBearerAuth('JWT-auth')
   @Post()
-  @PbmsRoles('manager')
+  @PbmsRoles('admin')
   @ApiOperation({ summary: 'Tạo tầng' })
   @ApiPbmsBodyExample(PbmsBodyDto, {
     parkingId: ids.parkingId,
@@ -143,7 +143,7 @@ export class FloorsController {
 
   @ApiBearerAuth('JWT-auth')
   @Put()
-  @PbmsRoles('manager')
+  @PbmsRoles('admin')
   @ApiOperation({ summary: 'Cập nhật tầng' })
   @ApiPbmsBodyExample(PbmsBodyDto, {
     floorId: ids.floorId,
@@ -160,7 +160,7 @@ export class FloorsController {
 
   @ApiBearerAuth('JWT-auth')
   @Delete(':id')
-  @PbmsRoles('manager')
+  @PbmsRoles('admin')
   @ApiOperation({ summary: 'Xóa tầng' })
   @ApiPbmsOkResponse('Xóa tầng thành công', null)
   remove(@Param('id', new ParseUUIDPipe()) id: string): Promise<PbmsResponseDto> {
@@ -193,7 +193,7 @@ export class GatesController {
 
   @ApiBearerAuth('JWT-auth')
   @Post()
-  @PbmsRoles('manager')
+  @PbmsRoles('admin')
   @ApiOperation({ summary: 'Tạo cổng' })
   @ApiPbmsBodyExample(PbmsBodyDto, {
     floorId: ids.floorId,
@@ -207,7 +207,7 @@ export class GatesController {
 
   @ApiBearerAuth('JWT-auth')
   @Put()
-  @PbmsRoles('manager')
+  @PbmsRoles('admin')
   @ApiOperation({ summary: 'Cập nhật cổng' })
   @ApiPbmsBodyExample(PbmsBodyDto, {
     gateId: ids.gateEntryId,
@@ -222,7 +222,7 @@ export class GatesController {
 
   @ApiBearerAuth('JWT-auth')
   @Delete(':id')
-  @PbmsRoles('manager')
+  @PbmsRoles('admin')
   @ApiOperation({ summary: 'Xóa cổng' })
   @ApiPbmsOkResponse('Xóa cổng thành công', null)
   remove(@Param('id', new ParseUUIDPipe()) id: string): Promise<PbmsResponseDto> {
@@ -255,7 +255,7 @@ export class ParkingSlotsController {
 
   @ApiBearerAuth('JWT-auth')
   @Post()
-  @PbmsRoles('manager')
+  @PbmsRoles('admin')
   @ApiOperation({ summary: 'Tạo ô đỗ' })
   @ApiPbmsBodyExample(PbmsBodyDto, {
     parkingId: ids.parkingId,
@@ -271,7 +271,7 @@ export class ParkingSlotsController {
 
   @ApiBearerAuth('JWT-auth')
   @Put()
-  @PbmsRoles('manager')
+  @PbmsRoles('admin')
   @ApiOperation({ summary: 'Cập nhật ô đỗ' })
   @ApiPbmsBodyExample(PbmsBodyDto, {
     parkingSlotId: ids.slotId,
@@ -304,7 +304,7 @@ export class ParkingSlotsController {
 
   @ApiBearerAuth('JWT-auth')
   @Delete(':id')
-  @PbmsRoles('manager')
+  @PbmsRoles('admin')
   @ApiOperation({ summary: 'Xóa ô đỗ' })
   @ApiPbmsOkResponse('Xóa ô đỗ thành công', null)
   remove(@Param('id', new ParseUUIDPipe()) id: string): Promise<PbmsResponseDto> {

@@ -11,6 +11,9 @@ describe('PaymentsService webhook', () => {
       id: 'pay-1',
       paymentStatus: 'Pending',
       paymentType: 'Deposit',
+      paymentMethod: 'PayOS',
+      transactionReference: '123',
+      amount: new Prisma.Decimal(50000),
       reservationId: 'res-1',
       sessionId: null,
       subscriptionId: null,
@@ -19,7 +22,10 @@ describe('PaymentsService webhook', () => {
     const prisma = {
       payment: {
         findFirst: jest.fn().mockResolvedValue(payment),
-        findUnique: jest.fn().mockResolvedValue({ ...payment, paymentStatus: 'Success' }),
+        findUnique: jest
+          .fn()
+          .mockResolvedValueOnce(payment)
+          .mockResolvedValue({ ...payment, paymentStatus: 'Success' }),
         updateMany: jest.fn().mockResolvedValue({ count: 1 }),
       },
       reservation: {
@@ -36,7 +42,10 @@ describe('PaymentsService webhook', () => {
         PaymentsService,
         { provide: PrismaService, useValue: prisma },
         { provide: WalletsService, useValue: { creditFromPayment: jest.fn() } },
-        { provide: PayosService, useValue: {} },
+        {
+          provide: PayosService,
+          useValue: { getPaymentStatus: jest.fn().mockResolvedValue({ status: 'PAID', amountPaid: 50000 }) },
+        },
       ],
     }).compile();
     const service = module.get(PaymentsService);
@@ -111,6 +120,19 @@ describe('PaymentsService webhook', () => {
     expect(creditFromPayment).not.toHaveBeenCalled();
   });
 
+  it.each(['Deposit', 'SubscriptionFee', 'SubscriptionRenewal', 'CheckoutFee'])(
+    'ignores a forged success webhook for %s while PayOS still reports PENDING',
+    async (paymentType) => {
+      const { service, prisma, payos } = topUpSetup({ status: 'PENDING', amountPaid: 0 });
+      prisma.payment.findFirst.mockResolvedValue({ id: 'pay-x', paymentStatus: 'Pending', paymentType });
+
+      await service.handleWebhook({ code: '00', data: { orderCode: 456 } });
+
+      expect(payos.getPaymentStatus).toHaveBeenCalledWith('456');
+      expect(prisma.payment.updateMany).not.toHaveBeenCalled();
+    },
+  );
+
   it('does not credit an underpaid top-up', async () => {
     const { service, creditFromPayment } = topUpSetup({ status: 'PAID', amountPaid: 50000 });
     expect(await service.syncPayosPayment('pay-topup')).toBe('Pending');
@@ -122,5 +144,42 @@ describe('PaymentsService webhook', () => {
     prisma.payment.updateMany.mockResolvedValue({ count: 0 });
     await service.syncPayosPayment('pay-topup');
     expect(creditFromPayment).not.toHaveBeenCalled();
+  });
+});
+
+describe('Đối soát PayOS định kỳ', () => {
+  function setup(ids: string[]) {
+    const prisma = { payment: { findMany: jest.fn().mockResolvedValue(ids.map((id) => ({ id }))) } };
+    const service = new PaymentsService(prisma as unknown as PrismaService, {} as WalletsService, {} as PayosService);
+    const sync = jest.spyOn(service, 'syncPayosPayment').mockResolvedValue('Success');
+    return { service, prisma, sync };
+  }
+
+  it('chỉ hỏi thanh toán PayOS đang chờ từ 5 phút đến 3 ngày, mới nhất trước', async () => {
+    const { service, prisma } = setup([]);
+    await service.reconcilePendingPayos();
+    const arg = prisma.payment.findMany.mock.calls[0][0];
+    expect(arg.where).toMatchObject({ paymentStatus: 'Pending', paymentMethod: 'PayOS', transactionReference: { not: '' } });
+    expect(Date.now() - (arg.where.paymentTime.lt as Date).getTime()).toBeGreaterThanOrEqual(5 * 60e3 - 1000);
+    expect(arg.orderBy).toEqual({ paymentTime: 'desc' });
+  });
+
+  it('một thanh toán lỗi không chặn các thanh toán sau', async () => {
+    const { service, sync } = setup(['p1', 'p2']);
+    sync.mockRejectedValueOnce(new Error('PayOS timeout'));
+    await service.reconcilePendingPayos();
+    expect(sync).toHaveBeenCalledWith('p2');
+  });
+
+  it('lượt trước chưa xong thì lượt mới bỏ qua', async () => {
+    const { service, prisma, sync } = setup(['p1']);
+    let release!: () => void;
+    sync.mockImplementationOnce(() => new Promise((r) => (release = () => r('Success'))));
+    const first = service.reconcilePendingPayos();
+    await new Promise((r) => setImmediate(r));
+    await service.reconcilePendingPayos();
+    expect(prisma.payment.findMany).toHaveBeenCalledTimes(1);
+    release();
+    await first;
   });
 });

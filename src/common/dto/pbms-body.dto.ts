@@ -712,4 +712,91 @@ export class PbmsBodyDto {
   @IsOptional()
   signatureImage?: unknown;
   @ApiPropertyOptional() @IsOptional() SignatureImage?: unknown;
+
+  // Tự gia hạn, mã khuyến mãi, yêu cầu xuất hoá đơn GTGT.
+  @ApiPropertyOptional({ type: Boolean, example: true })
+  @IsOptional()
+  autoRenew?: unknown;
+  @ApiPropertyOptional() @IsOptional() AutoRenew?: unknown;
+
+  @ApiPropertyOptional({ type: String, example: 'NAP500K' })
+  @IsOptional()
+  promoCode?: unknown;
+  @ApiPropertyOptional() @IsOptional() PromoCode?: unknown;
+
+  @ApiPropertyOptional({ type: String, example: 'NAP500K' })
+  @IsOptional()
+  code?: unknown;
+  @ApiPropertyOptional() @IsOptional() Code?: unknown;
+
+  @ApiPropertyOptional({ type: Number, example: 500000 })
+  @IsOptional()
+  minTopUp?: unknown;
+  @ApiPropertyOptional() @IsOptional() MinTopUp?: unknown;
+
+  @ApiPropertyOptional({ type: Number, example: 50000 })
+  @IsOptional()
+  bonusAmount?: unknown;
+  @ApiPropertyOptional() @IsOptional() BonusAmount?: unknown;
+
+  @ApiPropertyOptional({ type: Number, example: 30 })
+  @IsOptional()
+  bonusValidDays?: unknown;
+  @ApiPropertyOptional() @IsOptional() BonusValidDays?: unknown;
+
+  @ApiPropertyOptional({ type: Number, example: 1000 })
+  @IsOptional()
+  maxUses?: unknown;
+  @ApiPropertyOptional() @IsOptional() MaxUses?: unknown;
+
+  @ApiPropertyOptional({ type: String, example: '2026-11-01T00:00:00.000Z' })
+  @IsOptional()
+  startsAt?: unknown;
+  @ApiPropertyOptional() @IsOptional() StartsAt?: unknown;
+
+  @ApiPropertyOptional({ type: String, example: '2026-12-31T16:59:59.000Z' })
+  @IsOptional()
+  endsAt?: unknown;
+  @ApiPropertyOptional() @IsOptional() EndsAt?: unknown;
+
+  @ApiPropertyOptional({ type: Boolean, example: true })
+  @IsOptional()
+  isActive?: unknown;
+  @ApiPropertyOptional() @IsOptional() IsActive?: unknown;
+
+  @ApiPropertyOptional({ type: String, example: 'Công ty TNHH ABC' })
+  @IsOptional()
+  companyName?: unknown;
+  @ApiPropertyOptional() @IsOptional() CompanyName?: unknown;
+
+  @ApiPropertyOptional({ type: String, example: '0312345678' })
+  @IsOptional()
+  taxCode?: unknown;
+  @ApiPropertyOptional() @IsOptional() TaxCode?: unknown;
+
+  @ApiPropertyOptional({ type: String, example: '12 Nguyễn Huệ, Quận 1, TP.HCM' })
+  @IsOptional()
+  address?: unknown;
+  @ApiPropertyOptional() @IsOptional() Address?: unknown;
+
+  @ApiPropertyOptional({ type: String, example: 'ketoan@abc.vn' })
+  @IsOptional()
+  email?: unknown;
+  @ApiPropertyOptional() @IsOptional() Email?: unknown;
+
+  @ApiPropertyOptional({ type: String, example: '00001234' })
+  @IsOptional()
+  invoiceNo?: unknown;
+  @ApiPropertyOptional() @IsOptional() InvoiceNo?: unknown;
+
+  // Sơ đồ tầng (admin vẽ): { w, h, cells, bg? } và số phiên bản.
+  @ApiPropertyOptional({ type: Object, example: { w: 20, h: 12, cells: [{ x: 1, y: 1, t: 'road' }] } })
+  @IsOptional()
+  layout?: unknown;
+  @ApiPropertyOptional() @IsOptional() Layout?: unknown;
+
+  @ApiPropertyOptional({ type: Number, example: 3 })
+  @IsOptional()
+  version?: unknown;
+  @ApiPropertyOptional() @IsOptional() Version?: unknown;
 }

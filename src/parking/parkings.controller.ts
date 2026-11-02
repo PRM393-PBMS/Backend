@@ -44,14 +44,14 @@ export class ParkingsController {
   ) {}
 
   @Post()
-  @PbmsRoles('manager')
+  @PbmsRoles('admin')
   @ApiOperation({ summary: 'Tạo bãi đỗ' })
   create(@Body() dto: CreateParkingDto): Promise<ParkingResponseDto> {
     return this.parkings.create(dto);
   }
 
   @Get()
-  @PbmsRoles('manager', 'staff')
+  @PbmsRoles('admin', 'manager', 'staff')
   @ApiOperation({ summary: 'Danh sách bãi đỗ' })
   findAll(): Promise<ParkingResponseDto[]> {
     return this.parkings.findAll();
@@ -70,7 +70,7 @@ export class ParkingsController {
   }
 
   @Get(':id/slots')
-  @PbmsRoles('manager', 'staff')
+  @PbmsRoles('admin', 'manager', 'staff')
   @ApiOperation({ summary: 'Danh sách ô đỗ của một bãi' })
   findSlots(
     @Param() params: ParkingIdParamDto,
@@ -79,14 +79,14 @@ export class ParkingsController {
   }
 
   @Get(':id')
-  @PbmsRoles('manager', 'staff')
+  @PbmsRoles('admin', 'manager', 'staff')
   @ApiOperation({ summary: 'Chi tiết bãi đỗ' })
   findOne(@Param() params: ParkingIdParamDto): Promise<ParkingResponseDto> {
     return this.parkings.findOne(params.id);
   }
 
   @Patch(':id')
-  @PbmsRoles('manager')
+  @PbmsRoles('admin')
   @ApiOperation({ summary: 'Cập nhật tên hoặc địa điểm bãi đỗ' })
   update(
     @Param() params: ParkingIdParamDto,
@@ -96,7 +96,7 @@ export class ParkingsController {
   }
 
   @Post(':id/image')
-  @PbmsRoles('manager')
+  @PbmsRoles('admin')
   @UseInterceptors(FileInterceptor('file'))
   @ApiConsumes('multipart/form-data')
   @ApiBody({
@@ -127,7 +127,7 @@ export class ParkingsController {
   }
 
   @Delete(':id')
-  @PbmsRoles('manager')
+  @PbmsRoles('admin')
   @ApiOperation({ summary: 'Xóa bãi đỗ không còn ô đỗ' })
   remove(@Param() params: ParkingIdParamDto): Promise<ParkingResponseDto> {
     return this.parkings.remove(params.id);

@@ -4,11 +4,13 @@ import { WalletsModule } from '../wallets/wallets.module';
 import { PaymentResultController } from './payment-result.controller';
 import { PaymentsController } from './payments.controller';
 import { PaymentsService } from './payments.service';
+import { ReceiptsController } from './receipts.controller';
+import { ReceiptsService } from './receipts.service';
 
 @Module({
   imports: [AuthModule, WalletsModule],
-  controllers: [PaymentsController, PaymentResultController],
-  providers: [PaymentsService],
+  controllers: [PaymentsController, PaymentResultController, ReceiptsController],
+  providers: [PaymentsService, ReceiptsService],
   exports: [PaymentsService],
 })
 export class PaymentsModule {}

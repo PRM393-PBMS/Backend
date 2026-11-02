@@ -702,8 +702,11 @@ export class ParkingOperationsService {
     const grouped = new Map<
       string,
       {
+        parkingId: string;
         floorId: string;
         floorName: string;
+        /// Tầng cư dân: chỉ cho vé tháng, khách vãng lai không gửi được.
+        isResident: boolean;
         vehicleTypeId: string;
         vehicleTypeName: string;
         totalSlots: number;
@@ -716,8 +719,10 @@ export class ParkingOperationsService {
       if (isMotorbikeType(slot.vehicleType.typeName)) continue;
       const key = `${slot.floorId}:${slot.vehicleTypeId}`;
       const current = grouped.get(key) ?? {
+        parkingId: slot.parkingId,
         floorId: slot.floorId,
         floorName: slot.floor.floorName,
+        isResident: slot.floor.isResident,
         vehicleTypeId: slot.vehicleTypeId,
         vehicleTypeName: slot.vehicleType.typeName,
         totalSlots: 0,
@@ -741,7 +746,7 @@ export class ParkingOperationsService {
       floorKeyword,
     )) {
       if (vehicleTypeId && !isMotorbikeType(requestedType?.typeName)) continue;
-      const { parkingId: _parkingId, ...row } = floor;
+      const row = { ...floor, isResident: false };
       if (requestedType) {
         row.vehicleTypeId = requestedType.id;
         row.vehicleTypeName = requestedType.typeName;

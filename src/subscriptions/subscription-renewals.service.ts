@@ -1,12 +1,14 @@
 import { HashingService } from '../auth/services/hashing.service';
 import { confirmPassword } from '../common/confirm-password';
-import { Injectable, Optional } from '@nestjs/common';
+import { Injectable, Logger, Optional } from '@nestjs/common';
+import { Cron } from '@nestjs/schedule';
 import { InsufficientWalletFundsError, WalletsService } from '../wallets/wallets.service';
 import { NotificationsService, formatVnd } from '../notifications/notifications.service';
 import { Prisma } from '@prisma/client';
 import { PrismaService } from '../prisma/prisma.service';
 import { PayosService } from '../integrations/payos-files.service';
 import { PbmsResponseDto } from '../common/dto/pbms-response.dto';
+import { SubscriptionActivationError, extendSubscriptionInTx } from './activate-subscription';
 import {
   errorMessage,
   isEmptyGuid,
@@ -18,8 +20,13 @@ import {
   toMoney,
 } from '../common/pbms-fields';
 
+const DAY_MS = 864e5;
+const vnDate = (date: Date) => date.toLocaleDateString('vi-VN', { timeZone: 'Asia/Ho_Chi_Minh' });
+
 @Injectable()
 export class SubscriptionRenewalsService {
+  private readonly logger = new Logger(SubscriptionRenewalsService.name);
+
   constructor(
     private readonly prisma: PrismaService,
     private readonly payos: PayosService,
@@ -48,6 +55,10 @@ export class SubscriptionRenewalsService {
     if (sameStatus(subscription.status, 'Cancelled')) {
       return PbmsResponseDto.fail('Không thể gia hạn gói đã hủy');
     }
+    // Vé chưa từng thanh toán thì thanh toán vé (kích hoạt, nhận ô), không gia hạn.
+    if (!sameStatus(subscription.status, 'Active') && !sameStatus(subscription.status, 'Expired')) {
+      return PbmsResponseDto.fail('Vé tháng chưa được kích hoạt, vui lòng thanh toán vé trước', 409);
+    }
     const pkg = await this.prisma.subscriptionPackage.findUnique({ where: { id: packageId } });
     if (!pkg || !sameStatus(pkg.status, 'Active')) {
       return PbmsResponseDto.fail('Gói cước gia hạn không tồn tại hoặc đã ngừng áp dụng');
@@ -73,6 +84,7 @@ export class SubscriptionRenewalsService {
           paymentType: 'SubscriptionRenewal',
           paymentTime: new Date(),
           transactionReference: '',
+          packageId: pkg.id,
         },
       });
       const link = await this.payos.createPaymentLink(payment);
@@ -102,58 +114,12 @@ export class SubscriptionRenewalsService {
    * lưu lịch sử gia hạn trong cùng một giao dịch. Thiếu tiền thì không đổi gì (402).
    */
   private async renewWithWallet(
-    subscription: { id: string; endDate: Date },
+    subscription: { id: string },
     pkg: { id: string; price: Prisma.Decimal; durationDays: number },
     userId: string,
   ): Promise<PbmsResponseDto> {
     try {
-      const done = await this.prisma.$transaction(async (tx) => {
-        const payment = await tx.payment.create({
-          data: {
-            userId,
-            subscriptionId: subscription.id,
-            amount: pkg.price,
-            paymentMethod: 'Wallet',
-            paymentStatus: 'Success',
-            paymentType: 'SubscriptionRenewal',
-            paymentTime: new Date(),
-            transactionReference: `WALLET-RNW-${subscription.id.replace(/-/g, '').slice(0, 12)}`,
-          },
-        });
-        const debit = await this.wallets.debitForUser(
-          tx,
-          userId,
-          pkg.price,
-          'SubscriptionRenewal',
-          payment.id,
-          'Gia hạn gói tháng bằng ví',
-        );
-        // Còn hạn thì nối tiếp từ ngày hết hạn, đã hết hạn thì tính từ hôm nay.
-        const oldEnd = subscription.endDate;
-        const start = oldEnd < new Date() ? new Date() : oldEnd;
-        const newEnd = new Date(start);
-        newEnd.setUTCDate(newEnd.getUTCDate() + pkg.durationDays);
-        await tx.monthlySubscription.update({
-          where: { id: subscription.id },
-          data: { endDate: newEnd, status: 'Active' },
-        });
-        await tx.subscriptionRenewal.create({
-          data: {
-            subscriptionId: subscription.id,
-            oldEndDate: oldEnd,
-            newEndDate: newEnd,
-            amount: pkg.price,
-            renewalDate: new Date(),
-          },
-        });
-        return { payment, debit, newEnd };
-      });
-      await this.notifications?.notify(userId, {
-        title: 'Đã gia hạn vé tháng',
-        message: `Đã trừ ${formatVnd(toMoney(pkg.price))} từ ví PBMS. Vé có hiệu lực đến ${done.newEnd.toLocaleDateString('vi-VN', { timeZone: 'Asia/Ho_Chi_Minh' })}.`,
-        type: 'subscription',
-        metadata: { subscriptionId: subscription.id },
-      });
+      const done = await this.chargeRenewal(subscription.id, pkg, userId, 'Gia hạn gói tháng bằng ví');
       return PbmsResponseDto.ok('Gia hạn bằng ví thành công', {
         subscriptionId: subscription.id,
         paymentId: done.payment.id,
@@ -174,7 +140,120 @@ export class SubscriptionRenewalsService {
           amount: toMoney(pkg.price),
         });
       }
+      if (error instanceof SubscriptionActivationError) {
+        return PbmsResponseDto.fail(error.message, 409);
+      }
       return PbmsResponseDto.fail(`Lỗi gia hạn gói: ${errorMessage(error)}`, 500);
+    }
+  }
+
+  /** Trừ ví, ghi thanh toán, nối thêm thời hạn của gói và báo khách, trong một giao dịch. Thiếu tiền thì ném InsufficientWalletFundsError. */
+  private async chargeRenewal(
+    subscriptionId: string,
+    pkg: { id: string; price: Prisma.Decimal; durationDays: number },
+    userId: string,
+    description: string,
+  ) {
+    const done = await this.prisma.$transaction(async (tx) => {
+      const payment = await tx.payment.create({
+        data: {
+          userId,
+          subscriptionId,
+          amount: pkg.price,
+          paymentMethod: 'Wallet',
+          paymentStatus: 'Success',
+          paymentType: 'SubscriptionRenewal',
+          paymentTime: new Date(),
+          transactionReference: `WALLET-RNW-${subscriptionId.replace(/-/g, '').slice(0, 12)}`,
+          packageId: pkg.id,
+        },
+      });
+      const debit = await this.wallets.debitForUser(tx, userId, pkg.price, 'SubscriptionRenewal', payment.id, description);
+      const newEnd = await extendSubscriptionInTx(tx, subscriptionId, pkg.durationDays, pkg.price);
+      return { payment, debit, newEnd };
+    });
+    await this.notifications?.notify(userId, {
+      title: 'Đã gia hạn vé tháng',
+      message: `Đã trừ ${formatVnd(toMoney(pkg.price))} từ ví PBMS. Vé có hiệu lực đến ${vnDate(done.newEnd)}.`,
+      type: 'subscription',
+      metadata: { subscriptionId },
+    });
+    return done;
+  }
+
+  /**
+   * Mỗi ngày 00:01 (giờ VN), trước cron hết hạn 00:05: vé bật tự gia hạn còn dưới 1 ngày thì trừ ví,
+   * cộng một kỳ của gói hiện tại. Vé đã gia hạn có ngày hết hạn xa hơn nên chạy lại không trừ lần hai.
+   */
+  @Cron('1 0 * * *', { timeZone: 'Asia/Ho_Chi_Minh' })
+  async autoRenewFromWallet(): Promise<void> {
+    const due = await this.prisma.monthlySubscription.findMany({
+      where: { status: 'Active', autoRenew: true, endDate: { lt: new Date(Date.now() + DAY_MS) } },
+      include: { package: true, vehicle: { select: { licensePlate: true } } },
+    });
+    for (const sub of due) {
+      const plate = sub.vehicle.licensePlate;
+      try {
+        if (!sameStatus(sub.package.status, 'Active')) {
+          await this.notifications?.notify(sub.userId, {
+            title: 'Không tự gia hạn được vé tháng',
+            message: `Gói vé tháng xe ${plate} đã ngừng bán. Vui lòng chọn gói khác để gia hạn.`,
+            type: 'subscription',
+            metadata: { subscriptionId: sub.id },
+          });
+          continue;
+        }
+        await this.chargeRenewal(sub.id, sub.package, sub.userId, `Tự gia hạn vé tháng xe ${plate}`);
+      } catch (error: unknown) {
+        if (error instanceof InsufficientWalletFundsError) {
+          await this.notifications?.notify(sub.userId, {
+            title: 'Không tự gia hạn được vé tháng',
+            message: `Ví PBMS không đủ ${formatVnd(toMoney(sub.package.price))} để gia hạn vé xe ${plate}. Nạp ví rồi gia hạn trước khi vé hết hạn.`,
+            type: 'wallet',
+            metadata: { subscriptionId: sub.id },
+          });
+        } else {
+          this.logger.error(`Tự gia hạn vé ${sub.id} lỗi: ${errorMessage(error)}`);
+        }
+      }
+    }
+  }
+
+  /**
+   * Mỗi ngày 09:00 (giờ VN): nhắc vé hết hạn sau 3 ngày và ngày mai. Mỗi vé rơi vào mỗi khung 24 giờ
+   * đúng một lần nên không cần lưu "đã nhắc". Vé bật tự gia hạn được báo trước số dư có đủ không.
+   */
+  @Cron('0 9 * * *', { timeZone: 'Asia/Ho_Chi_Minh' })
+  async remindExpiring(): Promise<void> {
+    const now = Date.now();
+    for (const days of [3, 1]) {
+      const subs = await this.prisma.monthlySubscription.findMany({
+        where: {
+          status: 'Active',
+          endDate: { gte: new Date(now + days * DAY_MS), lt: new Date(now + (days + 1) * DAY_MS) },
+        },
+        include: { package: true, vehicle: { select: { licensePlate: true } } },
+      });
+      for (const sub of subs) {
+        const when = days === 1 ? 'ngày mai' : `sau ${days} ngày`;
+        let message = `Vé tháng xe ${sub.vehicle.licensePlate} hết hạn ${when} (${vnDate(sub.endDate)}).`;
+        if (sub.autoRenew && sameStatus(sub.package.status, 'Active')) {
+          const { walletBalance } = await this.wallets.getBalanceForUser(sub.userId);
+          const price = toMoney(sub.package.price);
+          message +=
+            walletBalance >= price
+              ? ` Vé sẽ tự gia hạn, trừ ${formatVnd(price)} từ ví PBMS.`
+              : ` Ví cần ${formatVnd(price)} để tự gia hạn nhưng chỉ còn ${formatVnd(walletBalance)}, vui lòng nạp thêm.`;
+        } else {
+          message += ' Gia hạn để tiếp tục gửi xe theo tháng.';
+        }
+        await this.notifications?.notify(sub.userId, {
+          title: 'Vé tháng sắp hết hạn',
+          message,
+          type: 'subscription',
+          metadata: { subscriptionId: sub.id },
+        });
+      }
     }
   }
 
