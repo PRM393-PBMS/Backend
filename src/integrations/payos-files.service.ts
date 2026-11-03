@@ -11,8 +11,35 @@ export type PayosLinkResult = {
   orderCode: string;
 };
 
+const IMAGE_TYPES: Record<string, string> = {
+  '.jpg': 'image/jpeg',
+  '.jpeg': 'image/jpeg',
+  '.png': 'image/png',
+  '.webp': 'image/webp',
+  '.gif': 'image/gif',
+  '.heic': 'image/heic',
+};
+
+/** Cấu hình Supabase Storage; null khi chưa đặt biến môi trường (máy dev lưu ra ổ đĩa). */
+export function supabaseStorageConfig(env: NodeJS.ProcessEnv = process.env): {
+  url: string;
+  key: string;
+  bucket: string;
+} | null {
+  const url = env.SUPABASE_URL?.trim().replace(/\/+$/, '') ?? '';
+  const key = env.SUPABASE_SERVICE_ROLE_KEY?.trim() ?? '';
+  if (!url || !key) return null;
+  return { url, key, bucket: env.SUPABASE_STORAGE_BUCKET?.trim() || 'pbms-uploads' };
+}
+
+/**
+ * Lưu ảnh tải lên. Có cấu hình Supabase thì lưu vào Supabase Storage (bucket công khai, giữ qua các lần
+ * deploy); không có thì ghi ra UPLOAD_DIR như trước. Ổ đĩa Render bị xoá mỗi lần deploy nên production cần Supabase.
+ */
 @Injectable()
 export class FilesService {
+  private bucketReady: Promise<void> | null = null;
+
   resolveUploadRoot(): string {
     return process.env.UPLOAD_DIR ?? './public/uploads';
   }
@@ -22,15 +49,70 @@ export class FilesService {
     requestBaseUrl: string,
     subfolder = '',
   ): Promise<{ imageUrl: string; fileName: string }> {
+    const ext = extname(file.originalname || '').toLowerCase() || '.jpg';
+    const fileName = `${randomUUID()}${ext}`;
+    const storage = supabaseStorageConfig();
+    if (storage) {
+      const objectPath = subfolder ? `${subfolder}/${fileName}` : fileName;
+      return { imageUrl: await this.uploadToSupabase(storage, objectPath, file, ext), fileName };
+    }
     const root = this.resolveUploadRoot();
     const dir = subfolder ? join(root, subfolder) : root;
     await mkdir(dir, { recursive: true });
-    const ext = extname(file.originalname || '').toLowerCase() || '.jpg';
-    const fileName = `${randomUUID()}${ext}`;
     await writeFile(join(dir, fileName), file.buffer);
     const publicPath = subfolder ? `uploads/${subfolder}/${fileName}` : `uploads/${fileName}`;
     const imageUrl = `${requestBaseUrl.replace(/\/$/, '')}/${publicPath}`;
     return { imageUrl, fileName };
+  }
+
+  private async uploadToSupabase(
+    storage: { url: string; key: string; bucket: string },
+    objectPath: string,
+    file: import('../common/uploaded-image').UploadedImage,
+    ext: string,
+  ): Promise<string> {
+    await this.ensureBucket(storage);
+    const contentType = file.mimetype?.startsWith('image/') ? file.mimetype : IMAGE_TYPES[ext] ?? 'image/jpeg';
+    const response = await fetch(`${storage.url}/storage/v1/object/${storage.bucket}/${objectPath}`, {
+      method: 'POST',
+      headers: {
+        Authorization: `Bearer ${storage.key}`,
+        apikey: storage.key,
+        'Content-Type': contentType,
+        // Tên tệp là UUID, không bao giờ ghi đè: cho trình duyệt và CDN giữ lâu.
+        'Cache-Control': 'max-age=31536000',
+      },
+      body: new Uint8Array(file.buffer),
+    });
+    if (!response.ok) {
+      const json = (await response.json().catch(() => ({}))) as { message?: string; error?: string };
+      throw new Error(`Không lưu được ảnh lên Supabase Storage: ${json.message || json.error || `HTTP ${response.status}`}`);
+    }
+    return `${storage.url}/storage/v1/object/public/${storage.bucket}/${objectPath}`;
+  }
+
+  /**
+   * Tạo bucket công khai chỉ nhận ảnh ở lần tải đầu tiên (mỗi lần chạy server gọi một lần).
+   * Bucket đã có thì Supabase báo lỗi trùng; bỏ qua, lỗi thật sẽ lộ ra ở bước tải ảnh.
+   */
+  private ensureBucket(storage: { url: string; key: string; bucket: string }): Promise<void> {
+    this.bucketReady ??= fetch(`${storage.url}/storage/v1/bucket`, {
+      method: 'POST',
+      headers: { Authorization: `Bearer ${storage.key}`, apikey: storage.key, 'Content-Type': 'application/json' },
+      body: JSON.stringify({
+        id: storage.bucket,
+        name: storage.bucket,
+        public: true,
+        file_size_limit: 10 * 1024 * 1024,
+        allowed_mime_types: ['image/*'],
+      }),
+    }).then(
+      () => undefined,
+      () => {
+        this.bucketReady = null;
+      },
+    );
+    return this.bucketReady;
   }
 }
 
