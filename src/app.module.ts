@@ -7,6 +7,7 @@ import { AppService } from './app.service';
 import { PrismaModule } from './prisma/prisma.module';
 import { AuthModule } from './auth/auth.module';
 import { AtGuard } from './auth/common/guards/at.guard';
+import { CashLedgerModule } from './cash/cash-ledger.module';
 import { CatalogModule } from './catalog/catalog.module';
 import { GateScansModule } from './gate-scans/gate-scans.module';
 import { IncidentsModule } from './incidents/incidents.module';
@@ -38,6 +39,7 @@ import { VehiclesModule } from './vehicles/vehicles.module';
     SubscriptionsModule,
     ReservationsModule,
     PaymentsModule,
+    CashLedgerModule,
     ParkingModule,
     IncidentsModule,
     ReportsModule,

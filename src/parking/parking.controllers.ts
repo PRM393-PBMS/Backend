@@ -314,8 +314,11 @@ export class ParkingOperationsController {
     Session: { ...sessionExample, status: 'Completed', exitTime: '2026-09-17T11:45:00.000Z' },
     Payment: paymentExample,
   })
-  confirmCash(@Param('paymentId', new ParseUUIDPipe()) paymentId: string): Promise<PbmsResponseDto> {
-    return this.operations.confirmCash(paymentId);
+  confirmCash(
+    @Param('paymentId', new ParseUUIDPipe()) paymentId: string,
+    @GetPbmsUserId() staffId: string,
+  ): Promise<PbmsResponseDto> {
+    return this.operations.confirmCash(paymentId, staffId);
   }
 
   @ApiBearerAuth('JWT-auth')

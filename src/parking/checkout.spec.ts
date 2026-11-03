@@ -139,10 +139,14 @@ describe('Checkout ở cổng ra', () => {
       paymentStatus: 'Pending',
       transactionReference: '',
     });
-    const res = await ops.confirmCash('pay-new');
+    const res = await ops.confirmCash('pay-new', 'staff-1');
     expect(res.statusCode).toBe(200);
+    // Sổ quỹ: ghi nhân viên nhận tiền và cổng thu, nhân viên giữ tiền đến khi chốt nộp.
     expect(prisma.payment.update).toHaveBeenCalledWith(
-      expect.objectContaining({ where: { id: 'pay-new' }, data: expect.objectContaining({ paymentStatus: 'Success' }) }),
+      expect.objectContaining({
+        where: { id: 'pay-new' },
+        data: expect.objectContaining({ paymentStatus: 'Success', collectedById: 'staff-1', collectedGateId: session.exitGateId }),
+      }),
     );
     expect(session.status).toBe('Completed');
     expect(prisma.parkingSlot.update).toHaveBeenCalledWith({ where: { id: 'slot-1' }, data: { status: 'Available' } });

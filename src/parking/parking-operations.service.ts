@@ -570,7 +570,8 @@ export class ParkingOperationsService {
     });
   }
 
-  async confirmCash(paymentId: string): Promise<PbmsResponseDto> {
+  /** [staffId]: nhân viên nhận tiền, giữ tiền đến khi chốt nộp quản lý (sổ quỹ). */
+  async confirmCash(paymentId: string, staffId?: string): Promise<PbmsResponseDto> {
     const payment = await this.findCheckoutPayment(paymentId);
     if (payment instanceof PbmsResponseDto) {
       return payment;
@@ -593,7 +594,12 @@ export class ParkingOperationsService {
     }
     await this.prisma.payment.update({
       where: { id: payment.id },
-      data: { paymentStatus: 'Success', paymentTime: new Date() },
+      data: {
+        paymentStatus: 'Success',
+        paymentTime: new Date(),
+        collectedById: staffId ?? null,
+        collectedGateId: session.exitGateId,
+      },
     });
     await this.closeSession(session.id, null);
     return PbmsResponseDto.ok('Đã nhận tiền mặt và checkout thành công', {
