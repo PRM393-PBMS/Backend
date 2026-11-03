@@ -24,6 +24,8 @@ async function bootstrap() {
   // Không có dòng này, link ảnh tải lên lưu thành http://..., trình duyệt bị Render chuyển hướng 301
   // không kèm CORS nên web không đọc được ảnh (nhận diện biển số trên web thất bại).
   app.set('trust proxy', 1);
+  // Sơ đồ bãi (tới 60x60 ô lưới) vượt giới hạn 100KB mặc định của body JSON.
+  app.useBodyParser('json', { limit: '2mb' });
 
   // Bật CORS trước thư mục ảnh: web staff đọc ảnh lượt quét bằng canvas để nhận diện biển số.
   const corsOrigin = process.env.CORS_ORIGIN ?? 'http://localhost:5173';
