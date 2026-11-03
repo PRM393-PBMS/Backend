@@ -77,7 +77,12 @@ describe('Tự gia hạn bằng ví (00:01)', () => {
     await service.autoRenewFromWallet();
     expect(notifications.notify).toHaveBeenCalledWith(
       'user-1',
-      expect.objectContaining({ title: 'Không tự gia hạn được vé tháng', type: 'wallet' }),
+      expect.objectContaining({
+        title: 'Không tự gia hạn được vé tháng',
+        type: 'wallet',
+        // Giá 1.500.000, ví còn 2.000.000 trong mock: thiếu 0 (vẫn kèm để app mở màn nạp ví).
+        metadata: expect.objectContaining({ action: 'topup', amount: 0 }),
+      }),
     );
     expect(notifications.notify).toHaveBeenCalledWith('user-2', expect.objectContaining({ title: 'Đã gia hạn vé tháng' }));
   });
