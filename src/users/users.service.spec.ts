@@ -107,6 +107,7 @@ describe('UsersService', () => {
       expect(result.result).toEqual(
         expect.objectContaining({
           userId: existing.id,
+          roleName: 'customer',
           avatarUrl: 'http://localhost:3000/uploads/avatars/abc.jpg',
         }),
       );

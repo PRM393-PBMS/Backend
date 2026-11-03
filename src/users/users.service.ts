@@ -471,6 +471,8 @@ export class UsersService {
       phoneNumber: user.phoneNumber,
       status: user.status ?? 'Active',
       roleId: user.roleId,
+      // Web quản trị lọc và hiển thị theo tên quyền (danh sách người dùng, ví khuyến mãi chỉ lấy khách).
+      roleName: user.pbmsRole?.roleName ?? null,
       avatarUrl: user.avatarUrl ?? null,
       walletId: user.wallet?.id ?? null,
       createdAt: user.createdAt,
