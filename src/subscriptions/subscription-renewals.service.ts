@@ -206,11 +206,13 @@ export class SubscriptionRenewalsService {
         await this.chargeRenewal(sub.id, sub.package, sub.userId, `Tự gia hạn vé tháng xe ${plate}`);
       } catch (error: unknown) {
         if (error instanceof InsufficientWalletFundsError) {
+          const price = toMoney(sub.package.price);
+          const { walletBalance } = await this.wallets.getBalanceForUser(sub.userId);
           await this.notifications?.notify(sub.userId, {
             title: 'Không tự gia hạn được vé tháng',
-            message: `Ví PBMS không đủ ${formatVnd(toMoney(sub.package.price))} để gia hạn vé xe ${plate}. Nạp ví rồi gia hạn trước khi vé hết hạn.`,
+            message: `Ví PBMS không đủ ${formatVnd(price)} để gia hạn vé xe ${plate}. Nạp ví rồi gia hạn trước khi vé hết hạn.`,
             type: 'wallet',
-            metadata: { subscriptionId: sub.id },
+            metadata: { subscriptionId: sub.id, action: 'topup', amount: Math.max(0, Math.ceil(price - walletBalance)) },
           });
         } else {
           this.logger.error(`Tự gia hạn vé ${sub.id} lỗi: ${errorMessage(error)}`);
@@ -251,7 +253,7 @@ export class SubscriptionRenewalsService {
           title: 'Vé tháng sắp hết hạn',
           message,
           type: 'subscription',
-          metadata: { subscriptionId: sub.id },
+          metadata: { subscriptionId: sub.id, action: 'renew' },
         });
       }
     }

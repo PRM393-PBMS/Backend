@@ -1273,12 +1273,28 @@ export class ParkingOperationsService {
       if (error instanceof PbmsResponseDto) return error;
       throw error;
     }
+    const [slot, gate] = await Promise.all([
+      created.actualSlotId
+        ? this.prisma.parkingSlot.findUnique({
+            where: { id: created.actualSlotId },
+            select: { slotCode: true, parkingId: true, floor: { select: { floorName: true } } },
+          })
+        : null,
+      this.prisma.gate.findUnique({ where: { id: created.entryGateId }, select: { gateName: true } }),
+    ]).catch(() => [null, null] as const);
+    const where = slot ? `, ô ${slot.slotCode} (${slot.floor.floorName})` : '';
     await this.notifications
       ?.notifyPlateOwner(created.licensePlateIn, {
-        title: 'Xe đã vào bãi',
-        message: `Xe ${created.licensePlateIn} vào bãi lúc ${formatTime(created.entryTime)}. Thanh toán trước trên app để ra cổng nhanh.`,
+        title: slot ? `Xe đã vào bãi, ô ${slot.slotCode}` : 'Xe đã vào bãi',
+        message: `Xe ${created.licensePlateIn} vào bãi lúc ${formatTime(created.entryTime)}${where}. Bấm để xem đường tới ô.`,
         type: 'parking',
-        metadata: { sessionId: created.id },
+        metadata: {
+          sessionId: created.id,
+          action: 'lot-map',
+          slotCode: slot?.slotCode ?? null,
+          parkingId: slot?.parkingId ?? null,
+          entryGateName: gate?.gateName ?? null,
+        },
       })
       .catch(() =>
         Logger.warn(

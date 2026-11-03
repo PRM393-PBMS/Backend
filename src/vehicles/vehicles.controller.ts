@@ -1,5 +1,7 @@
-import { Body, Controller, Delete, Get, Param, Post, Put, UseInterceptors } from '@nestjs/common';
-import { ApiBearerAuth, ApiOperation, ApiTags } from '@nestjs/swagger';
+import { Body, Controller, Delete, Get, Param, Post, Put, UploadedFile, UseInterceptors } from '@nestjs/common';
+import { FileInterceptor } from '@nestjs/platform-express';
+import { ApiBearerAuth, ApiBody, ApiConsumes, ApiOperation, ApiTags } from '@nestjs/swagger';
+import type { UploadedImage } from '../common/uploaded-image';
 import { GetPbmsUserId } from '../auth/common/decorators/get-pbms-user-id.decorator';
 import { PbmsBodyDto } from '../common/dto/pbms-body.dto';
 import { PbmsResponseDto } from '../common/dto/pbms-response.dto';
@@ -7,6 +9,7 @@ import { PbmsStatusInterceptor } from '../common/interceptors/pbms-status.interc
 import { ids } from '../common/swagger/pbms-example-data';
 import { ApiPbmsBodyExample, ApiPbmsOkResponse } from '../common/swagger/pbms-swagger';
 import { VehiclesService } from './vehicles.service';
+import { PlateScanService } from './plate-scan.service';
 
 const vehicleExample = {
   vehicleId: ids.vehicleId,
@@ -21,7 +24,22 @@ const vehicleExample = {
 @UseInterceptors(PbmsStatusInterceptor)
 @Controller('api/vehicles')
 export class VehiclesController {
-  constructor(private readonly vehicles: VehiclesService) {}
+  constructor(
+    private readonly vehicles: VehiclesService,
+    private readonly plateScan: PlateScanService,
+  ) {}
+
+  @Post('recognize-plate')
+  @UseInterceptors(FileInterceptor('file'))
+  @ApiConsumes('multipart/form-data')
+  @ApiBody({ schema: { type: 'object', properties: { file: { type: 'string', format: 'binary' } }, required: ['file'] } })
+  @ApiOperation({
+    summary: 'Đọc biển số từ ảnh khách chụp khi thêm xe',
+    description: 'Không lưu ảnh. Tối đa 10 ảnh mỗi 10 phút mỗi tài khoản (429). Không đọc được thì 422.',
+  })
+  recognizePlate(@GetPbmsUserId() userId: string, @UploadedFile() file: UploadedImage | undefined): Promise<PbmsResponseDto> {
+    return this.plateScan.scan(userId, file);
+  }
 
   @Post()
   @ApiOperation({ summary: 'Đăng ký xe của tôi' })
