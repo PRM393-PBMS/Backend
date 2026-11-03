@@ -440,8 +440,14 @@ model Payment {
   packageId            String?  @map("package_id") @db.Uuid
   /// Mã khuyến mãi khách nhập khi nạp ví: tiền tặng cộng vào ngăn BONUS khi tiền nạp về.
   promoCodeId          String?  @map("promo_code_id") @db.Uuid
+  /// Tiền mặt: nhân viên xác nhận đã nhận tiền và cổng thu. Null với khoản nhập tay hoặc trước khi có sổ quỹ.
+  collectedById        String?  @map("collected_by_id") @db.Uuid
+  collectedGateId      String?  @map("collected_gate_id") @db.Uuid
+  /// Phiếu nộp tiền chứa khoản này; null = nhân viên thu còn đang giữ tiền.
+  cashHandoverId       String?  @map("cash_handover_id") @db.Uuid
 
   user               User?                @relation(fields: [userId], references: [id], onDelete: SetNull)
+  cashHandover       CashHandover?        @relation(fields: [cashHandoverId], references: [id], onDelete: SetNull)
   session            ParkingSession?      @relation(fields: [sessionId], references: [id], onDelete: SetNull)
   reservation        Reservation?         @relation(fields: [reservationId], references: [id], onDelete: SetNull)
   subscription       MonthlySubscription? @relation(fields: [subscriptionId], references: [id], onDelete: SetNull)
@@ -453,7 +459,29 @@ model Payment {
   @@index([subscriptionId], name: "idx_payments_subscription_id")
   @@index([transactionReference], name: "idx_payments_transaction_reference")
   @@index([paymentStatus], name: "idx_payments_payment_status")
+  @@index([collectedById, cashHandoverId], name: "idx_payments_cash_holding")
   @@map("payments")
+}
+
+/// Phiếu nộp tiền mặt: nhân viên chốt các khoản đang giữ, quản lý nhận đủ thì xác nhận, lệch thì từ chối (khoản trả về nhân viên giữ).
+model CashHandover {
+  id           String    @id @default(uuid()) @db.Uuid
+  staffId      String    @map("staff_id") @db.Uuid
+  amount       Decimal   @db.Decimal(15, 2)
+  paymentCount Int       @map("payment_count")
+  /// Submitted (chờ quản lý nhận), Confirmed (đã nhận tiền), Rejected (lệch tiền, trả về). varchar(20).
+  status       String    @default("Submitted") @db.VarChar(20)
+  note         String?   @db.VarChar(500)
+  submittedAt  DateTime  @default(now()) @map("submitted_at") @db.Timestamptz(6)
+  reviewedById String?   @map("reviewed_by_id") @db.Uuid
+  reviewedAt   DateTime? @map("reviewed_at") @db.Timestamptz(6)
+  reviewNote   String?   @map("review_note") @db.VarChar(500)
+
+  payments Payment[]
+
+  @@index([staffId, status], name: "idx_cash_handovers_staff_status")
+  @@index([submittedAt], name: "idx_cash_handovers_submitted_at")
+  @@map("cash_handovers")
 }
 
 model Wallet {
