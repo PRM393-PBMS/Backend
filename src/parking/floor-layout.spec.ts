@@ -94,10 +94,15 @@ describe('Xuất bản sơ đồ', () => {
     const existing = opts.existing ?? [];
     const tx = {
       parkingSlot: {
-        findMany: jest.fn().mockResolvedValue(existing),
+        findMany: jest
+          .fn()
+          .mockResolvedValueOnce(existing)
+          .mockImplementation((a: { where: { slotCode?: { in: string[] } } }) =>
+            Promise.resolve((a.where.slotCode?.in ?? []).map((code) => ({ id: `new-${code}`, slotCode: code }))),
+          ),
         deleteMany: jest.fn(),
         update: jest.fn(),
-        create: jest.fn((a: { data: { slotCode: string } }) => Promise.resolve({ id: `new-${a.data.slotCode}` })),
+        createMany: jest.fn().mockResolvedValue({ count: 0 }),
       },
       monthlySubscription: { findMany: jest.fn().mockResolvedValue(opts.held ?? []) },
       gate: { findMany: jest.fn().mockResolvedValue([]), update: jest.fn(), create: jest.fn().mockResolvedValue({ id: 'gate-new' }) },
@@ -113,16 +118,18 @@ describe('Xuất bản sơ đồ', () => {
       },
       vehicleType: { findMany: jest.fn().mockResolvedValue([{ id: VT }]) },
       parkingSlot: { findMany: jest.fn().mockResolvedValue([]) },
-      $transaction: jest.fn((fn: (t: typeof tx) => Promise<unknown>) => fn(tx)),
+      $transaction: jest.fn((fn: (t: typeof tx) => Promise<unknown>, _options?: object) => fn(tx)),
     };
     return { service: new FloorLayoutsService(prisma as unknown as PrismaService), tx, prisma };
   }
 
   it('tạo ô và cổng mới, ghi id vào sơ đồ, cập nhật sức chứa, tăng version', async () => {
-    const { service, tx } = setup();
+    const { service, tx, prisma } = setup();
     const res = await service.publish(F1, { version: 3 });
     expect(res.isSuccess).toBe(true);
-    expect(tx.parkingSlot.create).toHaveBeenCalledTimes(3);
+    // Giao dịch đủ dài cho DB ở xa (mặc định Prisma chỉ 5 giây).
+    expect(prisma.$transaction.mock.calls[0][1]).toEqual({ timeout: 30_000, maxWait: 10_000 });
+    expect(tx.parkingSlot.createMany.mock.calls[0][0].data.map((d: { slotCode: string }) => d.slotCode)).toEqual(['A01', 'A02', 'A03']);
     const saved = (res.result as { layout: FloorLayoutData }).layout;
     expect(saved.cells.find((c) => c.code === 'A02')?.slotId).toBe('new-A02');
     expect(saved.cells.find((c) => c.t === 'gate')?.gateId).toBe('gate-new');
@@ -140,7 +147,7 @@ describe('Xuất bản sơ đồ', () => {
       ],
     });
     await service.publish(F1, { version: 3 });
-    expect(tx.parkingSlot.create).toHaveBeenCalledTimes(2);
+    expect(tx.parkingSlot.createMany.mock.calls[0][0].data).toHaveLength(2);
     expect(tx.parkingSlot.deleteMany).toHaveBeenCalledWith({ where: { id: { in: ['s9'] } } });
   });
 
@@ -179,7 +186,7 @@ describe('Xuất bản sơ đồ', () => {
     const { service, tx } = setup({ version: 5 });
     const res = await service.publish(F1, { version: 3 });
     expect(res.statusCode).toBe(409);
-    expect(tx.parkingSlot.create).not.toHaveBeenCalled();
+    expect(tx.parkingSlot.createMany).not.toHaveBeenCalled();
   });
 
   it('lưu nháp chỉ khi đúng version', async () => {
@@ -188,5 +195,27 @@ describe('Xuất bản sơ đồ', () => {
     expect((await service.saveDraft(F1, { version: 1, layout: sample() })).statusCode).toBe(409);
     expect((await service.saveDraft(F1, { version: 3, layout: sample() })).isSuccess).toBe(true);
     expect((await service.saveDraft(F1, { version: 3, layout: { w: 1 } })).isSuccess).toBe(false);
+  });
+});
+
+describe('Lỗi bất ngờ khi lưu sơ đồ', () => {
+  it('trả lý do thật (500 kèm thông điệp) thay vì Internal server error', async () => {
+    const prisma = {
+      floor: {
+        findUnique: jest.fn().mockResolvedValue({ id: F1, parkingId: 'lot', layoutVersion: 3, layoutDraft: sample(), layout: null }),
+        findMany: jest.fn().mockResolvedValue([{ id: F1 }]),
+        updateMany: jest.fn().mockRejectedValue(new Error('Transaction already closed: timeout 5000 ms')),
+      },
+      vehicleType: { findMany: jest.fn().mockResolvedValue([{ id: VT }]) },
+      parkingSlot: { findMany: jest.fn().mockResolvedValue([]) },
+      $transaction: jest.fn().mockRejectedValue(new Error('Transaction already closed: timeout 5000 ms')),
+    };
+    const service = new FloorLayoutsService(prisma as unknown as PrismaService);
+    const draft = await service.saveDraft(F1, { version: 3, layout: sample() });
+    expect(draft.statusCode).toBe(500);
+    expect(draft.message).toContain('Transaction already closed');
+    const published = await service.publish(F1, { version: 3 });
+    expect(published.statusCode).toBe(500);
+    expect(published.message).toContain('Không xuất bản được sơ đồ');
   });
 });

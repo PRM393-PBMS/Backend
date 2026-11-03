@@ -2,12 +2,14 @@ import { Injectable } from '@nestjs/common';
 import { Prisma } from '@prisma/client';
 import { PrismaService } from '../prisma/prisma.service';
 import { PbmsResponseDto } from '../common/dto/pbms-response.dto';
-import { isEmptyGuid, pbmsPickNumber } from '../common/pbms-fields';
+import { errorMessage, isEmptyGuid, pbmsPickNumber } from '../common/pbms-fields';
 import { FloorLayoutData, LayoutCell, layoutProblems, parseLayout } from './floor-layout';
 
 /** Ô đỗ còn gắn với khách thì không được xoá khỏi sơ đồ. */
 const BUSY_SLOT_STATUSES = ['Occupied', 'Assigned'];
 const LIVE_SUBSCRIPTION_STATUSES = ['Active', 'PendingPayment'];
+/** Xuất bản ghi nhiều ô một lúc; mặc định 5 giây của Prisma không đủ khi DB ở xa (Render -> Supabase). */
+const PUBLISH_TX = { timeout: 30_000, maxWait: 10_000 };
 
 class LayoutConflict extends Error {}
 class LayoutBlocked extends Error {}
@@ -54,12 +56,16 @@ export class FloorLayoutsService {
     if (typeof layout === 'string') return PbmsResponseDto.fail(layout);
     const version = pbmsPickNumber(dto, 'version', 'Version');
     if (version === undefined) return PbmsResponseDto.fail('Thiếu version của bản vẽ');
-    const moved = await this.prisma.floor.updateMany({
-      where: { id: floorId, layoutVersion: version },
-      data: { layoutDraft: layout as unknown as Prisma.InputJsonValue, layoutVersion: version + 1 },
-    });
-    if (moved.count !== 1) return this.versionConflict(floorId);
-    return PbmsResponseDto.ok('Đã lưu nháp', { floorId, version: version + 1 });
+    try {
+      const moved = await this.prisma.floor.updateMany({
+        where: { id: floorId, layoutVersion: version },
+        data: { layoutDraft: layout as unknown as Prisma.InputJsonValue, layoutVersion: version + 1 },
+      });
+      if (moved.count !== 1) return this.versionConflict(floorId);
+      return PbmsResponseDto.ok('Đã lưu nháp', { floorId, version: version + 1 });
+    } catch (error: unknown) {
+      return PbmsResponseDto.fail(`Không lưu được bản nháp: ${errorMessage(error)}`, 500);
+    }
   }
 
   /**
@@ -109,14 +115,14 @@ export class FloorLayoutsService {
         });
         if (moved.count !== 1) throw new LayoutConflict();
         return published;
-      });
+      }, PUBLISH_TX);
       return PbmsResponseDto.ok('Đã xuất bản sơ đồ', { floorId, version: version + 1, layout: saved });
     } catch (error: unknown) {
       if (error instanceof LayoutConflict) return this.versionConflict(floorId);
       if (error instanceof LayoutBlocked) {
         return new PbmsResponseDto('Sơ đồ chưa xuất bản được', 400, false, { problems: [error.message] });
       }
-      throw error;
+      return PbmsResponseDto.fail(`Không xuất bản được sơ đồ: ${errorMessage(error)}`, 500);
     }
   }
 
@@ -163,21 +169,32 @@ export class FloorLayoutsService {
     for (const c of renamed) {
       await tx.parkingSlot.update({ where: { id: c.slotId }, data: { slotCode: `~${c.slotId!.slice(0, 13)}` } });
     }
-    for (const c of cells.filter((c) => c.t === 'slot')) {
-      if (c.slotId) {
-        const old = byId.get(c.slotId)!;
-        if (old.slotCode !== c.code || old.vehicleTypeId !== c.vehicleTypeId) {
-          await tx.parkingSlot.update({
-            where: { id: c.slotId },
-            data: { slotCode: c.code, vehicleTypeId: c.vehicleTypeId },
-          });
-        }
-      } else {
-        const created = await tx.parkingSlot.create({
-          data: { parkingId, floorId, slotCode: c.code!, vehicleTypeId: c.vehicleTypeId!, status: 'Available' },
+    for (const c of cells.filter((c) => c.t === 'slot' && c.slotId)) {
+      const old = byId.get(c.slotId!)!;
+      if (old.slotCode !== c.code || old.vehicleTypeId !== c.vehicleTypeId) {
+        await tx.parkingSlot.update({
+          where: { id: c.slotId },
+          data: { slotCode: c.code, vehicleTypeId: c.vehicleTypeId },
         });
-        c.slotId = created.id;
       }
+    }
+    const fresh = cells.filter((c) => c.t === 'slot' && !c.slotId);
+    if (fresh.length) {
+      await tx.parkingSlot.createMany({
+        data: fresh.map((c) => ({
+          parkingId,
+          floorId,
+          slotCode: c.code!,
+          vehicleTypeId: c.vehicleTypeId!,
+          status: 'Available',
+        })),
+      });
+      const ids = await tx.parkingSlot.findMany({
+        where: { floorId, slotCode: { in: fresh.map((c) => c.code!) } },
+        select: { id: true, slotCode: true },
+      });
+      const idByCode = new Map(ids.map((s) => [s.slotCode, s.id]));
+      for (const c of fresh) c.slotId = idByCode.get(c.code!);
     }
     return cells;
   }
