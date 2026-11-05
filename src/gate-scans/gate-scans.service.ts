@@ -4,7 +4,10 @@ import { isUUID } from 'class-validator';
 import { Prisma } from '@prisma/client';
 import { Observable, Subject, filter, interval, map, merge } from 'rxjs';
 import { PbmsResponseDto } from '../common/dto/pbms-response.dto';
-import { isValidLicensePlate, normalizeLicensePlate } from '../common/license-plate';
+import {
+  isValidLicensePlate,
+  normalizeLicensePlate,
+} from '../common/license-plate';
 import { FilesService } from '../integrations/payos-files.service';
 import { PlateRecognizerService } from '../integrations/plate-recognizer.service';
 import { PrismaService } from '../prisma/prisma.service';
@@ -37,16 +40,42 @@ export interface GateScanMatch {
     phoneNumber: string | null;
     vehicleTypeName: string | null;
   } | null;
-  subscription: { subscriptionId: string; packageName: string | null; endDate: string } | null;
-  activeSession: { sessionId: string; entryTime: string; entryGateName: string | null } | null;
-  vehicle: { vehicleTypeId: string; vehicleTypeName: string | null; ownerName: string | null } | null;
+  subscription: {
+    subscriptionId: string;
+    packageName: string | null;
+    endDate: string;
+  } | null;
+  activeSession: {
+    sessionId: string;
+    entryTime: string;
+    entryGateName: string | null;
+  } | null;
+  vehicle: {
+    vehicleTypeId: string;
+    vehicleTypeName: string | null;
+    ownerName: string | null;
+  } | null;
   /** Xe đã đăng ký gửi một lần trên app: vào bằng biển số, không cần quét mã. */
-  entryPass?: { entryPassId: string; expiresAt: string } | null;
+  entryPass?: {
+    entryPassId: string;
+    expiresAt: string;
+    parkingId: string | null;
+    parkingName: string | null;
+    matchesParking: boolean;
+  } | null;
 }
 
 const scanInclude = {
-  gate: { select: { gateName: true, gateType: true, floor: { select: { floorName: true } } } },
-  scannedBy: { select: { id: true, fullName: true, userName: true, email: true } },
+  gate: {
+    select: {
+      gateName: true,
+      gateType: true,
+      floor: { select: { floorName: true } },
+    },
+  },
+  scannedBy: {
+    select: { id: true, fullName: true, userName: true, email: true },
+  },
 } satisfies Prisma.GateScanInclude;
 
 type ScanRow = Prisma.GateScanGetPayload<{ include: typeof scanInclude }>;
@@ -58,6 +87,8 @@ export interface StaffGate {
   gateType: string;
   floorName: string | null;
   parkingName: string | null;
+  parkingId: string;
+  floorId: string;
   setAt: string;
 }
 
@@ -224,27 +255,41 @@ export class GateScansService {
   }): string {
     const status = result.providerStatusCode;
     if (status == null) return result.message ?? 'Chưa đọc được biển số';
-    if (status === 401 || status === 403) return 'Khoá Plate Recognizer sai hoặc hết hạn';
+    if (status === 401 || status === 403)
+      return 'Khoá Plate Recognizer sai hoặc hết hạn';
     if (status === 429) return 'Plate Recognizer hết lượt hoặc gọi quá nhanh';
     if (status >= 400) return `Plate Recognizer báo lỗi ${status}`;
     return 'Không thấy biển số trong ảnh, chụp gần và rõ hơn';
   }
 
   /** Web chọn cổng trực; điện thoại cùng tài khoản đọc lại qua `myGate`. */
-  async setMyGate(staffId: string, gateId: string | undefined): Promise<PbmsResponseDto> {
-    if (!gateId || !isUUID(gateId)) return PbmsResponseDto.fail('GateId phải là UUID hợp lệ', 400);
+  async setMyGate(
+    staffId: string,
+    gateId: string | undefined,
+  ): Promise<PbmsResponseDto> {
+    if (!gateId || !isUUID(gateId))
+      return PbmsResponseDto.fail('GateId phải là UUID hợp lệ', 400);
     const gate = await this.prisma.gate.findUnique({
       where: { id: gateId },
       select: {
         id: true,
         gateName: true,
         gateType: true,
-        floor: { select: { floorName: true, parking: { select: { name: true } } } },
+        floor: {
+          select: {
+            id: true,
+            parkingId: true,
+            floorName: true,
+            parking: { select: { name: true } },
+          },
+        },
       },
     });
     if (!gate) return PbmsResponseDto.fail('Không tìm thấy cổng', 404);
     const current: StaffGate = {
       gateId: gate.id,
+      parkingId: gate.floor.parkingId,
+      floorId: gate.floor.id,
       gateName: gate.gateName,
       gateType: gate.gateType,
       floorName: gate.floor?.floorName ?? null,
@@ -256,10 +301,17 @@ export class GateScansService {
   }
 
   myGate(staffId: string): PbmsResponseDto {
-    return PbmsResponseDto.ok('Cổng trực hiện tại', this.staffGates.get(staffId) ?? null);
+    return PbmsResponseDto.ok(
+      'Cổng trực hiện tại',
+      this.staffGates.get(staffId) ?? null,
+    );
   }
 
-  async recent(filters: { gateId?: string; staffId?: string; limit?: number }): Promise<PbmsResponseDto> {
+  async recent(filters: {
+    gateId?: string;
+    staffId?: string;
+    limit?: number;
+  }): Promise<PbmsResponseDto> {
     const rows = await this.prisma.gateScan.findMany({
       where: {
         ...(filters.gateId ? { gateId: filters.gateId } : {}),
@@ -269,15 +321,29 @@ export class GateScansService {
       take: Math.min(Math.max(filters.limit || 20, 1), 100),
       include: scanInclude,
     });
-    return PbmsResponseDto.ok('Lấy lượt quét gần đây thành công', rows.map((r) => this.toDto(r)));
+    return PbmsResponseDto.ok(
+      'Lấy lượt quét gần đây thành công',
+      rows.map((r) => this.toDto(r)),
+    );
   }
 
-  async setStatus(id: string, status: string | undefined): Promise<PbmsResponseDto> {
-    const next = SCAN_STATUSES.find((s) => s.toLowerCase() === (status ?? '').trim().toLowerCase());
+  async setStatus(
+    id: string,
+    status: string | undefined,
+  ): Promise<PbmsResponseDto> {
+    const next = SCAN_STATUSES.find(
+      (s) => s.toLowerCase() === (status ?? '').trim().toLowerCase(),
+    );
     if (!next) {
-      return PbmsResponseDto.fail('Status phải là New, Handled hoặc Dismissed', 400);
+      return PbmsResponseDto.fail(
+        'Status phải là New, Handled hoặc Dismissed',
+        400,
+      );
     }
-    const found = await this.prisma.gateScan.findUnique({ where: { id }, select: { id: true } });
+    const found = await this.prisma.gateScan.findUnique({
+      where: { id },
+      select: { id: true },
+    });
     if (!found) {
       return PbmsResponseDto.fail('Không tìm thấy lượt quét', 404);
     }
@@ -298,68 +364,99 @@ export class GateScansService {
       map((e): MessageEvent => ({ type: e.type, data: e.data })),
     );
     const heartbeat = interval(HEARTBEAT_MS).pipe(
-      map((): MessageEvent => ({ type: 'ping', data: { at: new Date().toISOString() } })),
+      map((): MessageEvent => ({
+        type: 'ping',
+        data: { at: new Date().toISOString() },
+      })),
     );
     return merge(scans, heartbeat);
   }
 
-  async lookup(plate: string, parkingId: string | null, at: Date): Promise<GateScanMatch> {
-    const [activeSession, reservations, subscription, vehicle, entryPass] = await Promise.all([
-      this.prisma.parkingSession.findFirst({
-        where: { licensePlateIn: plate, status: 'Active' },
-        select: { id: true, entryTime: true, entryGate: { select: { gateName: true } } },
-      }),
-      this.prisma.reservation.findMany({
-        where: {
-          vehicle: { is: { licensePlate: plate } },
-          status: { in: ['Confirmed', 'Modified'] },
-          // Đặt chỗ của bãi khác không áp dụng ở cổng này; đơn cũ không gắn bãi thì vẫn tính.
-          ...(parkingId ? { OR: [{ parkingId }, { parkingId: null }] } : {}),
-          expectedEntryTime: {
-            gte: new Date(at.getTime() - LOOKUP_WINDOW_MS),
-            lte: new Date(at.getTime() + LOOKUP_WINDOW_MS),
+  async lookup(
+    plate: string,
+    parkingId: string | null,
+    at: Date,
+  ): Promise<GateScanMatch> {
+    const [activeSession, reservations, subscription, vehicle, entryPass] =
+      await Promise.all([
+        this.prisma.parkingSession.findFirst({
+          where: { licensePlateIn: plate, status: 'Active' },
+          select: {
+            id: true,
+            entryTime: true,
+            entryGate: { select: { gateName: true } },
           },
-        },
-        take: 5,
-        include: {
-          user: { select: { fullName: true, phoneNumber: true } },
-          vehicle: { select: { vehicleType: { select: { typeName: true } } } },
-        },
-      }),
-      this.prisma.monthlySubscription.findFirst({
-        where: {
-          vehicle: { is: { licensePlate: plate } },
-          status: 'Active',
-          startDate: { lte: at },
-          endDate: { gte: at },
-          ...(parkingId
-            ? { OR: [{ parkingId }, { parkingId: null }, { package: { is: { allParkings: true } } }] }
-            : {}),
-        },
-        select: { id: true, endDate: true, package: { select: { packageName: true } } },
-      }),
-      this.prisma.vehicle.findFirst({
-        where: { licensePlate: plate },
-        select: {
-          vehicleTypeId: true,
-          vehicleType: { select: { typeName: true } },
-          user: { select: { fullName: true } },
-        },
-      }),
-      this.prisma.entryPass.findFirst({
-        where: {
-          status: 'Active',
-          expiresAt: { gt: at },
-          vehicle: { is: { licensePlate: plate } },
-        },
-        orderBy: { createdAt: 'desc' },
-        select: { id: true, expiresAt: true },
-      }),
-    ]);
+        }),
+        this.prisma.reservation.findMany({
+          where: {
+            vehicle: { is: { licensePlate: plate } },
+            status: { in: ['Confirmed', 'Modified'] },
+            // Đặt chỗ của bãi khác không áp dụng ở cổng này; đơn cũ không gắn bãi thì vẫn tính.
+            ...(parkingId ? { OR: [{ parkingId }, { parkingId: null }] } : {}),
+            expectedEntryTime: {
+              gte: new Date(at.getTime() - LOOKUP_WINDOW_MS),
+              lte: new Date(at.getTime() + LOOKUP_WINDOW_MS),
+            },
+          },
+          take: 5,
+          include: {
+            user: { select: { fullName: true, phoneNumber: true } },
+            vehicle: {
+              select: { vehicleType: { select: { typeName: true } } },
+            },
+          },
+        }),
+        this.prisma.monthlySubscription.findFirst({
+          where: {
+            vehicle: { is: { licensePlate: plate } },
+            status: 'Active',
+            startDate: { lte: at },
+            endDate: { gte: at },
+            ...(parkingId
+              ? {
+                  OR: [
+                    { parkingId },
+                    { parkingId: null },
+                    { package: { is: { allParkings: true } } },
+                  ],
+                }
+              : {}),
+          },
+          select: {
+            id: true,
+            endDate: true,
+            package: { select: { packageName: true } },
+          },
+        }),
+        this.prisma.vehicle.findFirst({
+          where: { licensePlate: plate },
+          select: {
+            vehicleTypeId: true,
+            vehicleType: { select: { typeName: true } },
+            user: { select: { fullName: true } },
+          },
+        }),
+        this.prisma.entryPass.findFirst({
+          where: {
+            status: 'Active',
+            expiresAt: { gt: at },
+            vehicle: { is: { licensePlate: plate } },
+          },
+          orderBy: { createdAt: 'desc' },
+          select: {
+            id: true,
+            expiresAt: true,
+            parkingId: true,
+            parking: { select: { name: true } },
+          },
+        }),
+      ]);
 
     // Đặt chỗ có giờ hẹn gần lúc quét nhất.
     const gap = (d: Date) => Math.abs(d.getTime() - at.getTime());
-    const nearest = [...reservations].sort((a, b) => gap(a.expectedEntryTime) - gap(b.expectedEntryTime))[0];
+    const nearest = [...reservations].sort(
+      (a, b) => gap(a.expectedEntryTime) - gap(b.expectedEntryTime),
+    )[0];
 
     return {
       reservation: nearest
@@ -395,13 +492,24 @@ export class GateScansService {
           }
         : null,
       entryPass: entryPass
-        ? { entryPassId: entryPass.id, expiresAt: entryPass.expiresAt.toISOString() }
+        ? {
+            entryPassId: entryPass.id,
+            expiresAt: entryPass.expiresAt.toISOString(),
+            parkingId: entryPass.parkingId,
+            parkingName: entryPass.parking?.name ?? null,
+            matchesParking:
+              !!entryPass.parkingId && entryPass.parkingId === parkingId,
+          }
         : null,
     };
   }
 
   /** Gợi ý cách xử lý cho web: cổng ra cần phiên đang mở; cổng vào ưu tiên xe đã trong bãi > gói tháng > đặt chỗ > gửi một lần > vãng lai. */
-  suggest(gateType: string, plate: string | null, match: GateScanMatch | null): SuggestedType {
+  suggest(
+    gateType: string,
+    plate: string | null,
+    match: GateScanMatch | null,
+  ): SuggestedType {
     if (!plate || !match) return 'Unknown';
     if (gateType.trim().toLowerCase() === 'exit') {
       return match.activeSession ? 'Checkout' : 'Unknown';
@@ -416,7 +524,11 @@ export class GateScansService {
   private parseCapturedAt(value?: string): Date {
     const now = new Date();
     const parsed = value ? new Date(value) : null;
-    if (!parsed || Number.isNaN(parsed.getTime()) || Math.abs(parsed.getTime() - now.getTime()) > MAX_CLOCK_SKEW_MS) {
+    if (
+      !parsed ||
+      Number.isNaN(parsed.getTime()) ||
+      Math.abs(parsed.getTime() - now.getTime()) > MAX_CLOCK_SKEW_MS
+    ) {
       return now;
     }
     return parsed;
@@ -435,7 +547,10 @@ export class GateScansService {
       confidence: scan.confidence,
       capturedAt: scan.capturedAt.toISOString(),
       receivedAt: scan.createdAt.toISOString(),
-      scannedBy: { userId: staff.id, fullName: staff.fullName ?? staff.userName ?? staff.email },
+      scannedBy: {
+        userId: staff.id,
+        fullName: staff.fullName ?? staff.userName ?? staff.email,
+      },
       suggestedType: scan.suggestedType,
       reservationId: scan.reservationId,
       match: (scan.match ?? null) as GateScanMatch | null,

@@ -328,7 +328,7 @@ suite('Customer navigation journeys (local PostgreSQL)', () => {
       'post',
       '/api/entry-passes',
       f.customer.accessToken,
-      { vehicleId: f.vehicle.vehicleId },
+      { vehicleId: f.vehicle.vehicleId, parkingId: f.parking.id },
     );
     const entered = await result(
       'post',
@@ -460,7 +460,7 @@ suite('Customer navigation journeys (local PostgreSQL)', () => {
       'post',
       '/api/entry-passes',
       f.customer.accessToken,
-      { vehicleId: f.vehicle.vehicleId },
+      { vehicleId: f.vehicle.vehicleId, parkingId: f.parking.id },
     );
     expect(unused.qrPayload).toBeTruthy();
     const pendingScan = await scanPlate(f, f.entry.id, 'EntryPass');
@@ -1834,7 +1834,7 @@ suite('Customer navigation journeys (local PostgreSQL)', () => {
       'post',
       '/api/entry-passes',
       f.customer.accessToken,
-      { vehicleId: f.vehicle.vehicleId },
+      { vehicleId: f.vehicle.vehicleId, parkingId: f.parking.id },
     );
     const sub = await result(
       'post',
@@ -1990,6 +1990,7 @@ suite('Customer navigation journeys (local PostgreSQL)', () => {
       passes.push(
         await result('post', '/api/entry-passes', f.customer.accessToken, {
           vehicleId: bikes[i].vehicleId,
+          parkingId: f.parking.id,
         }),
       );
     }

@@ -59,6 +59,25 @@ describe('PBMS exception HTTP contract', () => {
   afterAll(async () => {
     await app.close();
   });
+  it.each([
+    { fullName: 'An@' },
+    { fullName: 'An2' },
+    { fullName: 'An\u200bBình' },
+    { nickname: 'Xe😀' },
+    { phoneNumber: '0123456789' },
+    { modelName: '<script>' },
+    { licensePlate: '11H@111.11' },
+    { licensePlateOut: '11H--111.11' },
+  ])('rejects malformed form fields through HTTP: %o', async (body) => {
+    const res = await request(app.getHttpServer())
+      .post('/api/probe/11111111-1111-4111-8111-111111111101')
+      .send(body)
+      .expect(400);
+    expect(res.body.isSuccess).toBe(false);
+    expect(res.body.statusCode).toBe(400);
+    expect(typeof res.body.message).toBe('string');
+  });
+
   it('hides unexpected internal errors and returns requestId', async () => {
     const res = await request(app.getHttpServer())
       .get('/api/probe/unknown')

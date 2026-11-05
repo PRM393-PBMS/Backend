@@ -45,6 +45,8 @@ export async function mapEntryPass(pass: {
   createdAt: Date;
   usedAt: Date | null;
   sessionId: string | null;
+  parkingId?: string | null;
+  parking?: { name: string; location: string } | null;
   vehicle: {
     id: string;
     licensePlate: string;
@@ -53,10 +55,15 @@ export async function mapEntryPass(pass: {
   };
 }) {
   const status = effectiveEntryPassStatus(pass);
+  const usable = status === 'Active' && !!pass.parkingId;
   const qrPayload = entryPassPayload(pass.id, pass.code);
   return {
     entryPassId: pass.id,
     code: pass.code,
+    parkingId: pass.parkingId ?? null,
+    parkingName: pass.parking?.name ?? null,
+    parkingLocation: pass.parking?.location ?? null,
+    requiresParkingSelection: status === 'Active' && !pass.parkingId,
     status,
     vehicleId: pass.vehicle.id,
     licensePlate: pass.vehicle.licensePlate,
@@ -67,14 +74,13 @@ export async function mapEntryPass(pass: {
     usedAt: pass.usedAt,
     sessionId: pass.sessionId,
     // Chỉ trả QR khi mã còn dùng được.
-    qrPayload: status === 'Active' ? qrPayload : null,
-    qrCodeDataUrl:
-      status === 'Active'
-        ? await QRCode.toDataURL(qrPayload, {
-            errorCorrectionLevel: 'Q',
-            margin: 1,
-            width: 256,
-          }).catch(() => null)
-        : null,
+    qrPayload: usable ? qrPayload : null,
+    qrCodeDataUrl: usable
+      ? await QRCode.toDataURL(qrPayload, {
+          errorCorrectionLevel: 'Q',
+          margin: 1,
+          width: 256,
+        }).catch(() => null)
+      : null,
   };
 }

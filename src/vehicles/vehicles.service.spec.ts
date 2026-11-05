@@ -50,6 +50,22 @@ describe('VehiclesService: tên xe và mẫu xe', () => {
     service = module.get(VehiclesService);
   });
 
+  it.each([
+    { licensePlate: '12345678' },
+    { licensePlate: '11H@111.11' },
+    { nickname: 'Xe@nhà' },
+    { modelName: '<script>' },
+  ])('rejects bad registration input before writing: %o', async (invalid) => {
+    const res = await service.create(userId, {
+      vehicleTypeId,
+      licensePlate: '11H-111.11',
+      ...invalid,
+    });
+    expect(res.isSuccess).toBe(false);
+    expect(res.statusCode).toBe(400);
+    expect(prisma.vehicle.create).not.toHaveBeenCalled();
+  });
+
   it('lưu tên tự đặt và mẫu xe khi đăng ký xe, cắt khoảng trắng thừa', async () => {
     const res = await service.create(userId, {
       vehicleTypeId,

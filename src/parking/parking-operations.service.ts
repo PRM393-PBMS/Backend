@@ -21,6 +21,7 @@ import {
   isMotorbikeType,
   isValidLicensePlate,
   normalizeLicensePlate,
+  PLATE_FORMAT_MESSAGE,
 } from '../common/license-plate';
 import { freeParkingAvailability } from '../common/free-parking-availability';
 import { createTicket, extractGuidFromQrPayload } from '../common/qr.util';
@@ -986,15 +987,7 @@ export class ParkingOperationsService {
       pbmsPick(dto, 'licensePlate', 'LicensePlate'),
     );
     if (!isValidLicensePlate(plate)) {
-      return PbmsResponseDto.fail('Biển số phải gồm 4-15 chữ cái và chữ số');
-    }
-    // Xe đã đặt chỗ (đã cọc) đến đúng khung giờ: đọc biển số là đủ, tự dùng đặt chỗ để trừ cọc.
-    const booked = await this.reservationAtGate(plate, gate);
-    if (booked) {
-      return this.checkInReservation(
-        { ...dto, reservationId: booked.id, licensePlate: plate },
-        gate,
-      );
+      return PbmsResponseDto.fail(PLATE_FORMAT_MESSAGE);
     }
     // Xe đã đăng ký gửi một lần trên app: camera đọc biển số là đủ, không cần quét mã QR.
     const pass = await this.activeEntryPassOf(plate);
@@ -1033,6 +1026,18 @@ export class ParkingOperationsService {
         'Xe này đang có phiên gửi xe chưa checkout',
         409,
       );
+    }
+    // Xe đã đặt chỗ (đã cọc) đến đúng khung giờ: đọc biển số là đủ, tự dùng đặt chỗ để trừ cọc.
+    const booked = await this.reservationAtGate(plate, gate);
+    if (booked) {
+      return this.checkInReservation(
+        { ...dto, reservationId: booked.id, licensePlate: plate },
+        gate,
+      );
+    }
+    if (pass) {
+      const scopeError = this.entryPassScopeError(pass.parkingId, await this.parkingOfGate(gate, db));
+      if (scopeError) return scopeError;
     }
     const registeredVehicle = pass
       ? pass.vehicle
@@ -1162,6 +1167,8 @@ export class ParkingOperationsService {
         409,
       );
     }
+    const scopeError = this.entryPassScopeError(pass.parkingId, floor.parkingId);
+    if (scopeError) return scopeError;
     const session = await this.createActiveSession({
       licensePlate: plate,
       vehicleTypeId,
@@ -1188,7 +1195,7 @@ export class ParkingOperationsService {
       pbmsPick(dto, 'licensePlate', 'LicensePlate'),
     );
     if (!isValidLicensePlate(plate)) {
-      return PbmsResponseDto.fail('Biển số phải gồm 4-15 chữ cái và chữ số');
+      return PbmsResponseDto.fail(PLATE_FORMAT_MESSAGE);
     }
     const now = new Date();
     const sub = await db.monthlySubscription.findFirst({
@@ -1340,6 +1347,12 @@ export class ParkingOperationsService {
     );
   }
 
+  private entryPassScopeError(passParkingId: string | null | undefined, gateParkingId: string | null) {
+    if (!passParkingId) return PbmsResponseDto.fail('Đăng ký cũ chưa chọn bãi. Vui lòng tạo lại đăng ký và chọn bãi gửi xe', 409);
+    if (passParkingId !== gateParkingId) return PbmsResponseDto.fail('Đăng ký gửi xe thuộc bãi khác. Vui lòng tới đúng bãi đã chọn; lượt đăng ký được giữ nguyên', 409);
+    return null;
+  }
+
   private async createActiveSession(input: {
     licensePlate: string;
     vehicleTypeId: string;
@@ -1455,6 +1468,7 @@ export class ParkingOperationsService {
           const pass = await tx.entryPass.updateMany({
             where: {
               id: input.entryPassId,
+              parkingId: floor.parkingId,
               status: 'Active',
               expiresAt: { gt: new Date() },
             },

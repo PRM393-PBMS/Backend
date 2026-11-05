@@ -1,3 +1,8 @@
+import {
+  newPasswordError,
+  normalizeName,
+  validateFormText,
+} from '../../common/form-validation';
 import { AppError } from '../../common/errors';
 import { requiredSecret } from '../../common/config';
 import { Injectable } from '@nestjs/common';
@@ -138,6 +143,10 @@ export class PbmsAuthService {
         false,
       );
     }
+    if (!/^[A-Za-z0-9_.-]{3,50}$/.test(userName))
+      return PbmsResponseDto.fail(
+        'Tên đăng nhập gồm 3–50 chữ không dấu, số, dấu chấm, gạch dưới hoặc gạch ngang',
+      );
     if (await this.prisma.user.findUnique({ where: { userName } })) {
       return new PbmsResponseDto(
         'Tên đăng nhập đã được sử dụng. Vui lòng chọn tên khác.',
@@ -178,7 +187,12 @@ export class PbmsAuthService {
       return new PbmsResponseDto('Mật khẩu không khớp', 400, false);
     }
 
-    let fullName = pbmsPick(dto, 'fullName', 'FullName').trim();
+    let fullName = normalizeName(pbmsPick(dto, 'fullName', 'FullName'));
+    const nameError = validateFormText(
+      'fullName',
+      pbmsPick(dto, 'fullName', 'FullName'),
+    );
+    if (nameError) return PbmsResponseDto.fail(nameError);
     if (!fullName) {
       return new PbmsResponseDto('Vui lòng nhập tên đầy đủ', 400, false);
     }
@@ -607,9 +621,8 @@ export class PbmsAuthService {
 
   /** Cùng quy tắc với đổi mật khẩu: 6-72 ký tự (bcrypt chỉ dùng 72 byte đầu). */
   private passwordRuleError(password: string): PbmsResponseDto | null {
-    return password.length < 6 || password.length > 72
-      ? new PbmsResponseDto('Mật khẩu phải từ 6 đến 72 ký tự', 400, false)
-      : null;
+    const error = newPasswordError(password);
+    return error ? PbmsResponseDto.fail(error) : null;
   }
 
   private async resentTooSoon(key: string): Promise<boolean> {

@@ -283,7 +283,7 @@ describe('PbmsAuthService', () => {
         confirmPassword: '1',
       });
       expect(result.statusCode).toBe(400);
-      expect(result.message).toBe('Mật khẩu phải từ 6 đến 72 ký tự');
+      expect(result.message).toContain('Mật khẩu tối thiểu 6 ký tự');
       expect(mailService.sendOtpEmail).not.toHaveBeenCalled();
     });
   });

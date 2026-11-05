@@ -1,6 +1,6 @@
 # PBMS — trạng thái exception, hành trình và giới hạn kiểm chứng
 
-Cập nhật: 05/11/2026. Backend đã nhận main `da84263`; người dùng đã push/merge/deploy vòng trước (HEAD quan sát `113bc40`). Các bản vá bổ sung bên dưới đang ở working tree, chưa do tôi commit/push hoặc deploy. Giữ stash dự phòng; không còn conflict Git. Frontend được thao tác tại `../Frontend`, giữ giao diện hiện tại theo yêu cầu mới nhất; bản canvas/nhận diện mới đã tạm dừng.
+Cập nhật: 05/11/2026. Backend đã nhận main `da84263`; người dùng đã push/merge/deploy vòng trước (HEAD vòng trước `113bc40`; HEAD hiện quan sát `dab2099`). Người dùng đã commit/merge thêm trong phiên; tôi không tự commit/push/deploy. Bộ smoke Render và ghi chú vòng tiếp tục đang ở working tree. Không suy ra phiên bản đang chạy trên Render chỉ từ HEAD local. Giữ stash dự phòng; không còn conflict Git. Frontend được thao tác tại `../Frontend`, giữ giao diện hiện tại theo yêu cầu mới nhất; bản canvas/nhận diện mới đã tạm dừng.
 
 ## 1. Exception đã sửa trong đợt này
 
@@ -151,7 +151,7 @@ Frontend nhân viên thực tế gọi `GET /api/GateScan/my-gate`, `POST /api/G
 
 ### Phần chưa đủ bằng chứng để gọi mọi flow đều mượt
 
-- Luồng xe máy theo capacity tầng, xe vãng lai không tài khoản và mọi biến thể nhiều bãi/ô đầy chưa có chuỗi HTTP xuyên suốt riêng trong bộ 24 nhánh; một số quy tắc có service/unit test, không đánh đồng với nghiệm thu flow.
+- Sau bộ 24 nhánh lịch sử, bổ sung J03c (hai xe máy tranh capacity 1, xe chờ giữ EntryPass rồi retry sau checkout), J03d (vãng lai không tài khoản, hai xác nhận tiền mặt, audit staff/cổng và nhả ô), J03e (cổng ra khác bãi/khác biển số giữ nguyên phiên đã trả, ra đúng hoàn tất). Ba nhánh riêng đã pass trước khi người dùng chuyển phạm vi sang Render; chưa chạy toàn bộ 27 nhánh trong một lần regression và không coi đây là bằng chứng production. Mọi tổ hợp nhiều bãi/ô đầy chưa được bao phủ hết.
 - Chưa chạy xuyên suốt web staff thực tế, SSE/reconnect qua Render, camera/OCR thật, email/OTP thật hoặc PayOS sandbox/ngân hàng. GateScan stream và cổng trực hiện ở bộ nhớ một process; restart/multi-instance cần quy trình hoặc cơ chế chia sẻ, chưa kiểm chứng triển khai nhiều instance.
 - Chưa đo latency/p95 hoặc load test; “đạt logic API” không phải cam kết thời gian phản hồi trên mạng tầng hầm/cold start.
 - Backend Render đã deploy vòng trước; các bản vá checkout/incident/invoice/dependency vòng bổ sung phải push/deploy lại. Chưa chạy thao tác ghi tài chính trên Render/Supabase.
@@ -195,3 +195,28 @@ Thực hiện 8 nhóm flow ở mục 8 bằng tài khoản/dữ liệu kiểm th
 Với PayOS/OTP/email/OCR, ghi nhận việc nhà cung cấp thực sự phản hồi; API adapter test không xác nhận thay. Không thử trả nhiều lần khi chưa rõ kết quả: mở lại lịch sử/trạng thái trước. Kiểm tra mốc mã ra 15 phút và thanh toán bổ sung. Cần push/deploy backend chứa bản vá vòng bổ sung trước khi nghiệm thu các lỗi vừa sửa trên Render.
 
 Khi gặp lỗi, ghi flow/bước, giờ Việt Nam, hành động vừa thực hiện, message người dùng, requestId, sessionId/paymentId phù hợp và ảnh màn hình. Không gửi token, OTP, mật khẩu hoặc secret. Vòng này không tự chạy UI/animation/emulator; trải nghiệm native được người dùng đánh giá sau cài APK.
+## 10. Tiếp tục kiểm thử trực tiếp Render — DB đang phục vụ người dùng thật
+
+Người dùng đã xác nhận đây là DB live và yêu cầu không kiểm thử DB local nữa. Từ thời điểm xác nhận, chỉ chạy HTTP tới backend `https://prm393backend.onrender.com`; không chạy thêm suite PostgreSQL local, không đổi TEST_DATABASE_URL sang DB thật, không seed/migrate/reset hoặc chạy fixtures trực tiếp trên DB live. Backend ở Render, DB theo cấu hình dự án là Supabase; không yêu cầu người dùng gửi credential DB.
+
+### Đã chạy trực tiếp trên Render
+
+Lệnh: `npm run test:render:smoke` → **21/21 pass**, bằng script `scripts/smoke-deployed-api.mjs`. Bằng chứng lần chạy nằm ở `.tmp/render-production-smoke.json` và log tương ứng (bị Git ignore).
+
+- Health 200; readiness 200. Theo controller hiện hành, readiness kiểm tra DB bằng SELECT 1 và kết nối OTP Redis.
+- Swagger JSON 200, 156 đường dẫn được khai báo; availability công khai 200 có envelope/mảng hợp lệ.
+- UUID sai ở availability → 400.
+- Không token ở hồ sơ, bãi, xe, phiên, reservation, subscription, ví, payment, hóa đơn, sự cố, thông báo và GateScan → 401.
+- Token sai ở profile → 401.
+- Body rỗng ở login/verify-register-otp/refresh-token → 400 do validation. Không nhập email thật, không yêu cầu gửi OTP/email.
+- Error có HTTP/envelope phù hợp, message dạng chuỗi, errorCode và requestId; không nhận raw Unauthorized/Invalid credentials/Prisma trong các thông báo đã quan sát.
+
+Lần thăm dò đầu của health timeout 30 giây; kiểm tra lại sau đó và lượt smoke đều 200. Chưa đủ bằng chứng để kết luận nguyên nhân là cold start hay mạng; không ghi thành lỗi đã sửa bằng code. Bước GET ví ban đầu dùng sai endpoint gốc và nhận 404; đã đối chiếu Swagger, đổi harness sang GET /api/wallet/{walletId}. Endpoint gốc là POST mở ví; đây không phải bug backend.
+
+### Chưa chạy trên DB live
+
+Chưa login bằng tài khoản customer/staff/manager, chưa chạy flow thay đổi xe/đặt chỗ/check-in/checkout, chưa thu/trừ/cộng tiền, tạo subscription, gửi OCR hoặc email. Các số 414/414, 24/24 và ba nhánh local bổ sung ở trên là lịch sử kiểm thử, không phải kết quả flow trên Render.
+
+Để tiếp tục, cần tài khoản dành riêng cho kiểm thử và bãi/cổng/ô được phép dùng kiểm thử. Mẫu thông tin ở `.tmp/render-flow-accounts.example.json`; người dùng có thể điền vào `.tmp/render-flow-accounts.json` (ngoài Git), không cần gửi DB URL/PayOS/JWT secret. Chưa có thông tin này thì không thể xác thực và nối luồng nghiệp vụ qua API bằng đúng role. PayOS có tiền thật cần người dùng thực hiện bước ngân hàng; không giả provider PAID/webhook để vượt thanh toán trên production.
+
+APK đã có ở mục 9. Không chạy thêm UI/animation/emulator trong vòng này.

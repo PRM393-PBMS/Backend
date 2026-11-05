@@ -9,6 +9,8 @@ import { AppError } from './errors';
 import { inputFieldName } from './user-message';
 import { PbmsResponseDto } from './dto/pbms-response.dto';
 import { tap } from 'rxjs';
+import { validateFormText } from './form-validation';
+import { isValidLicensePlate, PLATE_FORMAT_MESSAGE } from './license-plate';
 
 const numeric =
   /^(amount|price|basePrice|extraHourPrice|nightSurcharge|baseHours|durationDays|durationMonths|totalCapacity|months|latitude|longitude|page|limit)$/i;
@@ -30,6 +32,24 @@ export class InputValidationInterceptor implements NestInterceptor {
           continue;
         }
         for (const [key, value] of Object.entries(values)) {
+          if (values === body && value !== undefined) {
+            const textError = validateFormText(key, value);
+            if (textError) throw new AppError(400, 'INVALID_FIELD', textError);
+            if (
+              /^(licensePlate|licensePlateIn|licensePlateOut|newLicensePlate)$/i.test(
+                key,
+              ) &&
+              value !== null &&
+              value !== '' &&
+              (typeof value !== 'string' || !isValidLicensePlate(value))
+            ) {
+              throw new AppError(
+                400,
+                'INVALID_LICENSE_PLATE',
+                PLATE_FORMAT_MESSAGE,
+              );
+            }
+          }
           if (value === undefined || value === null || value === '') continue;
           const lengths: Record<string, number> = {
             typename: 50,

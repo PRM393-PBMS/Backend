@@ -1,3 +1,8 @@
+import {
+  newPasswordError,
+  normalizeName,
+  validateFormText,
+} from '../common/form-validation';
 import { Injectable } from '@nestjs/common';
 import { Prisma, UserRole } from '@prisma/client';
 import { extname } from 'path';
@@ -203,9 +208,8 @@ export class UsersService {
         'Vui lòng nhập mật khẩu hiện tại và mật khẩu mới',
       );
     }
-    if (next.length < 6 || next.length > 72) {
-      return PbmsResponseDto.fail('Mật khẩu mới phải từ 6 đến 72 ký tự');
-    }
+    const passwordError = newPasswordError(next);
+    if (passwordError) return PbmsResponseDto.fail(passwordError);
     if (next === current) {
       return PbmsResponseDto.fail('Mật khẩu mới phải khác mật khẩu hiện tại');
     }
@@ -243,18 +247,27 @@ export class UsersService {
     }
 
     const emailRaw = pbmsPick(dto, 'email', 'Email').trim();
-    const fullName = pbmsPick(dto, 'fullName', 'FullName').trim();
-    const phoneNumber = pbmsPick(dto, 'phoneNumber', 'PhoneNumber').trim() || null;
+    const fullName = normalizeName(pbmsPick(dto, 'fullName', 'FullName'));
+    const phoneNumber =
+      pbmsPick(dto, 'phoneNumber', 'PhoneNumber').trim() || null;
 
     // Mật khẩu và email là thông tin đăng nhập: không đổi qua PUT hồ sơ
     // (không xác minh mật khẩu cũ / quyền sở hữu email mới).
     if (pbmsPick(dto, 'password', 'Password')) {
-      return PbmsResponseDto.fail('Đổi mật khẩu qua POST /api/profile/change-password');
+      return PbmsResponseDto.fail(
+        'Đổi mật khẩu qua POST /api/profile/change-password',
+      );
     }
     if (emailRaw && emailRaw.toLowerCase() !== user.email.toLowerCase()) {
-      return PbmsResponseDto.fail('Đổi email qua POST /api/profile/change-email (xác nhận bằng OTP)');
+      return PbmsResponseDto.fail(
+        'Đổi email qua POST /api/profile/change-email (xác nhận bằng OTP)',
+      );
     }
 
+    for (const [field, value] of Object.entries(dto)) {
+      const error = validateFormText(field, value);
+      if (error) return PbmsResponseDto.fail(error);
+    }
     const data: Prisma.UserUpdateInput = {};
     if (fullName) {
       data.fullName = fullName;

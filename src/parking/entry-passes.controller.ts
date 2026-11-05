@@ -1,5 +1,15 @@
 import { ParseUUIDPipe } from '@nestjs/common';
-import { Body, Controller, Delete, Get, Param, Post, UseGuards, UseInterceptors } from '@nestjs/common';
+import {
+  Body,
+  Controller,
+  Delete,
+  Get,
+  Param,
+  Post,
+  Query,
+  UseGuards,
+  UseInterceptors,
+} from '@nestjs/common';
 import { ApiBearerAuth, ApiOperation, ApiTags } from '@nestjs/swagger';
 import { GetPbmsUserId } from '../auth/common/decorators/get-pbms-user-id.decorator';
 import { PbmsRoles } from '../auth/common/decorators/pbms-roles.decorator';
@@ -23,10 +33,23 @@ export class EntryPassesController {
   @ApiOperation({
     summary: 'Tạo mã QR vào bãi một lần cho xe của tôi',
     description:
-      'Body: `vehicleId`. Mã hiệu lực 24 giờ, dùng một lần ở cổng vào (check-in với `qrPayload`). Tạo mã mới sẽ huỷ mã cũ còn hiệu lực của cùng xe.',
+      'Body: `vehicleId`, `parkingId` bắt buộc. Mã chỉ áp dụng ở bãi đã chọn; không giữ chỗ. Mã hiệu lực 24 giờ, dùng một lần ở cổng vào (check-in với `qrPayload`). Tạo mã mới sẽ huỷ mã cũ còn hiệu lực của cùng xe.',
   })
-  create(@GetPbmsUserId() userId: string, @Body() dto: PbmsBodyDto): Promise<PbmsResponseDto> {
+  create(
+    @GetPbmsUserId() userId: string,
+    @Body() dto: PbmsBodyDto,
+  ): Promise<PbmsResponseDto> {
     return this.passes.create(userId, dto);
+  }
+
+  @Get('parkings')
+  @ApiOperation({
+    summary: 'Bãi nhận gửi một lần cho loại xe; không đảm bảo còn chỗ khi đến',
+  })
+  parkings(
+    @Query('vehicleTypeId') vehicleTypeId: string,
+  ): Promise<PbmsResponseDto> {
+    return this.passes.parkings(vehicleTypeId);
   }
 
   @Get('my')
@@ -37,7 +60,10 @@ export class EntryPassesController {
 
   @Delete(':id')
   @ApiOperation({ summary: 'Huỷ mã vào bãi còn hiệu lực' })
-  cancel(@GetPbmsUserId() userId: string, @Param('id', new ParseUUIDPipe()) id: string): Promise<PbmsResponseDto> {
+  cancel(
+    @GetPbmsUserId() userId: string,
+    @Param('id', new ParseUUIDPipe()) id: string,
+  ): Promise<PbmsResponseDto> {
     return this.passes.cancel(userId, id);
   }
 }

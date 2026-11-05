@@ -60,3 +60,11 @@ Bổ sung J05e/J06e nối đăng ký/đặt chỗ đến staff kiểm tra sessio
 J03/J05e/J06e nay đi qua đúng GateScan multipart của app staff: chọn/đọc cổng trực, nhận EntryPass/Inside/Checkout/Reservation/Resident, đối chiếu đúng resource và đọc recent. OCR/storage là adapter giả, không nghiệm thu provider hoặc SSE trên Render. Bộ hành trình sau bổ sung nhận diện: **24/24 pass**. Chi tiết từng flow, input/output, test ID và giới hạn nằm ở [exception-status.md, mục 8](exception-status.md#8-chốt-plan-theo-flow-input--xử-lý--output-05112026).
 
 APK kiểm thử đã tạo và xác minh chữ ký v2: PBMS 1.0.0+1, Android 7/API24 trở lên, 66,6 MiB, API trỏ Render. Hướng dẫn cài và hash ở [exception-status.md, mục 9](exception-status.md#9-cài-apk-trên-điện-thoại-để-tự-nghiệm-thu). Không chạy app/animation/emulator trong vòng API này. Sau khi tăng assertion J03 để dùng đúng cùng EntryPass xuyên suốt, chạy riêng J03 pass (1/1); không tính lần chạy đó thành một flow mới.
+
+## Vòng tiếp tục: chuyển sang Render theo yêu cầu
+
+Người dùng xác nhận DB live; dừng mọi kiểm thử DB local tiếp theo. Trước thời điểm chuyển phạm vi, J03c/J03d/J03e được bổ sung và chạy riêng: **3/3 pass** (xe máy capacity/retry, vãng lai thu tiền mặt, cổng khác bãi/biển số). Không cộng thành một lần full regression 417 hoặc một lần chạy cả 27 nhánh.
+
+Smoke trực tiếp backend Render: **21/21 pass** bằng `npm run test:render:smoke`; chỉ health/readiness/OpenAPI/availability, kiểm tra thiếu/sai token và auth body rỗng. Không tạo fixtures, ghi nghĩa vụ tiền hoặc kết nối DB trực tiếp. Kết quả không xác nhận flow business đã mượt trên production.
+
+Còn chờ tài khoản kiểm thử customer/staff/manager và bãi/cổng dùng kiểm thử để nối chuỗi có xác thực. Phạm vi, kết quả và điều kiện tiếp tục ở [exception-status.md, mục 10](exception-status.md#10-tiếp-tục-kiểm-thử-trực-tiếp-render--db-đang-phục-vụ-người-dùng-thật).

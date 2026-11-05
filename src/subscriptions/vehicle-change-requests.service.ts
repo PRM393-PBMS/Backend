@@ -14,6 +14,7 @@ import {
 import {
   isValidLicensePlate,
   normalizeLicensePlate,
+  PLATE_FORMAT_MESSAGE,
 } from '../common/license-plate';
 import { NotificationsService } from '../notifications/notifications.service';
 
@@ -255,7 +256,7 @@ export class VehicleChangeRequestsService {
       pbmsPick(dto, 'newLicensePlate', 'NewLicensePlate'),
     );
     if (!isValidLicensePlate(newPlate)) {
-      return PbmsResponseDto.fail('Biển số phải gồm 4-15 chữ cái và chữ số');
+      return PbmsResponseDto.fail(PLATE_FORMAT_MESSAGE);
     }
     const moved = await this.prisma.vehicleChangeRequest.updateMany({
       where: { id, status: 'Pending' },
@@ -301,7 +302,7 @@ export class VehicleChangeRequestsService {
     if (!isValidLicensePlate(newPlate)) {
       return {
         subscription: null,
-        error: PbmsResponseDto.fail('Biển số phải gồm 4-15 chữ cái và chữ số'),
+        error: PbmsResponseDto.fail(PLATE_FORMAT_MESSAGE),
       };
     }
     const subscription = await this.prisma.monthlySubscription.findUnique({

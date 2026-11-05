@@ -1,5 +1,6 @@
 import { AppError } from '../common/errors';
 import { lockResource } from '../common/transactions';
+import { isUUID } from 'class-validator';
 import { Injectable } from '@nestjs/common';
 import { PbmsResponseDto } from '../common/dto/pbms-response.dto';
 import {
@@ -10,7 +11,10 @@ import {
 import { isEmptyGuid, pbmsPickGuid } from '../common/pbms-fields';
 import { PrismaService } from '../prisma/prisma.service';
 
-const includeVehicle = { vehicle: { include: { vehicleType: true } } } as const;
+const includeVehicle = {
+  vehicle: { include: { vehicleType: true } },
+  parking: true,
+} as const;
 
 /**
  * Mã QR gửi xe một lần: khách tạo cho một xe đã đăng ký, quét ở cổng vào để
@@ -20,11 +24,40 @@ const includeVehicle = { vehicle: { include: { vehicleType: true } } } as const;
 export class EntryPassesService {
   constructor(private readonly prisma: PrismaService) {}
 
+  async parkings(vehicleTypeId: string): Promise<PbmsResponseDto> {
+    if (!isUUID(vehicleTypeId))
+      return PbmsResponseDto.fail('Vui lòng chọn loại xe hợp lệ');
+    const parkings = await this.prisma.parking.findMany({
+      where: {
+        floors: {
+          some: {
+            isResident: false,
+            dedicatedVehicleTypeId: vehicleTypeId,
+            gates: { some: { gateType: 'Entry' } },
+          },
+        },
+      },
+      select: { id: true, name: true, location: true },
+      orderBy: { name: 'asc' },
+    });
+    return PbmsResponseDto.ok(
+      'Danh sách bãi nhận gửi một lần',
+      parkings.map((p) => ({
+        parkingId: p.id,
+        name: p.name,
+        location: p.location,
+      })),
+    );
+  }
+
   async create(userId: string, dto: object): Promise<PbmsResponseDto> {
     const vehicleId = pbmsPickGuid(dto, 'vehicleId', 'VehicleId');
-    if (isEmptyGuid(vehicleId)) {
+    if (!isUUID(vehicleId) || isEmptyGuid(vehicleId)) {
       return PbmsResponseDto.fail('Vui lòng chọn xe');
     }
+    const parkingId = pbmsPickGuid(dto, 'parkingId', 'ParkingId');
+    if (!isUUID(parkingId) || isEmptyGuid(parkingId))
+      return PbmsResponseDto.fail('Vui lòng chọn bãi gửi xe');
     const vehicle = await this.prisma.vehicle.findFirst({
       where: { id: vehicleId, userId },
     });
@@ -47,11 +80,19 @@ export class EntryPassesService {
     const now = new Date();
     // Vé tháng còn hạn: cổng nhận xe theo vé tháng, đăng ký gửi một lần sẽ không được dùng tới.
     const monthly = await this.prisma.monthlySubscription.findFirst({
-      where: { vehicleId, status: 'Active', startDate: { lte: now }, endDate: { gte: now } },
+      where: {
+        vehicleId,
+        status: 'Active',
+        startDate: { lte: now },
+        endDate: { gte: now },
+      },
       select: { id: true },
     });
     if (monthly) {
-      return PbmsResponseDto.fail('Xe đang có vé tháng còn hạn, tới cổng là vào bằng vé tháng, không cần đăng ký gửi một lần', 409);
+      return PbmsResponseDto.fail(
+        'Xe đang có vé tháng còn hạn, tới cổng là vào bằng vé tháng, không cần đăng ký gửi một lần',
+        409,
+      );
     }
     const expiresAt = new Date(now.getTime() + ENTRY_PASS_TTL_HOURS * 36e5);
     // Mỗi xe chỉ giữ một mã còn hiệu lực: mã cũ bị huỷ khi tạo mã mới.
@@ -78,12 +119,37 @@ export class EntryPassesService {
           'MONTHLY_PASS_ACTIVE',
           'Xe đã có vé tháng còn hiệu lực',
         );
+      const eligible = await tx.parking.findFirst({
+        where: {
+          id: parkingId,
+          floors: {
+            some: {
+              isResident: false,
+              dedicatedVehicleTypeId: vehicle.vehicleTypeId,
+              gates: { some: { gateType: 'Entry' } },
+            },
+          },
+        },
+        select: { id: true },
+      });
+      if (!eligible)
+        throw new AppError(
+          409,
+          'ENTRY_PARKING_UNAVAILABLE',
+          'Bãi đã chọn chưa nhận loại xe này. Vui lòng chọn bãi khác',
+        );
       await tx.entryPass.updateMany({
         where: { vehicleId, status: 'Active' },
         data: { status: 'Cancelled' },
       });
       return tx.entryPass.create({
-        data: { userId, vehicleId, code: generateEntryPassCode(), expiresAt },
+        data: {
+          userId,
+          vehicleId,
+          parkingId,
+          code: generateEntryPassCode(),
+          expiresAt,
+        },
         include: includeVehicle,
       });
     });

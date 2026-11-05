@@ -6,8 +6,11 @@ import { isEmptyGuid, pbmsPick, pbmsPickGuid } from '../common/pbms-fields';
 import {
   isValidLicensePlate,
   normalizeLicensePlate,
+  PLATE_FORMAT_MESSAGE,
 } from '../common/license-plate';
 import { PrismaService } from '../prisma/prisma.service';
+
+import { normalizeName, validateFormText } from '../common/form-validation';
 
 const includeVehicleType = { vehicleType: true } as const;
 
@@ -33,7 +36,9 @@ function pickText(
   if (key === undefined) return undefined;
   const raw = rec[key];
   if (typeof raw !== 'string') return { error: `${label} phải là chuỗi ký tự` };
-  const value = raw.trim().replace(/\s+/g, ' ');
+  const error = validateFormText(field, raw);
+  if (error) return { error };
+  const value = normalizeName(raw);
   if (!value) return null;
   if (value.length > max) return { error: `${label} tối đa ${max} ký tự` };
   return value;
@@ -66,11 +71,10 @@ export class VehiclesService {
     const licensePlate = normalizeLicensePlate(
       pbmsPick(dto, 'licensePlate', 'LicensePlate'),
     );
-    if (isEmptyGuid(vehicleTypeId) || !isValidLicensePlate(licensePlate)) {
-      return PbmsResponseDto.fail(
-        'Vui lòng nhập loại xe và biển số hợp lệ (4-15 chữ/số)',
-      );
-    }
+    if (isEmptyGuid(vehicleTypeId))
+      return PbmsResponseDto.fail('Vui lòng chọn loại xe hợp lệ');
+    if (!isValidLicensePlate(licensePlate))
+      return PbmsResponseDto.fail(PLATE_FORMAT_MESSAGE);
     const texts = pickTexts(dto);
     if ('error' in texts) return PbmsResponseDto.fail(texts.error!);
     try {
@@ -143,7 +147,7 @@ export class VehiclesService {
       ? normalizeLicensePlate(rawPlate)
       : vehicle.licensePlate;
     if (rawPlate && !isValidLicensePlate(licensePlate)) {
-      return PbmsResponseDto.fail('Biển số phải gồm 4-15 chữ cái và chữ số');
+      return PbmsResponseDto.fail(PLATE_FORMAT_MESSAGE);
     }
     const texts = pickTexts(dto);
     if ('error' in texts) return PbmsResponseDto.fail(texts.error!);

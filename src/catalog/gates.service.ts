@@ -10,7 +10,7 @@ export class GatesService {
 
   async getAll(): Promise<PbmsResponseDto> {
     const gates = await this.prisma.gate.findMany({
-      include: { floor: true },
+      include: { floor: { include: { parking: true } } },
       orderBy: { gateName: 'asc' },
     });
     return PbmsResponseDto.ok(
@@ -25,7 +25,7 @@ export class GatesService {
     }
     const gate = await this.prisma.gate.findUnique({
       where: { id },
-      include: { floor: true },
+      include: { floor: { include: { parking: true } } },
     });
     if (!gate) {
       return PbmsResponseDto.fail('Không tìm thấy cổng', 404);
@@ -51,7 +51,7 @@ export class GatesService {
     try {
       const gate = await this.prisma.gate.create({
         data: { floorId, gateName, gateType },
-        include: { floor: true },
+        include: { floor: { include: { parking: true } } },
       });
       return PbmsResponseDto.ok('Tạo cổng thành công', this.map(gate), 201);
     } catch (error: unknown) {
@@ -87,7 +87,7 @@ export class GatesService {
             pbmsPick(dto, 'gateName', 'GateName').trim() || existing.gateName,
           gateType,
         },
-        include: { floor: true },
+        include: { floor: { include: { parking: true } } },
       });
       return PbmsResponseDto.ok('Cập nhật cổng thành công', this.map(gate));
     } catch (error: unknown) {
@@ -128,7 +128,11 @@ export class GatesService {
   private map(gate: {
     id: string;
     floorId: string;
-    floor: { floorName: string };
+    floor: {
+      floorName: string;
+      parkingId?: string;
+      parking?: { name: string };
+    };
     gateName: string;
     gateType: string;
   }) {
@@ -138,6 +142,8 @@ export class GatesService {
       gateType: gate.gateType,
       floorId: gate.floorId,
       floorName: gate.floor.floorName,
+      parkingId: gate.floor.parkingId,
+      parkingName: gate.floor.parking?.name,
     };
   }
 }

@@ -2,6 +2,10 @@
 
 Cập nhật theo yêu cầu ngày 05/11/2026: dừng canvas/nhận diện mới; ưu tiên logic và giữ giao diện hiện tại. Taste và Impeccable chỉ dùng để cải thiện UI sau khi các luồng đã qua kiểm tra.
 
+## Phạm vi hiện hành — Render live
+
+Người dùng xác nhận backend Render dùng DB đang phục vụ người dùng thật và yêu cầu không test DB local tiếp. Chỉ chạy qua API deployed; không đổi TEST_DATABASE_URL sang production hoặc tái sử dụng fixture/cron/provider giả của suite local. Bước không cần account đã có `npm run test:render:smoke` (21/21). Flow có ghi cần tài khoản và khu vực dành riêng cho kiểm thử; chờ thông tin này để thực hiện. Các mục local và UI bên dưới lưu kế hoạch/bằng chứng lịch sử, không phải chỉ dẫn đang tiếp tục chạy.
+
 ## Cách thực hiện và tiêu chí đạt
 
 1. Đối chiếu từng màn Flutter với endpoint, body, ownership, trạng thái trả về và màn tiếp theo.
