@@ -107,18 +107,26 @@ export class IncidentsController {
   create(
     @GetPbmsUserId() userId: string,
     @Body() dto: PbmsBodyDto,
+    @GetPbmsRole() role: string,
   ): Promise<PbmsResponseDto> {
-    return this.incidents.create(userId, dto);
+    return this.incidents.create(userId, dto, role);
   }
 
   @UseInterceptors(PbmsStatusInterceptor)
   @Put(':id/cancel')
   @ApiOperation({
     summary: 'Khách huỷ báo cáo sự cố của mình',
-    description: 'JWT bắt buộc, chỉ người báo. Chỉ huỷ được khi `status` là `Open` hoặc `InProgress`; sau đó `status=Cancelled`. Lỗi: 401; 403 không phải người báo; 404; 400 đã xử lý/đã huỷ.',
+    description:
+      'JWT bắt buộc, chỉ người báo. Chỉ huỷ được khi `status` là `Open` hoặc `InProgress`; sau đó `status=Cancelled`. Lỗi: 401; 403 không phải người báo; 404; 400 đã xử lý/đã huỷ.',
   })
-  @ApiPbmsOkResponse('Đã huỷ báo cáo sự cố', { ...incidentExample, status: 'Cancelled' })
-  cancel(@Param('id') id: string, @GetPbmsUserId() userId: string): Promise<PbmsResponseDto> {
+  @ApiPbmsOkResponse('Đã huỷ báo cáo sự cố', {
+    ...incidentExample,
+    status: 'Cancelled',
+  })
+  cancel(
+    @Param('id') id: string,
+    @GetPbmsUserId() userId: string,
+  ): Promise<PbmsResponseDto> {
     return this.incidents.cancel(id, userId);
   }
 
@@ -193,11 +201,18 @@ export class IncidentsController {
     resolvedAt: '2026-09-17T14:00:00.000Z',
     resolutionNotes: 'Đã xác minh và giải phóng ô đỗ',
   })
-  resolve(
+  async resolve(
     @Param('id') id: string,
     @Param('staffId') staffId: string,
     @Body() dto: PbmsBodyDto,
+    @GetPbmsUserId() userId: string,
+    @GetPbmsRole() role: string,
   ): Promise<PbmsResponseDto> {
+    if (role === 'staff' && userId !== staffId)
+      return PbmsResponseDto.fail(
+        'Bạn chỉ có thể xác nhận xử lý bằng tài khoản của mình',
+        403,
+      );
     return this.incidents.resolve(id, staffId, dto);
   }
 

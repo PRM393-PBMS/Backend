@@ -253,7 +253,7 @@ export class ParkingOperationsService {
     }
     if (!session.reservationId && subscription) {
       await this.closeSession(session.id, subscription.fixedSlotId, db);
-      const mapped = await this.loadSession(session.id);
+      const mapped = await this.loadSession(session.id, db);
       return PbmsResponseDto.ok(
         'Checkout thành công (đã bao gồm trong gói tháng)',
         mapped,
@@ -265,9 +265,13 @@ export class ParkingOperationsService {
       return fee;
     }
     if (fee.amount <= 0) {
-      await this.closeSession(session.id, subscription?.fixedSlotId ?? null);
+      await this.closeSession(
+        session.id,
+        subscription?.fixedSlotId ?? null,
+        db,
+      );
       return PbmsResponseDto.ok('Checkout thành công', {
-        Session: await this.loadSession(session.id),
+        Session: await this.loadSession(session.id, db),
         Fee: fee,
       });
     }

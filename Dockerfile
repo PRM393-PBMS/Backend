@@ -2,6 +2,9 @@ FROM node:24-bookworm-slim AS build
 
 WORKDIR /app
 
+# Pin the installer whose allowScripts policy is reviewed in package.json.
+RUN npm install --global npm@11.21.2
+
 RUN apt-get update \
     && apt-get install -y --no-install-recommends openssl ca-certificates \
     && rm -rf /var/lib/apt/lists/*
@@ -9,7 +12,7 @@ RUN apt-get update \
 COPY package.json package-lock.json ./
 COPY prisma ./prisma
 
-RUN npm ci
+RUN npm ci --strict-allow-scripts
 
 COPY . .
 

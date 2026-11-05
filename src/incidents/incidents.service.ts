@@ -4,6 +4,7 @@ import {
   Optional,
   UnauthorizedException,
 } from '@nestjs/common';
+import type { Prisma } from '@prisma/client';
 import { PrismaService } from '../prisma/prisma.service';
 import { PbmsResponseDto } from '../common/dto/pbms-response.dto';
 import {
@@ -86,15 +87,31 @@ export class IncidentsService {
     );
   }
 
-  async create(userId: string, dto: object): Promise<PbmsResponseDto> {
+  async create(
+    userId: string,
+    dto: object,
+    role = '',
+  ): Promise<PbmsResponseDto> {
     const issueType = pbmsPick(dto, 'issueType', 'IssueType').trim();
     const description = pbmsPick(dto, 'description', 'Description').trim();
     if (!issueType || !description) {
       return PbmsResponseDto.fail('Vui lòng nhập loại sự cố và mô tả');
     }
+    const sessionId = pbmsPickGuid(dto, 'sessionId', 'SessionId') || null;
+    if (
+      sessionId &&
+      !(await this.prisma.parkingSession.findFirst({
+        where: {
+          id: sessionId,
+          ...(!this.canStaff(role) ? { vehicle: { userId } } : {}),
+        },
+        select: { id: true },
+      }))
+    )
+      return PbmsResponseDto.fail('Không tìm thấy lượt gửi xe của bạn', 404);
     const item = await this.prisma.incidentReport.create({
       data: {
-        sessionId: pbmsPickGuid(dto, 'sessionId', 'SessionId') || null,
+        sessionId,
         reportedByUserId:
           userId || pbmsPickGuid(dto, 'reportedByUserId', 'ReportedByUserId'),
         issueType,
@@ -124,29 +141,49 @@ export class IncidentsService {
     if (!existing) {
       return PbmsResponseDto.fail('Không tìm thấy sự cố', 404);
     }
-    const item = await this.prisma.incidentReport.update({
-      where: { id },
-      data: {
-        sessionId:
-          pbmsPickGuid(dto, 'sessionId', 'SessionId') || existing.sessionId,
-        issueType:
-          pbmsPick(dto, 'issueType', 'IssueType').trim() || existing.issueType,
-        description:
-          pbmsPick(dto, 'description', 'Description').trim() ||
-          existing.description,
-        proofImageUrl:
-          pbmsPick(dto, 'proofImageUrl', 'ProofImageUrl').trim() ||
-          existing.proofImageUrl,
-        status: pbmsPick(dto, 'status', 'Status').trim() || existing.status,
-        handledByStaffId:
-          pbmsPickGuid(dto, 'handledByStaffId', 'HandledByStaffId') ||
-          existing.handledByStaffId,
-        resolutionNotes:
-          pbmsPick(dto, 'resolutionNotes', 'ResolutionNotes').trim() ||
-          existing.resolutionNotes,
-      },
-      include: this.include(),
+    const nextStatus =
+      pbmsPick(dto, 'status', 'Status').trim() || existing.status;
+    if (
+      !['Open', 'InProgress', 'Resolved', 'Cancelled'].includes(nextStatus) ||
+      (['Resolved', 'Cancelled'].includes(existing.status) &&
+        nextStatus !== existing.status) ||
+      (existing.status === 'InProgress' && nextStatus === 'Open')
+    )
+      return PbmsResponseDto.fail(
+        'Không thể mở lại báo cáo đã xử lý hoặc đã hủy.',
+        409,
+      );
+    const handler = pbmsPickGuid(dto, 'handledByStaffId', 'HandledByStaffId');
+    if (handler && !(await this.validHandler(handler)))
+      return PbmsResponseDto.fail(
+        'Vui lòng chọn nhân viên đang hoạt động',
+        400,
+      );
+    const item = await this.change(id, [existing.status], {
+      sessionId:
+        pbmsPickGuid(dto, 'sessionId', 'SessionId') || existing.sessionId,
+      issueType:
+        pbmsPick(dto, 'issueType', 'IssueType').trim() || existing.issueType,
+      description:
+        pbmsPick(dto, 'description', 'Description').trim() ||
+        existing.description,
+      proofImageUrl:
+        pbmsPick(dto, 'proofImageUrl', 'ProofImageUrl').trim() ||
+        existing.proofImageUrl,
+      status: pbmsPick(dto, 'status', 'Status').trim() || existing.status,
+      handledByStaffId:
+        pbmsPickGuid(dto, 'handledByStaffId', 'HandledByStaffId') ||
+        existing.handledByStaffId,
+      resolutionNotes:
+        pbmsPick(dto, 'resolutionNotes', 'ResolutionNotes').trim() ||
+        existing.resolutionNotes,
     });
+    if (!item)
+      return PbmsResponseDto.fail(
+        'Báo cáo vừa thay đổi. Vui lòng tải lại.',
+        409,
+      );
+
     return PbmsResponseDto.ok('Cập nhật sự cố thành công', this.map(item));
   }
 
@@ -157,14 +194,23 @@ export class IncidentsService {
     if (!existing) {
       return PbmsResponseDto.fail('Không tìm thấy sự cố', 404);
     }
-    const item = await this.prisma.incidentReport.update({
-      where: { id },
-      data: { handledByStaffId: staffId, status: 'InProgress' },
-      include: this.include(),
+    if (!(await this.validHandler(staffId)))
+      return PbmsResponseDto.fail(
+        'Vui lòng chọn nhân viên đang hoạt động',
+        400,
+      );
+    const item = await this.change(id, ['Open'], {
+      handledByStaffId: staffId,
+      status: 'InProgress',
     });
+    if (!item)
+      return PbmsResponseDto.fail(
+        'Báo cáo đã được tiếp nhận, xử lý hoặc hủy. Vui lòng tải lại.',
+        409,
+      );
     await this.notifications?.notify(item.reportedByUserId, {
       title: 'Sự cố đang được xử lý',
-      message: `Báo cáo "${item.issueType}" đã được nhân viên ${item.handledByStaff?.fullName ?? 'bãi xe'} tiếp nhận.`,
+      message: `Báo cáo "${this.issueLabel(item.issueType)}" đã được nhân viên ${item.handledByStaff?.fullName ?? 'bãi xe'} tiếp nhận.`,
       type: 'incident',
       metadata: { incidentId: id, status: 'InProgress' },
     });
@@ -186,19 +232,25 @@ export class IncidentsService {
     if (!notes) {
       return PbmsResponseDto.fail('Vui lòng nhập ghi chú xử lý');
     }
-    const item = await this.prisma.incidentReport.update({
-      where: { id },
-      data: {
-        handledByStaffId: staffId,
-        resolutionNotes: notes,
-        status: 'Resolved',
-        resolvedAt: new Date(),
-      },
-      include: this.include(),
+    if (!(await this.validHandler(staffId)))
+      return PbmsResponseDto.fail(
+        'Vui lòng chọn nhân viên đang hoạt động',
+        400,
+      );
+    const item = await this.change(id, ['Open', 'InProgress'], {
+      handledByStaffId: staffId,
+      resolutionNotes: notes,
+      status: 'Resolved',
+      resolvedAt: new Date(),
     });
+    if (!item)
+      return PbmsResponseDto.fail(
+        'Báo cáo đã xử lý hoặc đã hủy. Vui lòng tải lại.',
+        409,
+      );
     await this.notifications?.notify(item.reportedByUserId, {
       title: 'Sự cố đã được xử lý',
-      message: `Báo cáo "${item.issueType}" đã xử lý xong. Ghi chú: ${notes}`,
+      message: `Báo cáo "${this.issueLabel(item.issueType)}" đã xử lý xong. Ghi chú: ${notes}`,
       type: 'incident',
       metadata: { incidentId: id, status: 'Resolved' },
     });
@@ -227,11 +279,14 @@ export class IncidentsService {
         'Chỉ huỷ được báo cáo đang chờ hoặc đang xử lý',
       );
     }
-    const item = await this.prisma.incidentReport.update({
-      where: { id },
-      data: { status: 'Cancelled' },
-      include: this.include(),
+    const item = await this.change(id, ['Open', 'InProgress'], {
+      status: 'Cancelled',
     });
+    if (!item)
+      return PbmsResponseDto.fail(
+        'Báo cáo vừa được xử lý hoặc hủy. Vui lòng tải lại.',
+        409,
+      );
     return PbmsResponseDto.ok('Đã huỷ báo cáo sự cố', this.map(item));
   }
 
@@ -250,6 +305,48 @@ export class IncidentsService {
     }
   }
 
+  private async change(
+    id: string,
+    statuses: string[],
+    data: Prisma.IncidentReportUncheckedUpdateManyInput,
+  ) {
+    return this.prisma.$transaction(async (tx) => {
+      const moved = await tx.incidentReport.updateMany({
+        where: { id, status: { in: statuses } },
+        data,
+      });
+      return moved.count === 1
+        ? tx.incidentReport.findUnique({
+            where: { id },
+            include: this.include(),
+          })
+        : null;
+    });
+  }
+  private validHandler(id: string) {
+    return this.prisma.user.findFirst({
+      where: {
+        id,
+        isActive: true,
+        status: 'Active',
+        pbmsRole: { roleName: { in: ['staff', 'manager'] } },
+      },
+      select: { id: true },
+    });
+  }
+  private issueLabel(type: string) {
+    return (
+      (
+        {
+          SlotOccupied: 'Ô đỗ bị chiếm',
+          VehicleDamage: 'Xe bị hư hỏng',
+          LostItem: 'Thất lạc đồ',
+          PaymentIssue: 'Vấn đề thanh toán',
+          Other: 'Sự cố khác',
+        } as Record<string, string>
+      )[type] ?? 'Sự cố đã báo'
+    );
+  }
   private canStaff(role: string): boolean {
     const value = role.trim().toLowerCase();
     return value === 'manager' || value === 'staff';
