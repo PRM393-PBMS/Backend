@@ -60,6 +60,10 @@ Staff tạo yêu cầu checkout → khách mở màn tại cổng → staff xác
 
 Đạt khi tiền mặt vẫn polling được dù không có OnlinePayment, không treo loading, lỗi provider không làm đóng phiên và bản ghi thu tiền giữ đúng nhân viên/cổng. Không thông báo barie vật lý đã mở chỉ dựa vào response API.
 
+## Nghiệm thu hiện hành
+
+Theo yêu cầu mới nhất, không chạy thêm UI/animation/emulator. Chốt flow theo input → thao tác khách/staff → API nhận diện → biến đổi trạng thái → output cuối. Kết quả 24 nhánh cùng ranh giới local/provider/native ở [exception-status.md, mục 8](exception-status.md#8-chốt-plan-theo-flow-input--xử-lý--output-05112026). Các bước giao diện dưới đây là kế hoạch lịch sử; người dùng tự nghiệm thu trên APK.
+
 ## Sau khi logic đạt
 
 - Chạy Flutter hiện tại trên browser/device có sẵn, xem các màn thật và trạng thái loading/empty/error/long text.
