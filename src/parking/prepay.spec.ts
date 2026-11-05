@@ -1,10 +1,14 @@
+import { AppError } from '../common/errors';
 import { Prisma } from '@prisma/client';
 import { generateExitPassCode, exitPassPayload } from '../common/exit-pass';
 import { PayosService } from '../integrations/payos-files.service';
 import { PlateRecognizerService } from '../integrations/plate-recognizer.service';
 import { PaymentsService } from '../payments/payments.service';
 import { PrismaService } from '../prisma/prisma.service';
-import { InsufficientWalletFundsError, WalletsService } from '../wallets/wallets.service';
+import {
+  InsufficientWalletFundsError,
+  WalletsService,
+} from '../wallets/wallets.service';
 import { ParkingOperationsService } from './parking-operations.service';
 import { ParkingSessionsService } from './parking-sessions.service';
 
@@ -27,13 +31,18 @@ function setup(opts: { debit: 'ok' | 'insufficient'; ownerId?: string }) {
   let staged: Record<string, unknown> = {};
   const tx = {
     parkingSession: {
-      updateMany: jest.fn(({ where, data }: { where: { exitPassCode: null }; data: object }) => {
-        if (session.status !== 'Active' || session.exitPassCode !== where.exitPassCode) {
-          return Promise.resolve({ count: 0 });
-        }
-        staged = { ...staged, ...data };
-        return Promise.resolve({ count: 1 });
-      }),
+      updateMany: jest.fn(
+        ({ where, data }: { where: { exitPassCode: null }; data: object }) => {
+          if (
+            session.status !== 'Active' ||
+            session.exitPassCode !== where.exitPassCode
+          ) {
+            return Promise.resolve({ count: 0 });
+          }
+          staged = { ...staged, ...data };
+          return Promise.resolve({ count: 1 });
+        },
+      ),
     },
     payment: {
       create: jest.fn().mockResolvedValue({
@@ -49,9 +58,14 @@ function setup(opts: { debit: 'ok' | 'insufficient'; ownerId?: string }) {
       }),
     },
   };
-  const prisma = {
+  const prisma: any = {
     parkingSession: {
-      findUnique: jest.fn().mockImplementation(() => Promise.resolve({ ...session })),
+      findUniqueOrThrow: jest
+        .fn()
+        .mockImplementation(() => Promise.resolve({ ...session })),
+      findUnique: jest
+        .fn()
+        .mockImplementation(() => Promise.resolve({ ...session })),
       update: jest.fn().mockImplementation(({ data }) => {
         Object.assign(session, data);
         return Promise.resolve(session);
@@ -61,6 +75,7 @@ function setup(opts: { debit: 'ok' | 'insufficient'; ownerId?: string }) {
       findFirst: jest.fn().mockResolvedValue(null),
       findMany: jest.fn().mockResolvedValue([]),
       updateMany: jest.fn().mockResolvedValue({ count: 1 }),
+      aggregate: jest.fn().mockResolvedValue({ _sum: { amount: 0 } }),
     },
     monthlySubscription: { findFirst: jest.fn().mockResolvedValue(null) },
     pricingPolicy: {
@@ -74,7 +89,13 @@ function setup(opts: { debit: 'ok' | 'insufficient'; ownerId?: string }) {
     },
     $transaction: jest.fn(async (fn: (t: typeof tx) => Promise<unknown>) => {
       staged = {};
-      const result = await fn(tx);
+      const result = await fn({
+        ...prisma,
+        ...tx,
+        $queryRaw: jest.fn().mockResolvedValue([]),
+        parkingSession: { ...prisma.parkingSession, ...tx.parkingSession },
+        payment: { ...prisma.payment, ...tx.payment },
+      });
       Object.assign(session, staged);
       return result;
     }),
@@ -82,10 +103,15 @@ function setup(opts: { debit: 'ok' | 'insufficient'; ownerId?: string }) {
   const wallets = {
     debitForUser: jest.fn(() =>
       opts.debit === 'ok'
-        ? Promise.resolve({ walletId: 'w1', balanceAfter: new Prisma.Decimal(70000) })
+        ? Promise.resolve({
+            walletId: 'w1',
+            balanceAfter: new Prisma.Decimal(70000),
+          })
         : Promise.reject(new InsufficientWalletFundsError()),
     ),
-    getBalanceForUser: jest.fn().mockResolvedValue({ walletId: 'w1', walletBalance: 5000 }),
+    getBalanceForUser: jest
+      .fn()
+      .mockResolvedValue({ walletId: 'w1', walletBalance: 5000 }),
   };
   const service = new ParkingOperationsService(
     prisma as unknown as PrismaService,
@@ -101,7 +127,9 @@ function setup(opts: { debit: 'ok' | 'insufficient'; ownerId?: string }) {
 describe('Thanh toán trước khi ra bãi', () => {
   it('trả bằng ví: trừ ví loại ParkingFee và cấp mã ra cổng', async () => {
     const { service, session, wallets, tx } = setup({ debit: 'ok' });
-    const res = await service.prepay(SESSION_ID, USER_ID, { paymentMethod: 'Wallet' });
+    const res = await service.prepay(SESSION_ID, USER_ID, {
+      paymentMethod: 'Wallet',
+    });
 
     expect(res.isSuccess).toBe(true);
     expect(tx.payment.create.mock.calls[0][0].data).toMatchObject({
@@ -119,42 +147,54 @@ describe('Thanh toán trước khi ra bãi', () => {
 
   it('ví không đủ: trả 402, không cấp mã ra cổng', async () => {
     const { service, session } = setup({ debit: 'insufficient' });
-    const res = await service.prepay(SESSION_ID, USER_ID, { paymentMethod: 'Wallet' });
+    const res = await service.prepay(SESSION_ID, USER_ID, {
+      paymentMethod: 'Wallet',
+    });
 
     expect(res.statusCode).toBe(402);
     expect(session.exitPassCode).toBeNull();
   });
 
   it('hai yêu cầu trả bằng ví cùng lúc: yêu cầu sau không trừ ví lần nữa', async () => {
-    const { service, session, wallets, tx } = setup({ debit: 'ok' });
+    const { service, session, wallets, tx, prisma } = setup({ debit: 'ok' });
     // Yêu cầu khác vừa thanh toán xong sau khi yêu cầu này đọc phiên.
-    tx.parkingSession.updateMany.mockImplementationOnce(() => {
+    prisma.parkingSession.findUniqueOrThrow.mockImplementationOnce(() => {
       session.exitPassCode = 'ABCDEF';
       session.prepaidAt = new Date();
-      return Promise.resolve({ count: 0 });
+      return Promise.resolve({ ...session });
     });
-    const res = await service.prepay(SESSION_ID, USER_ID, { paymentMethod: 'Wallet' });
+    const res = await service.prepay(SESSION_ID, USER_ID, {
+      paymentMethod: 'Wallet',
+    });
 
     expect(res.isSuccess).toBe(true);
     expect(wallets.debitForUser).not.toHaveBeenCalled();
     expect(tx.payment.create).not.toHaveBeenCalled();
-    expect((res.result as { ExitPass: { code: string } }).ExitPass.code).toBe('ABCDEF');
+    expect((res.result as { ExitPass: { code: string } }).ExitPass.code).toBe(
+      'ABCDEF',
+    );
   });
 
-  it('trả bằng ví thì huỷ link PayOS trả trước đang chờ', async () => {
-    const { service, prisma } = setup({ debit: 'ok' });
-    prisma.payment.findMany.mockResolvedValue([{ id: 'old-payos', transactionReference: '' }]);
-    await service.prepay(SESSION_ID, USER_ID, { paymentMethod: 'Wallet' });
-
-    expect(prisma.payment.updateMany).toHaveBeenCalledWith({
-      where: { id: 'old-payos', paymentStatus: 'Pending' },
-      data: { paymentStatus: 'Failed' },
-    });
+  it('PayOS chưa có orderCode: chặn đổi sang ví, không suy đoán đã hủy', async () => {
+    const { service, prisma, wallets } = setup({ debit: 'ok' });
+    prisma.payment.findMany.mockResolvedValue([
+      { id: 'old-payos', transactionReference: '' },
+    ]);
+    await expect(
+      service.prepay(SESSION_ID, USER_ID, { paymentMethod: 'Wallet' }),
+    ).rejects.toBeInstanceOf(AppError);
+    expect(wallets.debitForUser).not.toHaveBeenCalled();
+    expect(prisma.payment.updateMany).not.toHaveBeenCalled();
   });
 
   it('người khác không thanh toán hộ được (chủ xe theo vehicle.userId)', async () => {
-    const { service, wallets } = setup({ debit: 'ok', ownerId: 'someone-else' });
-    const res = await service.prepay(SESSION_ID, USER_ID, { paymentMethod: 'Wallet' });
+    const { service, wallets } = setup({
+      debit: 'ok',
+      ownerId: 'someone-else',
+    });
+    const res = await service.prepay(SESSION_ID, USER_ID, {
+      paymentMethod: 'Wallet',
+    });
 
     expect(res.statusCode).toBe(403);
     expect(wallets.debitForUser).not.toHaveBeenCalled();
@@ -162,6 +202,8 @@ describe('Thanh toán trước khi ra bãi', () => {
 
   it('payload QR mã ra cổng chứa SessionId để đầu đọc cổng nhận diện', () => {
     const code = generateExitPassCode();
-    expect(exitPassPayload(SESSION_ID, code)).toBe(`PBMS-EXIT:${SESSION_ID}:${code}`);
+    expect(exitPassPayload(SESSION_ID, code)).toBe(
+      `PBMS-EXIT:${SESSION_ID}:${code}`,
+    );
   });
 });

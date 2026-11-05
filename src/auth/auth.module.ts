@@ -33,6 +33,12 @@ import { PbmsRolesGuard } from './common/guards/pbms-roles.guard';
     RolesGuard,
     PbmsRolesGuard,
   ],
-  exports: [AuthService, HashingService, MailService, OtpStoreService, PbmsRolesGuard],
+  exports: [
+    AuthService,
+    HashingService,
+    MailService,
+    OtpStoreService,
+    PbmsRolesGuard,
+  ],
 })
 export class AuthModule {}

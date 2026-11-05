@@ -1,3 +1,4 @@
+import { requiredSecret } from '../../common/config';
 import { Injectable, UnauthorizedException } from '@nestjs/common';
 import { PassportStrategy } from '@nestjs/passport';
 import { ExtractJwt, Strategy } from 'passport-jwt';
@@ -13,7 +14,8 @@ export class RtStrategy extends PassportStrategy(Strategy, 'jwt-refresh') {
         ExtractJwt.fromAuthHeaderAsBearerToken(),
         // Fallback: Trích xuất từ Request Body nếu client gửi json { "refreshToken": "..." }
         (req: Request): string | null => {
-          const bodyToken = (req.body as Record<string, unknown> | undefined)?.refreshToken;
+          const bodyToken = (req.body as Record<string, unknown> | undefined)
+            ?.refreshToken;
           if (typeof bodyToken === 'string' && bodyToken.trim().length > 0) {
             return bodyToken.trim();
           }
@@ -21,7 +23,7 @@ export class RtStrategy extends PassportStrategy(Strategy, 'jwt-refresh') {
         },
       ]),
       ignoreExpiration: false,
-      secretOrKey: process.env.JWT_REFRESH_SECRET || 'prm393_enterprise_refresh_secret_key_2026',
+      secretOrKey: requiredSecret('JWT_REFRESH_SECRET'),
       passReqToCallback: true,
     });
   }
@@ -45,7 +47,9 @@ export class RtStrategy extends PassportStrategy(Strategy, 'jwt-refresh') {
     }
 
     if (!refreshToken) {
-      throw new UnauthorizedException('Không tìm thấy Refresh Token hợp lệ trong request.');
+      throw new UnauthorizedException(
+        'Không tìm thấy Refresh Token hợp lệ trong request.',
+      );
     }
 
     if (!payload.sub || !payload.email) {

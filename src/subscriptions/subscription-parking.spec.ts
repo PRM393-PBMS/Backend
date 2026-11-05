@@ -35,22 +35,37 @@ describe('Vé tháng theo bãi', () => {
   let create: jest.Mock;
 
   async function build(pkg: typeof basePkg, lots: string[]) {
-    create = jest.fn().mockResolvedValue({ id: 'sub-1', userId, price: pkg.price, status: 'PendingPayment' });
+    create = jest.fn().mockResolvedValue({
+      id: 'sub-1',
+      userId,
+      price: pkg.price,
+      status: 'PendingPayment',
+    });
     prisma = {
+      $queryRaw: jest.fn().mockResolvedValue([]),
       subscriptionPackage: { findUnique: jest.fn().mockResolvedValue(pkg) },
       vehicle: { findFirst: jest.fn().mockResolvedValue(vehicle) },
-      monthlySubscription: { findFirst: jest.fn().mockResolvedValue(null), create },
+      monthlySubscription: {
+        findFirst: jest.fn().mockResolvedValue(null),
+        create,
+      },
       parking: {
         findMany: jest.fn().mockResolvedValue(lots.map((id) => ({ id }))),
         findUnique: jest.fn(({ where }: { where: { id: string } }) =>
           Promise.resolve(lots.includes(where.id) ? { id: where.id } : null),
         ),
       },
-      parkingSlot: { findUnique: jest.fn(), count: jest.fn().mockResolvedValue(5) },
-      payment: { create: jest.fn().mockResolvedValue({ id: 'pay-1', amount: pkg.price }), update: jest.fn() },
-      $transaction: jest.fn((fn: (tx: unknown) => Promise<unknown>) => fn(prisma)),
-      // Database đã migrate đúng: không còn cột cũ của bảng vé tháng.
-      $queryRaw: jest.fn().mockResolvedValue([]),
+      parkingSlot: {
+        findUnique: jest.fn(),
+        count: jest.fn().mockResolvedValue(5),
+      },
+      payment: {
+        create: jest.fn().mockResolvedValue({ id: 'pay-1', amount: pkg.price }),
+        update: jest.fn(),
+      },
+      $transaction: jest.fn((fn: (tx: unknown) => Promise<unknown>) =>
+        fn(prisma),
+      ),
     };
     const module: TestingModule = await Test.createTestingModule({
       providers: [
@@ -58,11 +73,26 @@ describe('Vé tháng theo bãi', () => {
         { provide: PrismaService, useValue: prisma },
         {
           provide: PayosService,
-          useValue: { createPaymentLink: jest.fn().mockResolvedValue({ orderCode: '1', paymentUrl: 'u', paymentLinkId: 'l' }) },
+          useValue: {
+            createPaymentLink: jest.fn().mockResolvedValue({
+              orderCode: '1',
+              paymentUrl: 'u',
+              paymentLinkId: 'l',
+            }),
+          },
         },
         { provide: WalletsService, useValue: {} },
-        { provide: ContractsService, useValue: { createForSubscription: jest.fn() } },
-        { provide: HashingService, useValue: { compare: jest.fn().mockResolvedValue(true), hash: jest.fn() } },
+        {
+          provide: ContractsService,
+          useValue: { createForSubscription: jest.fn() },
+        },
+        {
+          provide: HashingService,
+          useValue: {
+            compare: jest.fn().mockResolvedValue(true),
+            hash: jest.fn(),
+          },
+        },
       ],
     }).compile();
     service = module.get(MonthlySubscriptionsService);
@@ -70,7 +100,11 @@ describe('Vé tháng theo bãi', () => {
 
   it('nhiều bãi thì bắt buộc chọn bãi', async () => {
     await build(basePkg, [lotA, lotB]);
-    const res = await service.register(userId, { packageId: basePkg.id, vehicleId: vehicle.id }, true);
+    const res = await service.register(
+      userId,
+      { packageId: basePkg.id, vehicleId: vehicle.id },
+      true,
+    );
     expect(res.isSuccess).toBe(false);
     expect(res.message).toBe('Vui lòng chọn bãi đỗ áp dụng vé tháng');
     expect(create).not.toHaveBeenCalled();
@@ -78,13 +112,21 @@ describe('Vé tháng theo bãi', () => {
 
   it('gắn vé vào bãi khách chọn', async () => {
     await build(basePkg, [lotA, lotB]);
-    await service.register(userId, { packageId: basePkg.id, vehicleId: vehicle.id, parkingId: lotB }, true);
+    await service.register(
+      userId,
+      { packageId: basePkg.id, vehicleId: vehicle.id, parkingId: lotB },
+      true,
+    );
     expect(create.mock.calls[0][0].data.parkingId).toBe(lotB);
   });
 
   it('gói mọi bãi không gắn bãi nào', async () => {
     await build({ ...basePkg, allParkings: true }, [lotA, lotB]);
-    await service.register(userId, { packageId: basePkg.id, vehicleId: vehicle.id }, true);
+    await service.register(
+      userId,
+      { packageId: basePkg.id, vehicleId: vehicle.id },
+      true,
+    );
     expect(create.mock.calls[0][0].data.parkingId).toBeNull();
   });
 

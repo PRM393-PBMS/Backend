@@ -12,7 +12,13 @@ import {
   UseGuards,
   UseInterceptors,
 } from '@nestjs/common';
-import { ApiBearerAuth, ApiOperation, ApiQuery, ApiTags } from '@nestjs/swagger';
+import {
+  ApiBearerAuth,
+  ApiOperation,
+  ApiQuery,
+  ApiResponse,
+  ApiTags,
+} from '@nestjs/swagger';
 import type { Response } from 'express';
 import { GetPbmsUserId } from '../auth/common/decorators/get-pbms-user-id.decorator';
 import { Public } from '../auth/common/decorators/public.decorator';
@@ -22,7 +28,10 @@ import { PbmsBodyDto } from '../common/dto/pbms-body.dto';
 import { PbmsResponseDto } from '../common/dto/pbms-response.dto';
 import { PbmsStatusInterceptor } from '../common/interceptors/pbms-status.interceptor';
 import { ids, paymentExample } from '../common/swagger/pbms-example-data';
-import { ApiPbmsBodyExample, ApiPbmsOkResponse } from '../common/swagger/pbms-swagger';
+import {
+  ApiPbmsBodyExample,
+  ApiPbmsOkResponse,
+} from '../common/swagger/pbms-swagger';
 import { PaymentsService } from './payments.service';
 
 @ApiTags('PBMS Payments')
@@ -38,21 +47,12 @@ export class PaymentsController {
     description:
       'Public (không JWT) — chỉ PayOS gọi. Xác nhận thanh toán: nạp ví (`WalletTopUp` cộng `wallets.balance` + ghi Credit) hoặc gói tháng/gia hạn. Thành công: HTTP 200, body rỗng (không envelope PBMS). Lỗi xử lý: HTTP 500 JSON `{ statusCode, message, isSuccess: false }`. FE không gọi API này; FE poll ví/gói hoặc đợi redirect PayOS rồi GET lại.',
   })
-  async webhook(@Body() body: Record<string, unknown>, @Res() res: Response): Promise<void> {
-    try {
-      await this.payments.handleWebhook(body ?? {});
-      res.status(200).send();
-    } catch (error: unknown) {
-      const message =
-        error instanceof Error ? error.message : 'Lỗi xử lý webhook PayOS';
-      res.status(500).json({
-        statusCode: 500,
-        message: message.startsWith('Lỗi xử lý webhook')
-          ? message
-          : `Lỗi xử lý webhook PayOS: ${message}`,
-        isSuccess: false,
-      });
-    }
+  async webhook(
+    @Body() body: Record<string, unknown>,
+    @Res() res: Response,
+  ): Promise<void> {
+    await this.payments.handleWebhook(body ?? {});
+    res.status(200).send();
   }
 
   @ApiBearerAuth('JWT-auth')
@@ -80,9 +80,20 @@ export class PaymentsController {
   })
   @ApiQuery({ name: 'page', required: false, type: Number })
   @ApiQuery({ name: 'pageSize', required: false, type: Number })
-  @ApiQuery({ name: 'status', required: false, enum: ['Pending', 'Success', 'Failed'] })
+  @ApiQuery({
+    name: 'status',
+    required: false,
+    enum: ['Pending', 'Success', 'Failed'],
+  })
   @ApiPbmsOkResponse('Lấy lịch sử thanh toán thành công', {
-    items: [{ ...paymentExample, paymentTypeLabel: 'Vé tháng', licensePlate: '59A12345', packageName: 'Gói tháng xe máy' }],
+    items: [
+      {
+        ...paymentExample,
+        paymentTypeLabel: 'Vé tháng',
+        licensePlate: '59A12345',
+        packageName: 'Gói tháng xe máy',
+      },
+    ],
     page: 1,
     pageSize: 20,
     total: 1,
@@ -107,8 +118,21 @@ export class PaymentsController {
     description:
       'Dùng cho nút "Tôi đã thanh toán" khi webhook chưa tới (nạp ví, thanh toán trước khi ra bãi, gói tháng). Thành công thì cộng ví / cấp mã ra cổng / kích hoạt gói đúng một lần.',
   })
-  syncMine(@Param('id') id: string, @GetPbmsUserId() userId: string): Promise<PbmsResponseDto> {
+  syncMine(
+    @Param('id') id: string,
+    @GetPbmsUserId() userId: string,
+  ): Promise<PbmsResponseDto> {
     return this.payments.syncMine(id, userId);
+  }
+
+  @ApiBearerAuth('JWT-auth')
+  @UseGuards(PbmsRolesGuard)
+  @PbmsRoles('manager')
+  @UseInterceptors(PbmsStatusInterceptor)
+  @Get('reconciliation')
+  @ApiOperation({ summary: 'Danh sách thanh toán cần đối soát (manager)' })
+  reconciliation(): Promise<PbmsResponseDto> {
+    return this.payments.getReconciliation();
   }
 
   @ApiBearerAuth('JWT-auth')
@@ -117,7 +141,8 @@ export class PaymentsController {
   @UseInterceptors(PbmsStatusInterceptor)
   @Post(':id/reconcile')
   @ApiOperation({
-    summary: 'Quản lý đối soát một thanh toán PayOS đang chờ (tra trực tiếp PayOS)',
+    summary:
+      'Quản lý đối soát một thanh toán PayOS đang chờ (tra trực tiếp PayOS)',
     description:
       'Dùng khi webhook PayOS tới trễ hoặc bị mất. Đã thanh toán thì xử lý đúng một lần (cộng ví / cấp mã ra cổng / kích hoạt gói). Trả về thanh toán sau đối soát.',
   })
@@ -129,10 +154,7 @@ export class PaymentsController {
     try {
       await this.payments.syncPayosPayment(id);
     } catch (error: unknown) {
-      return PbmsResponseDto.fail(
-        `Không tra được PayOS: ${error instanceof Error ? error.message : 'lỗi không xác định'}`,
-        502,
-      );
+      return PbmsResponseDto.fromError(error);
     }
     return this.payments.getById(id);
   }
@@ -153,7 +175,7 @@ export class PaymentsController {
   @PbmsRoles('manager')
   @UseInterceptors(PbmsStatusInterceptor)
   @Post()
-  @ApiOperation({ summary: 'Tạo thanh toán' })
+  @ApiOperation({ summary: 'Thanh toán phải tạo qua luồng nghiệp vụ (409)' })
   @ApiPbmsBodyExample(PbmsBodyDto, {
     userId: ids.userId,
     sessionId: ids.sessionId,
@@ -164,7 +186,10 @@ export class PaymentsController {
     paymentTime: '2026-09-17T11:45:00.000Z',
     transactionReference: 'CASH-20260917-01',
   })
-  @ApiPbmsOkResponse('Tạo thanh toán thành công', paymentExample, 201)
+  @ApiResponse({
+    status: 409,
+    description: 'USE_PAYMENT_WORKFLOW: dùng luồng nghiệp vụ thanh toán',
+  })
   create(@Body() dto: PbmsBodyDto): Promise<PbmsResponseDto> {
     return this.payments.create(dto);
   }
@@ -174,14 +199,20 @@ export class PaymentsController {
   @PbmsRoles('manager')
   @UseInterceptors(PbmsStatusInterceptor)
   @Put()
-  @ApiOperation({ summary: 'Cập nhật thanh toán' })
+  @ApiOperation({
+    summary: 'Đổi trạng thái qua đồng bộ PayOS/xác nhận tiền mặt (409)',
+  })
   @ApiPbmsBodyExample(PbmsBodyDto, {
     paymentId: ids.paymentId,
     amount: 11000,
     paymentMethod: 'Cash',
     paymentStatus: 'Success',
   })
-  @ApiPbmsOkResponse('Cập nhật thanh toán thành công', paymentExample)
+  @ApiResponse({
+    status: 409,
+    description:
+      'USE_PAYMENT_WORKFLOW: dùng đồng bộ PayOS hoặc xác nhận tiền mặt',
+  })
   update(@Body() dto: PbmsBodyDto): Promise<PbmsResponseDto> {
     return this.payments.update(dto);
   }
@@ -191,8 +222,11 @@ export class PaymentsController {
   @PbmsRoles('manager')
   @UseInterceptors(PbmsStatusInterceptor)
   @Delete(':id')
-  @ApiOperation({ summary: 'Xóa thanh toán' })
-  @ApiPbmsOkResponse('Xóa thanh toán thành công', null)
+  @ApiOperation({ summary: 'Chứng từ thanh toán được bảo toàn (409)' })
+  @ApiResponse({
+    status: 409,
+    description: 'PAYMENT_HISTORY_PROTECTED: bảo toàn chứng từ',
+  })
   remove(@Param('id') id: string): Promise<PbmsResponseDto> {
     return this.payments.remove(id);
   }

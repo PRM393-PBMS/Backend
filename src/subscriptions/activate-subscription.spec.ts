@@ -3,13 +3,17 @@ import { PrismaService } from '../prisma/prisma.service';
 import { WalletsService } from '../wallets/wallets.service';
 import { PayosService } from '../integrations/payos-files.service';
 import { PaymentsService } from '../payments/payments.service';
-import { SubscriptionActivationError, activateSubscriptionInTx } from './activate-subscription';
+import {
+  SubscriptionActivationError,
+  activateSubscriptionInTx,
+} from './activate-subscription';
 
 const car = { vehicleTypeId: 'vt-car', vehicleType: { typeName: 'Ô tô' } };
 
 function txWith(subscription: Record<string, unknown>, freeSlots: string[]) {
   const free = new Set(freeSlots);
   return {
+    subscriptionContract: { findUnique: jest.fn().mockResolvedValue(null) },
     monthlySubscription: {
       findUnique: jest.fn().mockResolvedValue({
         id: 'sub-1',
@@ -36,7 +40,9 @@ function txWith(subscription: Record<string, unknown>, freeSlots: string[]) {
 describe('Kích hoạt vé tháng', () => {
   it('ô cố định đã có người nhận thì từ chối, không kích hoạt', async () => {
     const tx = txWith({ fixedSlotId: 's1' }, []);
-    await expect(activateSubscriptionInTx(tx as never, 'sub-1')).rejects.toThrow(SubscriptionActivationError);
+    await expect(
+      activateSubscriptionInTx(tx as never, 'sub-1'),
+    ).rejects.toThrow(SubscriptionActivationError);
     expect(tx.monthlySubscription.updateMany).not.toHaveBeenCalled();
   });
 
@@ -49,90 +55,122 @@ describe('Kích hoạt vé tháng', () => {
       vehicleTypeId: 'vt-car',
       floor: { isResident: true },
     });
-    expect(tx.parkingSlot.updateMany.mock.calls[0][0].where).toMatchObject({ id: 's1', status: 'Available' });
+    expect(tx.parkingSlot.updateMany.mock.calls[0][0].where).toMatchObject({
+      id: 's1',
+      status: 'Available',
+    });
     expect(tx.monthlySubscription.updateMany.mock.calls[0][0]).toMatchObject({
       where: { id: 'sub-1', status: 'PendingPayment' },
       data: { status: 'Active', fixedSlotId: 's2' },
     });
     // Kích hoạt không tự bật tự gia hạn: khách tự bật.
-    expect(tx.monthlySubscription.updateMany.mock.calls[0][0].data).not.toHaveProperty('autoRenew');
+    expect(
+      tx.monthlySubscription.updateMany.mock.calls[0][0].data,
+    ).not.toHaveProperty('autoRenew');
   });
 
   it('vé đã huỷ thì không kích hoạt', async () => {
     const tx = txWith({ status: 'Cancelled' }, ['s1']);
-    await expect(activateSubscriptionInTx(tx as never, 'sub-1')).rejects.toThrow(SubscriptionActivationError);
+    await expect(
+      activateSubscriptionInTx(tx as never, 'sub-1'),
+    ).rejects.toThrow(SubscriptionActivationError);
     expect(tx.parkingSlot.updateMany).not.toHaveBeenCalled();
   });
 });
 
-describe('Vé tháng trả qua PayOS', () => {
-  function setup(paid: Record<string, unknown>, tx: unknown) {
-    const creditRefund = jest.fn().mockResolvedValue(true);
+describe('Vé tháng trả qua PayOS và đối soát', () => {
+  function setup(paid: Record<string, unknown>, tx: any) {
+    const state: any = {
+      id: 'pay-1',
+      userId: 'user-1',
+      subscriptionId: 'sub-1',
+      paymentStatus: 'Success',
+      amount: new Prisma.Decimal(1500000),
+      appliedAt: null,
+      reconciliationReason: null,
+      ...paid,
+    };
     const payment = {
-      findUnique: jest.fn().mockResolvedValue({
-        id: 'pay-1',
-        userId: 'user-1',
-        subscriptionId: 'sub-1',
-        paymentStatus: 'Success',
-        amount: new Prisma.Decimal(1500000),
-        ...paid,
+      findUnique: jest.fn(async () => ({ ...state })),
+      findUniqueOrThrow: jest.fn(async () => ({ ...state })),
+      update: jest.fn(async ({ data }) => Object.assign(state, data)),
+      updateMany: jest.fn(async ({ data }) => {
+        Object.assign(state, data);
+        return { count: 1 };
       }),
-      update: jest.fn(),
     };
-    const prisma = {
+    const prisma: any = {
       payment,
-      monthlySubscription: {
-        findUnique: jest.fn().mockResolvedValue({ id: 'sub-1', packageId: 'pkg-old' }),
-        updateMany: jest.fn().mockResolvedValue({ count: 1 }),
-      },
       subscriptionPackage: {
-        findUnique: jest.fn(({ where }: { where: { id: string } }) =>
-          Promise.resolve({ durationDays: where.id === 'pkg-3m' ? 90 : 30 }),
-        ),
+        findUniqueOrThrow: jest
+          .fn()
+          .mockResolvedValue({ id: 'pkg-3m', durationDays: 90 }),
       },
-      $transaction: jest.fn((fn: (t: unknown) => Promise<unknown>) => fn({ ...(tx as object), payment })),
+      $transaction: jest.fn(async (fn) =>
+        fn({
+          ...prisma,
+          ...tx,
+          payment,
+          $queryRaw: jest.fn().mockResolvedValue([]),
+        }),
+      ),
     };
+    const creditRefund = jest.fn();
     const service = new PaymentsService(
-      prisma as unknown as PrismaService,
+      prisma as PrismaService,
       { creditRefund } as unknown as WalletsService,
       {} as PayosService,
     );
-    return { service, prisma, creditRefund };
+    return { service, prisma, state, creditRefund };
   }
-
-  it('không kích hoạt được (ô đã có người nhận): huỷ đơn, hoàn tiền vào ví', async () => {
+  it('ô bị chiếm: giữ chứng từ, chờ đối soát, không tự hủy/hoàn ví', async () => {
     const tx = txWith({ fixedSlotId: 's1' }, []);
-    const { service, prisma, creditRefund } = setup({ paymentType: 'SubscriptionFee' }, tx);
-
-    await service.dispatchPayment('pay-1');
-
-    expect(prisma.monthlySubscription.updateMany).toHaveBeenCalledWith({
-      where: { id: 'sub-1', status: 'PendingPayment' },
-      data: { status: 'Cancelled' },
-    });
-    expect(creditRefund).toHaveBeenCalledWith(
-      expect.anything(),
-      expect.objectContaining({ id: 'pay-1' }),
-      'SubscriptionFee',
-      expect.any(String),
-    );
-    expect(prisma.payment.update).toHaveBeenCalledWith({ where: { id: 'pay-1' }, data: { paymentStatus: 'Refunded' } });
+    const f = setup({ paymentType: 'SubscriptionFee' }, tx);
+    await f.service.dispatchPayment('pay-1');
+    expect(f.state.reconciliationReason).toBe('FIXED_SLOT_UNAVAILABLE');
+    expect(f.state.appliedAt).toBeNull();
+    expect(f.creditRefund).not.toHaveBeenCalled();
+    expect(tx.monthlySubscription.updateMany).not.toHaveBeenCalled();
   });
-
-  it('gia hạn cộng thời hạn của gói đã trả, không phải gói cũ của vé', async () => {
+  it('gia hạn cộng đúng snapshot 90 ngày và chỉ áp dụng payment một lần', async () => {
     const oldEnd = new Date(Date.now() + 5 * 864e5);
-    const tx = {
+    const tx: any = {
+      subscriptionContract: { findUnique: jest.fn().mockResolvedValue(null) },
       monthlySubscription: {
-        findUnique: jest.fn().mockResolvedValue({ endDate: oldEnd, status: 'Active' }),
+        findUnique: jest.fn().mockResolvedValue({
+          id: 'sub-1',
+          userId: 'user-1',
+          vehicleId: 'v1',
+          packageId: 'pkg-old',
+          price: new Prisma.Decimal(500000),
+          endDate: oldEnd,
+          status: 'Active',
+          fixedSlotId: null,
+          package: { durationDays: 30 },
+          vehicle: {
+            vehicleTypeId: 'bike',
+            vehicleType: { typeName: 'Xe máy' },
+          },
+        }),
         updateMany: jest.fn().mockResolvedValue({ count: 1 }),
+        update: jest.fn(),
       },
       subscriptionRenewal: { create: jest.fn() },
     };
-    const { service } = setup({ paymentType: 'SubscriptionRenewal', packageId: 'pkg-3m' }, tx);
-
-    await service.dispatchPayment('pay-1');
-
-    const newEnd = tx.monthlySubscription.updateMany.mock.calls[0][0].data.endDate as Date;
+    const f = setup(
+      {
+        paymentType: 'SubscriptionRenewal',
+        renewalPackageId: 'pkg-3m',
+        renewalDurationDays: 90,
+      },
+      tx,
+    );
+    await f.service.dispatchPayment('pay-1');
+    await f.service.dispatchPayment('pay-1');
+    const newEnd = tx.monthlySubscription.update.mock.calls[0][0].data
+      .endDate as Date;
     expect(Math.round((newEnd.getTime() - oldEnd.getTime()) / 864e5)).toBe(90);
+    expect(tx.subscriptionRenewal.create).toHaveBeenCalledTimes(1);
+    expect(f.creditRefund).not.toHaveBeenCalled();
   });
 });

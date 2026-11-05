@@ -15,14 +15,11 @@ const pem = generateKeyPairSync('ec', { namedCurve: 'P-256' })
   .privateKey.export({ type: 'pkcs8', format: 'pem' })
   .toString();
 
-// PNG 1x1 hợp lệ, đệm thêm byte để vượt ngưỡng kích thước tối thiểu.
-const png = Buffer.concat([
-  Buffer.from(
-    'iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfFcSJAAAADUlEQVR42mNkYPhfDwAChwGA60e6kgAAAABJRU5ErkJggg==',
-    'base64',
-  ),
-  Buffer.alloc(64),
-]);
+// PNG 16x16 được mã hóa hợp lệ.
+const png = Buffer.from(
+  'iVBORw0KGgoAAAANSUhEUgAAABAAAAAQCAYAAAAf8/9hAAAACXBIWXMAAAPoAAAD6AG1e1JrAAAAHUlEQVR4nGNgYGD4TyFmGDWAYTQMGEbDgGHohwEAm8z/AQq6njoAAAAASUVORK5CYII=',
+  'base64',
+);
 const pngDataUrl = `data:image/png;base64,${png.toString('base64')}`;
 
 describe('Niêm phong hợp đồng', () => {
@@ -36,7 +33,14 @@ describe('Niêm phong hợp đồng', () => {
   };
 
   it('chỉ áp dụng cho gói từ 3 tháng', () => {
-    expect([1, 2, 3, 6, 9, 12].map(requiresContract)).toEqual([false, false, true, true, true, true]);
+    expect([1, 2, 3, 6, 9, 12].map(requiresContract)).toEqual([
+      false,
+      false,
+      true,
+      true,
+      true,
+      true,
+    ]);
   });
 
   it('ký rồi kiểm tra lại được', () => {
@@ -46,13 +50,19 @@ describe('Niêm phong hợp đồng', () => {
 
   it('phát hiện nội dung bị sửa sau khi ký', () => {
     const seal = signSeal(sealPayload(fields), key);
-    const tampered = { ...fields, contentHash: sha256Hex('nội dung hợp đồng (đã sửa giá)') };
+    const tampered = {
+      ...fields,
+      contentHash: sha256Hex('nội dung hợp đồng (đã sửa giá)'),
+    };
     expect(verifySeal(sealPayload(tampered), seal, key.publicKey)).toBe(false);
   });
 
   it('phát hiện chữ ký tay bị thay', () => {
     const seal = signSeal(sealPayload(fields), key);
-    const swapped = { ...fields, signatureImageHash: sha256Hex(Buffer.alloc(200)) };
+    const swapped = {
+      ...fields,
+      signatureImageHash: sha256Hex(Buffer.alloc(200)),
+    };
     expect(verifySeal(sealPayload(swapped), seal, key.publicKey)).toBe(false);
   });
 
@@ -67,11 +77,18 @@ describe('Niêm phong hợp đồng', () => {
     expect(other.keyId).not.toBe(key.keyId);
   });
 
-  it('chỉ nhận ảnh PNG hợp lệ', () => {
-    expect(decodeSignaturePng(pngDataUrl)?.equals(png)).toBe(true);
-    expect(decodeSignaturePng('data:image/png;base64,AAAA')).toBeNull();
-    expect(decodeSignaturePng(Buffer.alloc(300).toString('base64'))).toBeNull();
-    expect(decodeSignaturePng(Buffer.alloc(300 * 1024).toString('base64'))).toBeNull();
+  it('chỉ nhận ảnh PNG hợp lệ', async () => {
+    expect((await decodeSignaturePng(pngDataUrl))?.equals(png)).toBe(true);
+    const broken = Buffer.from(png);
+    broken.fill(0, 50, 70);
+    expect(await decodeSignaturePng(broken.toString('base64'))).toBeNull();
+    expect(await decodeSignaturePng('data:image/png;base64,AAAA')).toBeNull();
+    expect(
+      await decodeSignaturePng(Buffer.alloc(300).toString('base64')),
+    ).toBeNull();
+    expect(
+      await decodeSignaturePng(Buffer.alloc(300 * 1024).toString('base64')),
+    ).toBeNull();
   });
 });
 
@@ -95,13 +112,29 @@ describe('ContractsService.sign', () => {
 
   function setup() {
     const prisma = {
+      $queryRaw: jest.fn().mockResolvedValue([]),
+      monthlySubscription: {
+        findUniqueOrThrow: jest
+          .fn()
+          .mockResolvedValue({ status: 'PendingPayment' }),
+      },
       subscriptionContract: {
         findUnique: jest.fn().mockResolvedValue(pending),
         updateMany: jest.fn().mockResolvedValue({ count: 1 }),
-        findUniqueOrThrow: jest.fn().mockResolvedValue({ ...pending, status: 'Signed' }),
+        findUniqueOrThrow: jest
+          .fn()
+          .mockResolvedValue({ ...pending, status: 'Signed' }),
       },
     };
-    return { prisma, service: new ContractsService(prisma as unknown as PrismaService) };
+    Object.assign(prisma, {
+      $transaction: jest.fn((fn: (tx: unknown) => Promise<unknown>) =>
+        fn(prisma),
+      ),
+    });
+    return {
+      prisma,
+      service: new ContractsService(prisma as unknown as PrismaService),
+    };
   }
 
   const body = {
@@ -133,14 +166,24 @@ describe('ContractsService.sign', () => {
 
   it('từ chối khi chưa đồng ý điều khoản', async () => {
     const { service, prisma } = setup();
-    const res = await service.sign('c1', 'user-1', { ...body, agreed: false }, null);
+    const res = await service.sign(
+      'c1',
+      'user-1',
+      { ...body, agreed: false },
+      null,
+    );
     expect(res.isSuccess).toBe(false);
     expect(prisma.subscriptionContract.updateMany).not.toHaveBeenCalled();
   });
 
   it('từ chối khi nội dung người dùng đã xem khác bản lưu', async () => {
     const { service } = setup();
-    const res = await service.sign('c1', 'user-1', { ...body, contentHash: sha256Hex('bản cũ') }, null);
+    const res = await service.sign(
+      'c1',
+      'user-1',
+      { ...body, contentHash: sha256Hex('bản cũ') },
+      null,
+    );
     expect(res.statusCode).toBe(409);
   });
 

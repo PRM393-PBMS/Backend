@@ -1,5 +1,9 @@
+import { ReadinessController } from './readiness.controller';
+import { BackendExceptionFilter } from './common/exception.filter';
+import { FinancialIdempotencyInterceptor } from './common/idempotency.interceptor';
+import { InputValidationInterceptor } from './common/input-validation.interceptor';
 import { Module } from '@nestjs/common';
-import { APP_GUARD } from '@nestjs/core';
+import { APP_GUARD, APP_FILTER, APP_INTERCEPTOR } from '@nestjs/core';
 import { ConfigModule } from '@nestjs/config';
 import { ScheduleModule } from '@nestjs/schedule';
 import { AppController } from './app.controller';
@@ -45,9 +49,12 @@ import { VehiclesModule } from './vehicles/vehicles.module';
     ReportsModule,
     GateScansModule,
   ],
-  controllers: [AppController],
+  controllers: [AppController, ReadinessController],
   providers: [
     AppService,
+    { provide: APP_FILTER, useClass: BackendExceptionFilter },
+    { provide: APP_INTERCEPTOR, useClass: InputValidationInterceptor },
+    { provide: APP_INTERCEPTOR, useClass: FinancialIdempotencyInterceptor },
     {
       provide: APP_GUARD,
       useClass: AtGuard,

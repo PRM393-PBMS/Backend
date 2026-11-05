@@ -1,3 +1,5 @@
+import { AppError } from '../common/errors';
+import { lockResource } from '../common/transactions';
 import { Injectable, Logger, Optional } from '@nestjs/common';
 import { Cron } from '@nestjs/schedule';
 import { Prisma } from '@prisma/client';
@@ -5,7 +7,6 @@ import { PrismaService } from '../prisma/prisma.service';
 import { PayosService } from '../integrations/payos-files.service';
 import { PbmsResponseDto } from '../common/dto/pbms-response.dto';
 import {
-  errorMessage,
   isEmptyGuid,
   pbmsPick,
   pbmsPickBool,
@@ -15,14 +16,24 @@ import {
   toMoney,
 } from '../common/pbms-fields';
 import { isMotorbikeType } from '../common/license-plate';
-import { InsufficientWalletFundsError, WalletsService } from '../wallets/wallets.service';
+import {
+  InsufficientWalletFundsError,
+  WalletsService,
+} from '../wallets/wallets.service';
 import { requiresContract } from '../common/contract-seal';
 import { ContractsService } from './contracts.service';
 import { HashingService } from '../auth/services/hashing.service';
 import { confirmPassword } from '../common/confirm-password';
-import { NotificationsService, formatTime, formatVnd } from '../notifications/notifications.service';
+import {
+  NotificationsService,
+  formatVnd,
+} from '../notifications/notifications.service';
 import { createSubscriptionRow } from '../common/legacy-columns';
-import { SubscriptionActivationError, activateSubscriptionInTx } from './activate-subscription';
+import {
+  activateSubscription,
+  SubscriptionActivationError,
+  activateSubscriptionInTx,
+} from './activate-subscription';
 
 type CustomerPaymentMethod = 'PayOS' | 'Wallet';
 
@@ -39,7 +50,11 @@ export class MonthlySubscriptionsService {
     @Optional() private readonly notifications?: NotificationsService,
   ) {}
 
-  private notifyWalletActivation(userId: string, subscriptionId: string, amount: Prisma.Decimal) {
+  private notifyWalletActivation(
+    userId: string,
+    subscriptionId: string,
+    amount: Prisma.Decimal,
+  ) {
     return this.notifications?.notify(userId, {
       title: 'Vé tháng đã kích hoạt',
       message: `Đã trừ ${formatVnd(toMoney(amount))} từ ví PBMS. Vé tháng của bạn đã được kích hoạt.`,
@@ -48,14 +63,19 @@ export class MonthlySubscriptionsService {
     });
   }
 
-  async register(userId: string, dto: object, createPayment: boolean): Promise<PbmsResponseDto> {
+  async register(
+    userId: string,
+    dto: object,
+    createPayment: boolean,
+  ): Promise<PbmsResponseDto> {
     if (isEmptyGuid(userId)) {
       return PbmsResponseDto.fail('Vui lòng đăng nhập để đăng ký gói', 401);
     }
     const packageId = pbmsPickGuid(dto, 'packageId', 'PackageId');
     const vehicleId = pbmsPickGuid(dto, 'vehicleId', 'VehicleId');
     const fixedSlotId = pbmsPickGuid(dto, 'fixedSlotId', 'FixedSlotId') || null;
-    const requestedParkingId = pbmsPickGuid(dto, 'parkingId', 'ParkingId') || null;
+    const requestedParkingId =
+      pbmsPickGuid(dto, 'parkingId', 'ParkingId') || null;
     if (isEmptyGuid(packageId)) {
       return PbmsResponseDto.fail('Vui lòng chọn gói');
     }
@@ -74,10 +94,15 @@ export class MonthlySubscriptionsService {
       include: { vehicleType: true },
     });
     if (!vehicle) {
-      return PbmsResponseDto.fail('Không tìm thấy xe hoặc xe không thuộc tài khoản của bạn', 404);
+      return PbmsResponseDto.fail(
+        'Không tìm thấy xe hoặc xe không thuộc tài khoản của bạn',
+        404,
+      );
     }
     if (vehicle.vehicleTypeId !== pkg.vehicleTypeId) {
-      return PbmsResponseDto.fail('Loại xe không phù hợp với gói tháng đã chọn');
+      return PbmsResponseDto.fail(
+        'Loại xe không phù hợp với gói tháng đã chọn',
+      );
     }
     const plateExists = await this.prisma.monthlySubscription.findFirst({
       where: {
@@ -92,7 +117,10 @@ export class MonthlySubscriptionsService {
           'Xe này đang có một đơn vé tháng chưa thanh toán. Hãy thanh toán đơn cũ hoặc huỷ đơn cũ để đăng ký đơn mới.',
           409,
           false,
-          { existingSubscriptionId: plateExists.id, status: plateExists.status },
+          {
+            existingSubscriptionId: plateExists.id,
+            status: plateExists.status,
+          },
         );
       }
       return PbmsResponseDto.fail('Biển số này đã có gói đang hiệu lực');
@@ -107,21 +135,35 @@ export class MonthlySubscriptionsService {
       }
     } else {
       const slotParking = fixedSlotId
-        ? (await this.prisma.parkingSlot.findUnique({ where: { id: fixedSlotId }, select: { parkingId: true } }))
-            ?.parkingId ?? null
+        ? ((
+            await this.prisma.parkingSlot.findUnique({
+              where: { id: fixedSlotId },
+              select: { parkingId: true },
+            })
+          )?.parkingId ?? null)
         : null;
       parkingId = requestedParkingId ?? slotParking;
       if (!parkingId) {
-        const lots = await this.prisma.parking.findMany({ select: { id: true }, take: 2 });
+        const lots = await this.prisma.parking.findMany({
+          select: { id: true },
+          take: 2,
+        });
         if (lots.length !== 1) {
           return PbmsResponseDto.fail('Vui lòng chọn bãi đỗ áp dụng vé tháng');
         }
         parkingId = lots[0].id;
-      } else if (!(await this.prisma.parking.findUnique({ where: { id: parkingId }, select: { id: true } }))) {
+      } else if (
+        !(await this.prisma.parking.findUnique({
+          where: { id: parkingId },
+          select: { id: true },
+        }))
+      ) {
         return PbmsResponseDto.fail('Không tìm thấy bãi đỗ', 404);
       }
       if (slotParking && slotParking !== parkingId) {
-        return PbmsResponseDto.fail('Vị trí đỗ cố định không thuộc bãi đã chọn');
+        return PbmsResponseDto.fail(
+          'Vị trí đỗ cố định không thuộc bãi đã chọn',
+        );
       }
     }
 
@@ -130,7 +172,9 @@ export class MonthlySubscriptionsService {
     if (!motorbike && !pkg.allParkings) {
       if (pkg.requireFixedSlot) {
         if (!fixedSlotId) {
-          return PbmsResponseDto.fail('Vui lòng chọn vị trí đỗ cố định cho gói này');
+          return PbmsResponseDto.fail(
+            'Vui lòng chọn vị trí đỗ cố định cho gói này',
+          );
         }
         const slot = await this.prisma.parkingSlot.findUnique({
           where: { id: fixedSlotId },
@@ -149,7 +193,9 @@ export class MonthlySubscriptionsService {
         selectedSlot = slot;
       } else {
         if (fixedSlotId) {
-          return PbmsResponseDto.fail('Gói này không cho phép người dùng tự chọn vị trí');
+          return PbmsResponseDto.fail(
+            'Gói này không cho phép người dùng tự chọn vị trí',
+          );
         }
         const available = await this.prisma.parkingSlot.count({
           where: {
@@ -160,7 +206,10 @@ export class MonthlySubscriptionsService {
           },
         });
         if (available === 0) {
-          return PbmsResponseDto.fail('Không còn vị trí ô tô trống tại tầng cư dân', 409);
+          return PbmsResponseDto.fail(
+            'Không còn vị trí ô tô trống tại tầng cư dân',
+            409,
+          );
         }
       }
     } else if (fixedSlotId) {
@@ -178,12 +227,30 @@ export class MonthlySubscriptionsService {
         return method.error;
       }
       if (method.value === 'Wallet') {
-        return this.registerWithWallet(userId, pkg, vehicle, selectedSlot, start, end, parkingId);
+        return this.registerWithWallet(
+          userId,
+          pkg,
+          vehicle,
+          selectedSlot,
+          start,
+          end,
+          parkingId,
+        );
       }
     }
 
     try {
       const created = await this.prisma.$transaction(async (tx) => {
+        await lockResource(tx, 'gate-entry');
+        const duplicate = await tx.monthlySubscription.findFirst({
+          where: { vehicleId, status: { in: ['PendingPayment', 'Active'] } },
+        });
+        if (duplicate)
+          throw new AppError(
+            409,
+            'SUBSCRIPTION_EXISTS',
+            'Xe đã có vé tháng hoặc đang chờ thanh toán',
+          );
         const subscription = await createSubscriptionRow(tx, {
           userId,
           vehicle,
@@ -194,25 +261,30 @@ export class MonthlySubscriptionsService {
           fixedSlotId: selectedSlot?.id ?? null,
           parkingId,
           autoRenew: false,
-          status: createPayment ? 'PendingPayment' : 'Active',
+          status: 'PendingPayment',
         });
         const contract = needsContract
           ? await this.contracts.createForSubscription(tx, subscription.id)
           : null;
-        const payment = createPayment && !contract
-          ? await tx.payment.create({
-              data: {
-                userId,
-                subscriptionId: subscription.id,
-                amount: pkg.price,
-                paymentMethod: 'PayOS',
-                paymentStatus: 'Pending',
-                paymentType: 'SubscriptionFee',
-                paymentTime: new Date(),
-                transactionReference: '',
-              },
-            })
-          : null;
+        const payment =
+          createPayment && !contract
+            ? await tx.payment.create({
+                data: {
+                  userId,
+                  subscriptionId: subscription.id,
+                  amount: pkg.price,
+                  paymentMethod: 'PayOS',
+                  paymentStatus: 'Pending',
+                  paymentType: 'SubscriptionFee',
+                  paymentTime: new Date(),
+                  transactionReference: '',
+                },
+              })
+            : null;
+        if (!createPayment) {
+          await activateSubscription(tx, subscription.id);
+          subscription.status = 'Active';
+        }
         return { subscription, payment, contract };
       });
 
@@ -265,7 +337,7 @@ export class MonthlySubscriptionsService {
         201,
       );
     } catch (error: unknown) {
-      return PbmsResponseDto.fail(`Lỗi đăng ký gói: ${errorMessage(error)}`, 500);
+      return PbmsResponseDto.fromError(error);
     }
   }
 
@@ -289,10 +361,17 @@ export class MonthlySubscriptionsService {
       return PbmsResponseDto.fail('Vui lòng nhập UserId');
     }
     const items = await this.loadMany({ userId });
-    return PbmsResponseDto.ok('Lấy gói tháng theo người dùng thành công', items);
+    return PbmsResponseDto.ok(
+      'Lấy gói tháng theo người dùng thành công',
+      items,
+    );
   }
 
-  async getById(id: string, userId: string, role: string): Promise<PbmsResponseDto> {
+  async getById(
+    id: string,
+    userId: string,
+    role: string,
+  ): Promise<PbmsResponseDto> {
     const item = await this.loadOne(id);
     if (!item) {
       return PbmsResponseDto.fail('Không tìm thấy gói tháng', 404);
@@ -300,24 +379,50 @@ export class MonthlySubscriptionsService {
     if (!this.canManage(role) && item.userId !== userId) {
       return PbmsResponseDto.fail('Bạn không có quyền xem gói này', 403);
     }
-    return PbmsResponseDto.ok('Lấy gói tháng thành công', this.mapSubscription(item));
+    return PbmsResponseDto.ok(
+      'Lấy gói tháng thành công',
+      this.mapSubscription(item),
+    );
   }
 
   async update(id: string, dto: object): Promise<PbmsResponseDto> {
-    const existing = await this.prisma.monthlySubscription.findUnique({ where: { id } });
+    const existing = await this.prisma.monthlySubscription.findUnique({
+      where: { id },
+    });
     if (!existing) {
       return PbmsResponseDto.fail('Không tìm thấy gói tháng', 404);
     }
+    const requestedStatus = pbmsPick(dto, 'status', 'Status');
+    const requestedSlot = pbmsPickGuid(dto, 'fixedSlotId', 'FixedSlotId');
+    if (
+      (requestedStatus && requestedStatus !== existing.status) ||
+      (requestedSlot && requestedSlot !== existing.fixedSlotId)
+    )
+      return PbmsResponseDto.fail(
+        'Phải dùng luồng kích hoạt/hủy để đổi trạng thái hoặc ô cố định',
+        409,
+      );
+    const from =
+      pbmsPickDate(dto, 'startDate', 'StartDate') ?? existing.startDate;
+    const to = pbmsPickDate(dto, 'endDate', 'EndDate') ?? existing.endDate;
+    if (from >= to)
+      return PbmsResponseDto.fail('Ngày kết thúc phải sau ngày bắt đầu');
     const updated = await this.prisma.monthlySubscription.update({
       where: { id },
       data: {
-        startDate: pbmsPickDate(dto, 'startDate', 'StartDate') ?? existing.startDate,
+        startDate:
+          pbmsPickDate(dto, 'startDate', 'StartDate') ?? existing.startDate,
         endDate: pbmsPickDate(dto, 'endDate', 'EndDate') ?? existing.endDate,
         status: pbmsPick(dto, 'status', 'Status').trim() || existing.status,
-        fixedSlotId: pbmsPickGuid(dto, 'fixedSlotId', 'FixedSlotId') || existing.fixedSlotId,
+        fixedSlotId:
+          pbmsPickGuid(dto, 'fixedSlotId', 'FixedSlotId') ||
+          existing.fixedSlotId,
       },
     });
-    if (!sameStatus(existing.status, updated.status) || existing.endDate.getTime() !== updated.endDate.getTime()) {
+    if (
+      !sameStatus(existing.status, updated.status) ||
+      existing.endDate.getTime() !== updated.endDate.getTime()
+    ) {
       await this.notifications?.notify(updated.userId, {
         title: 'Vé tháng được cập nhật',
         message: `Ban quản lý đã cập nhật vé tháng của bạn: trạng thái ${updated.status}, hiệu lực đến ${updated.endDate.toLocaleDateString('vi-VN', { timeZone: 'Asia/Ho_Chi_Minh' })}.`,
@@ -326,11 +431,21 @@ export class MonthlySubscriptionsService {
       });
     }
     const item = await this.loadOne(updated.id);
-    return PbmsResponseDto.ok('Cập nhật gói tháng thành công', item ? this.mapSubscription(item) : null);
+    return PbmsResponseDto.ok(
+      'Cập nhật gói tháng thành công',
+      item ? this.mapSubscription(item) : null,
+    );
   }
 
-  async cancel(id: string, userId: string, role: string, dto: object = {}): Promise<PbmsResponseDto> {
-    const existing = await this.prisma.monthlySubscription.findUnique({ where: { id } });
+  async cancel(
+    id: string,
+    userId: string,
+    role: string,
+    dto: object = {},
+  ): Promise<PbmsResponseDto> {
+    const existing = await this.prisma.monthlySubscription.findUnique({
+      where: { id },
+    });
     if (!existing) {
       return PbmsResponseDto.fail('Không tìm thấy gói tháng', 404);
     }
@@ -342,33 +457,50 @@ export class MonthlySubscriptionsService {
     }
     // Khách tự huỷ: xác thực lại mật khẩu (quản lý huỷ hộ thì không cần).
     if (!this.canManage(role)) {
-      const denied = await confirmPassword(this.prisma, this.hashing, userId, dto);
+      const denied = await confirmPassword(
+        this.prisma,
+        this.hashing,
+        userId,
+        dto,
+      );
       if (denied) return denied;
     }
-    await this.prisma.monthlySubscription.update({
-      where: { id },
-      data: { status: 'Cancelled' },
-    });
-    // Đơn chưa thanh toán: đóng link PayOS và thanh toán treo, huỷ hợp đồng chưa ký,
-    // để link cũ không kích hoạt lại vé đã huỷ.
-    if (sameStatus(existing.status, 'PendingPayment')) {
-      await this.closePendingPayments(id);
-      await this.prisma.subscriptionContract.updateMany({
+    await this.prisma.$transaction(async (tx) => {
+      await lockResource(tx, 'subscription:' + id);
+      const fresh = await tx.monthlySubscription.findUniqueOrThrow({
+        where: { id },
+      });
+      await tx.monthlySubscription.update({
+        where: { id },
+        data: { status: 'Cancelled', cancelledAt: new Date() },
+      });
+      await tx.subscriptionContract.updateMany({
         where: { subscriptionId: id, status: 'PendingSignature' },
         data: { status: 'Void' },
       });
-    }
-    if (existing.fixedSlotId) {
-      // Đơn chờ thanh toán chỉ trỏ tới ô, chưa giữ ô: chỉ trả ô đang giữ cho chính chủ vé.
-      await this.prisma.parkingSlot.updateMany({
-        where: { id: existing.fixedSlotId, assignedUserId: existing.userId },
-        data: { status: 'Available', assignedUserId: null },
-      });
-    }
+      if (fresh.fixedSlotId) {
+        const open = await tx.parkingSession.findFirst({
+          where: {
+            actualSlotId: fresh.fixedSlotId,
+            status: { in: ['Active', 'Exception'] },
+          },
+        });
+        await tx.parkingSlot.updateMany({
+          where: { id: fresh.fixedSlotId, assignedUserId: fresh.userId },
+          data: {
+            status: open ? 'Occupied' : 'Available',
+            assignedUserId: null,
+          },
+        });
+      }
+    });
+    if (sameStatus(existing.status, 'PendingPayment'))
+      await this.closePendingPayments(id);
     if (this.canManage(role) && existing.userId !== userId) {
       await this.notifications?.notify(existing.userId, {
         title: 'Vé tháng đã bị huỷ',
-        message: 'Ban quản lý bãi đã huỷ vé tháng của bạn. Liên hệ quầy nếu cần hỗ trợ.',
+        message:
+          'Ban quản lý bãi đã huỷ vé tháng của bạn. Liên hệ quầy nếu cần hỗ trợ.',
         type: 'subscription',
         metadata: { subscriptionId: id, status: 'Cancelled' },
       });
@@ -377,23 +509,35 @@ export class MonthlySubscriptionsService {
   }
 
   /** Khách bật/tắt tự gia hạn bằng ví cho vé của mình. */
-  async setAutoRenew(id: string, userId: string, dto: object): Promise<PbmsResponseDto> {
+  async setAutoRenew(
+    id: string,
+    userId: string,
+    dto: object,
+  ): Promise<PbmsResponseDto> {
     const autoRenew = pbmsPickBool(dto, 'autoRenew', 'AutoRenew');
     if (autoRenew === undefined) {
       return PbmsResponseDto.fail('Vui lòng gửi autoRenew là true hoặc false');
     }
-    const existing = await this.prisma.monthlySubscription.findUnique({ where: { id } });
+    const existing = await this.prisma.monthlySubscription.findUnique({
+      where: { id },
+    });
     if (!existing || existing.userId !== userId) {
       return PbmsResponseDto.fail('Không tìm thấy gói tháng', 404);
     }
     if (sameStatus(existing.status, 'Cancelled')) {
       return PbmsResponseDto.fail('Gói đã được hủy');
     }
-    await this.prisma.monthlySubscription.update({ where: { id }, data: { autoRenew } });
-    return PbmsResponseDto.ok(autoRenew ? 'Đã bật tự gia hạn bằng ví' : 'Đã tắt tự gia hạn', {
-      subscriptionId: id,
-      autoRenew,
+    await this.prisma.monthlySubscription.update({
+      where: { id },
+      data: { autoRenew },
     });
+    return PbmsResponseDto.ok(
+      autoRenew ? 'Đã bật tự gia hạn bằng ví' : 'Đã tắt tự gia hạn',
+      {
+        subscriptionId: id,
+        autoRenew,
+      },
+    );
   }
 
   /** Mỗi ngày 00:05 (giờ VN): vé Active đã qua endDate chuyển sang Expired. */
@@ -411,21 +555,31 @@ export class MonthlySubscriptionsService {
     for (const item of overdue) {
       await this.notifications?.notify(item.userId, {
         title: 'Vé tháng đã hết hạn',
-        message: 'Vé tháng của bạn đã hết hạn. Gia hạn để tiếp tục gửi xe theo tháng.',
+        message:
+          'Vé tháng của bạn đã hết hạn. Gia hạn để tiếp tục gửi xe theo tháng.',
         type: 'subscription',
         metadata: { subscriptionId: item.id, status: 'Expired' },
       });
     }
-    this.logger.log(`Đã chuyển ${overdue.length} vé tháng quá hạn sang Expired`);
+    this.logger.log(
+      `Đã chuyển ${overdue.length} vé tháng quá hạn sang Expired`,
+    );
   }
 
   /**
    * Đóng các thanh toán PayOS đang chờ của một vé: huỷ link trên PayOS, đánh dấu Failed.
    * [checkPaid]: hỏi PayOS trước; nếu một link đã được trả thì giữ nguyên và trả true.
    */
-  private async closePendingPayments(subscriptionId: string, checkPaid = false): Promise<boolean> {
+  private async closePendingPayments(
+    subscriptionId: string,
+    checkPaid = false,
+  ): Promise<boolean> {
     const pending = await this.prisma.payment.findMany({
-      where: { subscriptionId, paymentStatus: 'Pending', paymentMethod: 'PayOS' },
+      where: {
+        subscriptionId,
+        paymentStatus: 'Pending',
+        paymentMethod: 'PayOS',
+      },
     });
     for (const p of pending) {
       const orderCode = p.transactionReference?.trim();
@@ -449,7 +603,9 @@ export class MonthlySubscriptionsService {
   }
 
   async remove(id: string): Promise<PbmsResponseDto> {
-    const existing = await this.prisma.monthlySubscription.findUnique({ where: { id } });
+    const existing = await this.prisma.monthlySubscription.findUnique({
+      where: { id },
+    });
     if (!existing) {
       return PbmsResponseDto.fail('Không tìm thấy gói tháng', 404);
     }
@@ -457,11 +613,15 @@ export class MonthlySubscriptionsService {
       await this.prisma.monthlySubscription.delete({ where: { id } });
       return PbmsResponseDto.ok('Xóa gói tháng thành công');
     } catch (error: unknown) {
-      return PbmsResponseDto.fail(`Lỗi xóa gói tháng: ${errorMessage(error)}`, 500);
+      return PbmsResponseDto.fromError(error);
     }
   }
 
-  async createPayment(subscriptionId: string, userId: string, dto: object = {}): Promise<PbmsResponseDto> {
+  async createPayment(
+    subscriptionId: string,
+    userId: string,
+    dto: object = {},
+  ): Promise<PbmsResponseDto> {
     const method = this.parseCustomerPaymentMethod(dto);
     if (method.error) {
       return method.error;
@@ -480,43 +640,93 @@ export class MonthlySubscriptionsService {
       return PbmsResponseDto.fail('Gói đã được kích hoạt');
     }
     if (!sameStatus(subscription.status, 'PendingPayment')) {
-      return PbmsResponseDto.fail('Gói đã huỷ hoặc hết hạn, vui lòng đăng ký gói mới', 409);
+      return PbmsResponseDto.fail(
+        'Gói đã huỷ hoặc hết hạn, vui lòng đăng ký gói mới',
+        409,
+      );
     }
-    const contract = await this.prisma.subscriptionContract.findUnique({ where: { subscriptionId } });
+    const contract = await this.prisma.subscriptionContract.findUnique({
+      where: { subscriptionId },
+    });
     if (contract && !sameStatus(contract.status, 'Signed')) {
-      return PbmsResponseDto.fail('Vui lòng ký hợp đồng trước khi thanh toán', 409);
+      return PbmsResponseDto.fail(
+        'Vui lòng ký hợp đồng trước khi thanh toán',
+        409,
+      );
     }
     if (method.value === 'Wallet') {
-      // Đổi sang trả bằng ví: link PayOS cũ phải đóng trước, nếu không khách có thể trả hai lần.
-      const paidElsewhere = await this.closePendingPayments(subscriptionId, true);
-      if (paidElsewhere) {
-        return PbmsResponseDto.fail('Đơn này đã được thanh toán qua PayOS, vui lòng chờ hệ thống cập nhật', 409);
+      const pending = await this.prisma.payment.findMany({
+        where: {
+          subscriptionId,
+          paymentMethod: 'PayOS',
+          paymentStatus: 'Pending',
+        },
+      });
+      for (const p of pending) {
+        if (!p.transactionReference)
+          return PbmsResponseDto.fail(
+            'Liên kết đang khởi tạo; vui lòng kiểm tra trạng thái',
+            409,
+          );
+        const status = await this.payos.getPaymentStatus(
+          p.transactionReference,
+        );
+        if (status.status === 'PAID')
+          return PbmsResponseDto.fail(
+            'PayOS đã nhận tiền, vui lòng đồng bộ thanh toán',
+            409,
+          );
+        if (['PENDING', 'PROCESSING'].includes(status.status))
+          await this.payos.cancelPaymentLink(p.transactionReference);
+        const confirmed = await this.payos.getPaymentStatus(
+          p.transactionReference,
+        );
+        if (confirmed.status !== 'CANCELLED' && confirmed.status !== 'EXPIRED')
+          return PbmsResponseDto.fail(
+            'Chưa xác nhận hủy PayOS, không thể trả bằng ví',
+            409,
+          );
+        await this.prisma.payment.updateMany({
+          where: { id: p.id, paymentStatus: 'Pending' },
+          data: { paymentStatus: 'Failed' },
+        });
       }
       return this.payPendingWithWallet(subscription, userId);
     }
-    let payment = await this.prisma.payment.findFirst({
-      where: {
-        subscriptionId,
-        paymentStatus: 'Pending',
-        paymentType: 'SubscriptionFee',
-        paymentMethod: 'PayOS',
-      },
-      orderBy: { paymentTime: 'desc' },
-    });
-    if (!payment) {
-      payment = await this.prisma.payment.create({
-        data: {
-          userId,
+    const payment = await this.prisma.$transaction(async (tx) => {
+      await lockResource(tx, 'subscription:' + subscriptionId);
+      const fresh = await tx.monthlySubscription.findUniqueOrThrow({
+        where: { id: subscriptionId },
+      });
+      if (fresh.status !== 'PendingPayment')
+        throw new AppError(
+          409,
+          'SUBSCRIPTION_STATE_CHANGED',
+          'Gói không còn chờ thanh toán',
+        );
+      const existing = await tx.payment.findFirst({
+        where: {
           subscriptionId,
-          amount: subscription.price,
-          paymentMethod: 'PayOS',
           paymentStatus: 'Pending',
           paymentType: 'SubscriptionFee',
-          paymentTime: new Date(),
-          transactionReference: '',
+          paymentMethod: 'PayOS',
         },
       });
-    }
+      return (
+        existing ??
+        tx.payment.create({
+          data: {
+            userId,
+            subscriptionId,
+            amount: subscription.price,
+            paymentMethod: 'PayOS',
+            paymentStatus: 'Pending',
+            paymentType: 'SubscriptionFee',
+            paymentTime: new Date(),
+          },
+        })
+      );
+    });
     const link = await this.payos.createPaymentLink(payment);
     await this.prisma.payment.update({
       where: { id: payment.id },
@@ -541,7 +751,12 @@ export class MonthlySubscriptionsService {
       price: Prisma.Decimal;
       durationDays: number;
     },
-    vehicle: { id: string; licensePlate: string; vehicleTypeId: string; vehicleType: { typeName: string } },
+    vehicle: {
+      id: string;
+      licensePlate: string;
+      vehicleTypeId: string;
+      vehicleType: { typeName: string };
+    },
     selectedSlot: { id: string; slotCode: string } | null,
     start: Date,
     end: Date,
@@ -549,6 +764,19 @@ export class MonthlySubscriptionsService {
   ): Promise<PbmsResponseDto> {
     try {
       const created = await this.prisma.$transaction(async (tx) => {
+        await lockResource(tx, 'gate-entry');
+        const duplicate = await tx.monthlySubscription.findFirst({
+          where: {
+            vehicleId: vehicle.id,
+            status: { in: ['PendingPayment', 'Active'] },
+          },
+        });
+        if (duplicate)
+          throw new AppError(
+            409,
+            'SUBSCRIPTION_EXISTS',
+            'Xe đã có vé tháng hoặc đang chờ thanh toán',
+          );
         const subscription = await createSubscriptionRow(tx, {
           userId,
           vehicle,
@@ -568,6 +796,7 @@ export class MonthlySubscriptionsService {
             amount: pkg.price,
             paymentMethod: 'Wallet',
             paymentStatus: 'Success',
+            appliedAt: new Date(),
             paymentType: 'SubscriptionFee',
             paymentTime: new Date(),
             transactionReference: `WALLET-${subscription.id.replace(/-/g, '').slice(0, 12)}`,
@@ -584,7 +813,11 @@ export class MonthlySubscriptionsService {
         await activateSubscriptionInTx(tx, subscription.id);
         return { subscription, payment, debit };
       });
-      await this.notifyWalletActivation(userId, created.subscription.id, created.payment.amount);
+      await this.notifyWalletActivation(
+        userId,
+        created.subscription.id,
+        created.payment.amount,
+      );
       return PbmsResponseDto.ok(
         'Thanh toán gói bằng ví thành công',
         {
@@ -602,10 +835,7 @@ export class MonthlySubscriptionsService {
       if (error instanceof InsufficientWalletFundsError) {
         return this.insufficientWallet(userId, pkg.price);
       }
-      if (error instanceof SubscriptionActivationError) {
-        return PbmsResponseDto.fail(error.message, 409);
-      }
-      return PbmsResponseDto.fail(`Lỗi đăng ký gói: ${errorMessage(error)}`, 500);
+      return PbmsResponseDto.fromError(error);
     }
   }
 
@@ -615,6 +845,16 @@ export class MonthlySubscriptionsService {
   ): Promise<PbmsResponseDto> {
     try {
       const paid = await this.prisma.$transaction(async (tx) => {
+        await lockResource(tx, 'subscription:' + subscription.id);
+        const fresh = await tx.monthlySubscription.findUniqueOrThrow({
+          where: { id: subscription.id },
+        });
+        if (fresh.status !== 'PendingPayment')
+          throw new AppError(
+            409,
+            'SUBSCRIPTION_STATE_CHANGED',
+            'Gói không còn chờ thanh toán',
+          );
         const existing = await tx.payment.findFirst({
           where: {
             subscriptionId: subscription.id,
@@ -629,6 +869,7 @@ export class MonthlySubscriptionsService {
               data: {
                 paymentMethod: 'Wallet',
                 paymentStatus: 'Success',
+                appliedAt: new Date(),
                 paymentTime: new Date(),
                 transactionReference:
                   existing.transactionReference?.trim() ||
@@ -642,6 +883,7 @@ export class MonthlySubscriptionsService {
                 amount: subscription.price,
                 paymentMethod: 'Wallet',
                 paymentStatus: 'Success',
+                appliedAt: new Date(),
                 paymentType: 'SubscriptionFee',
                 paymentTime: new Date(),
                 transactionReference: `WALLET-${subscription.id.replace(/-/g, '').slice(0, 12)}`,
@@ -658,7 +900,11 @@ export class MonthlySubscriptionsService {
         await activateSubscriptionInTx(tx, subscription.id);
         return { payment, debit };
       });
-      await this.notifyWalletActivation(userId, subscription.id, paid.payment.amount);
+      await this.notifyWalletActivation(
+        userId,
+        subscription.id,
+        paid.payment.amount,
+      );
       return PbmsResponseDto.ok('Thanh toán gói bằng ví thành công', {
         subscriptionId: subscription.id,
         paymentId: paid.payment.id,
@@ -675,7 +921,7 @@ export class MonthlySubscriptionsService {
       if (error instanceof SubscriptionActivationError) {
         return PbmsResponseDto.fail(error.message, 409);
       }
-      return PbmsResponseDto.fail(`Lỗi thanh toán gói: ${errorMessage(error)}`, 500);
+      return PbmsResponseDto.fromError(error);
     }
   }
 
@@ -692,18 +938,64 @@ export class MonthlySubscriptionsService {
     }
     return {
       value: 'PayOS',
-      error: PbmsResponseDto.fail('Phương thức thanh toán gói chỉ được là PayOS hoặc Wallet'),
+      error: PbmsResponseDto.fail(
+        'Phương thức thanh toán gói chỉ được là PayOS hoặc Wallet',
+      ),
     };
   }
 
-  private async insufficientWallet(userId: string, amount: Prisma.Decimal): Promise<PbmsResponseDto> {
+  private async insufficientWallet(
+    userId: string,
+    amount: Prisma.Decimal,
+  ): Promise<PbmsResponseDto> {
     const snapshot = await this.wallets.getBalanceForUser(userId);
-    return new PbmsResponseDto('Số dư ví không đủ để thanh toán gói này', 400, false, {
-      paymentMethod: 'Wallet',
-      walletId: snapshot.walletId,
-      walletBalance: snapshot.walletBalance,
-      amount: toMoney(amount),
+    return new PbmsResponseDto(
+      'Số dư ví không đủ để thanh toán gói này',
+      402,
+      false,
+      {
+        paymentMethod: 'Wallet',
+        walletId: snapshot.walletId,
+        walletBalance: snapshot.walletBalance,
+        amount: toMoney(amount),
+      },
+    );
+  }
+
+  @Cron('*/1 * * * *')
+  async expireSubscriptions(): Promise<void> {
+    const overdue = await this.prisma.monthlySubscription.findMany({
+      where: { status: 'Active', endDate: { lt: new Date() } },
+      take: 100,
     });
+    for (const item of overdue) {
+      await this.prisma.$transaction(async (tx) => {
+        await lockResource(tx, 'subscription:' + item.id);
+        const fresh = await tx.monthlySubscription.findUniqueOrThrow({
+          where: { id: item.id },
+        });
+        if (fresh.status !== 'Active' || fresh.endDate >= new Date()) return;
+        await tx.monthlySubscription.update({
+          where: { id: item.id },
+          data: { status: 'Expired' },
+        });
+        if (fresh.fixedSlotId) {
+          const busy = await tx.parkingSession.findFirst({
+            where: {
+              actualSlotId: fresh.fixedSlotId,
+              status: { in: ['Active', 'Exception'] },
+            },
+          });
+          await tx.parkingSlot.updateMany({
+            where: { id: fresh.fixedSlotId, assignedUserId: fresh.userId },
+            data: {
+              assignedUserId: null,
+              status: busy ? 'Occupied' : 'Available',
+            },
+          });
+        }
+      });
+    }
   }
 
   private canManage(role: string): boolean {
@@ -751,7 +1043,12 @@ export class MonthlySubscriptionsService {
     status: string;
     user?: { fullName: string | null };
     vehicle?: { licensePlate: string; vehicleType: { typeName: string } };
-    package?: { packageName: string; durationMonths?: number; durationDays?: number; allParkings?: boolean };
+    package?: {
+      packageName: string;
+      durationMonths?: number;
+      durationDays?: number;
+      allParkings?: boolean;
+    };
     fixedSlot?: { slotCode: string } | null;
     parkingId?: string | null;
     parking?: { id: string; name: string } | null;

@@ -1,3 +1,5 @@
+import { AppError } from '../common/errors';
+import { lockResource } from '../common/transactions';
 import { Injectable, Logger, Optional } from '@nestjs/common';
 import { Prisma } from '@prisma/client';
 import { randomBytes } from 'crypto';
@@ -18,7 +20,8 @@ import {
 
 type Tx = Prisma.TransactionClient;
 
-const operatorName = () => process.env.CONTRACT_OPERATOR_NAME?.trim() || 'Ban quản lý Bãi đỗ xe PBMS';
+const operatorName = () =>
+  process.env.CONTRACT_OPERATOR_NAME?.trim() || 'Ban quản lý Bãi đỗ xe PBMS';
 
 const vnDate = (d: Date) =>
   new Intl.DateTimeFormat('vi-VN', {
@@ -66,7 +69,9 @@ export class ContractsService {
       price: Number(sub.price),
       startDate: sub.startDate,
       endDate: sub.endDate,
-      fixedSlot: sub.fixedSlot ? `${sub.fixedSlot.slotCode} (${sub.fixedSlot.floor.floorName})` : null,
+      fixedSlot: sub.fixedSlot
+        ? `${sub.fixedSlot.slotCode} (${sub.fixedSlot.floor.floorName})`
+        : null,
     });
     return tx.subscriptionContract.create({
       data: {
@@ -158,7 +163,9 @@ export class ContractsService {
       contentHash: c.contentHash,
       status: c.status,
       signerName: c.signerName,
-      signatureImage: c.signatureImage ? `data:image/png;base64,${c.signatureImage}` : null,
+      signatureImage: c.signatureImage
+        ? `data:image/png;base64,${c.signatureImage}`
+        : null,
       signedAt: c.signedAt,
       sealKeyId: c.sealKeyId,
       createdAt: c.createdAt,
@@ -167,14 +174,22 @@ export class ContractsService {
 
   private canManage(role: string) {
     const v = role.trim().toLowerCase();
-    return v === 'manager' || v === 'admin' || v === 'staff' || v === 'admin,admin';
+    return (
+      v === 'manager' || v === 'admin' || v === 'staff' || v === 'admin,admin'
+    );
   }
 
-  async getForSubscription(subscriptionId: string, userId: string, role: string): Promise<PbmsResponseDto> {
+  async getForSubscription(
+    subscriptionId: string,
+    userId: string,
+    role: string,
+  ): Promise<PbmsResponseDto> {
     if (isEmptyGuid(subscriptionId)) {
       return PbmsResponseDto.fail('SubscriptionId không hợp lệ');
     }
-    const c = await this.prisma.subscriptionContract.findUnique({ where: { subscriptionId } });
+    const c = await this.prisma.subscriptionContract.findUnique({
+      where: { subscriptionId },
+    });
     if (!c) {
       return PbmsResponseDto.fail('Gói này không có hợp đồng', 404);
     }
@@ -189,14 +204,22 @@ export class ContractsService {
       where: { userId },
       orderBy: { createdAt: 'desc' },
     });
-    return PbmsResponseDto.ok('Lấy danh sách hợp đồng thành công', items.map((c) => this.map(c)));
+    return PbmsResponseDto.ok(
+      'Lấy danh sách hợp đồng thành công',
+      items.map((c) => this.map(c)),
+    );
   }
 
   /**
    * Bên B ký. Trả về hợp đồng đã ký; controller sẽ tạo thanh toán ngay sau đó.
    * Ký lại một hợp đồng đã ký là no-op (để client gọi lại an toàn khi mất mạng).
    */
-  async sign(contractId: string, userId: string, dto: object, signerIp: string | null): Promise<PbmsResponseDto> {
+  async sign(
+    contractId: string,
+    userId: string,
+    dto: object,
+    signerIp: string | null,
+  ): Promise<PbmsResponseDto> {
     if (isEmptyGuid(contractId)) {
       return PbmsResponseDto.fail('ContractId không hợp lệ');
     }
@@ -213,51 +236,88 @@ export class ContractsService {
     if (sameStatus(c.status, 'Signed')) {
       return PbmsResponseDto.ok('Hợp đồng đã được ký trước đó', this.map(c));
     }
-    if (!sameStatus(c.status, 'PendingSignature') || !sameStatus(c.subscription.status, 'PendingPayment')) {
-      return PbmsResponseDto.fail('Hợp đồng không còn ở trạng thái chờ ký', 409);
+    if (
+      !sameStatus(c.status, 'PendingSignature') ||
+      !sameStatus(c.subscription.status, 'PendingPayment')
+    ) {
+      return PbmsResponseDto.fail(
+        'Hợp đồng không còn ở trạng thái chờ ký',
+        409,
+      );
     }
-    const agreed = (dto as Record<string, unknown>).agreed ?? (dto as Record<string, unknown>).Agreed;
+    const agreed =
+      (dto as Record<string, unknown>).agreed ??
+      (dto as Record<string, unknown>).Agreed;
     if (agreed !== true && String(agreed).toLowerCase() !== 'true') {
-      return PbmsResponseDto.fail('Vui lòng xác nhận đã đọc và đồng ý các điều khoản');
+      return PbmsResponseDto.fail(
+        'Vui lòng xác nhận đã đọc và đồng ý các điều khoản',
+      );
     }
     if (pbmsPick(dto, 'contentHash', 'ContentHash').trim() !== c.contentHash) {
-      return PbmsResponseDto.fail('Nội dung hợp đồng đã thay đổi, vui lòng tải lại trước khi ký', 409);
+      return PbmsResponseDto.fail(
+        'Nội dung hợp đồng đã thay đổi, vui lòng tải lại trước khi ký',
+        409,
+      );
     }
-    const signerName = pbmsPick(dto, 'signerName', 'SignerName').trim().slice(0, 100);
+    const signerName = pbmsPick(dto, 'signerName', 'SignerName')
+      .trim()
+      .slice(0, 100);
     if (signerName.length < 2) {
       return PbmsResponseDto.fail('Vui lòng nhập họ tên người ký');
     }
-    const png = decodeSignaturePng(pbmsPick(dto, 'signatureImage', 'SignatureImage'));
+    const png = await decodeSignaturePng(
+      pbmsPick(dto, 'signatureImage', 'SignatureImage'),
+    );
     if (!png) {
-      return PbmsResponseDto.fail('Chữ ký không hợp lệ (ảnh PNG, tối đa 200KB)');
+      return PbmsResponseDto.fail(
+        'Chữ ký không hợp lệ (ảnh PNG, tối đa 200KB)',
+      );
     }
     const sealKey = readSealKey();
     if (!sealKey.key) {
-      this.logger.error(`Không ký được hợp đồng ${c.contractNumber}: ${sealKeyProblemMessage(sealKey.problem)}`);
+      this.logger.error(
+        `Không ký được hợp đồng ${c.contractNumber}: ${sealKeyProblemMessage(sealKey.problem)}`,
+      );
       return PbmsResponseDto.fail(sealKeyProblemMessage(sealKey.problem), 503);
     }
     const key = sealKey.key;
     const signedAt = new Date();
     const signatureImageHash = sha256Hex(png);
     const seal = signSeal(
-      sealPayload({ contractNumber: c.contractNumber, contentHash: c.contentHash, signatureImageHash, signedAt, userId }),
+      sealPayload({
+        contractNumber: c.contractNumber,
+        contentHash: c.contentHash,
+        signatureImageHash,
+        signedAt,
+        userId,
+      }),
       key,
     );
     // Cập nhật có điều kiện: hai lần bấm ký song song chỉ ghi nhận một lần.
-    const moved = await this.prisma.subscriptionContract.updateMany({
-      where: { id: c.id, status: 'PendingSignature' },
-      data: {
-        status: 'Signed',
-        signerName,
-        signatureImage: png.toString('base64'),
-        signatureImageHash,
-        signedAt,
-        signerIp: signerIp?.slice(0, 45) ?? null,
-        seal,
-        sealKeyId: key.keyId,
-      },
+    const moved = await this.prisma.$transaction(async (tx) => {
+      await lockResource(tx, 'subscription:' + c.subscriptionId);
+      const subscription = await tx.monthlySubscription.findUniqueOrThrow({
+        where: { id: c.subscriptionId },
+      });
+      if (subscription.status !== 'PendingPayment')
+        throw new AppError(409, 'CONTRACT_CLOSED', 'Vé tháng không còn chờ ký');
+      return tx.subscriptionContract.updateMany({
+        where: { id: c.id, status: 'PendingSignature' },
+        data: {
+          status: 'Signed',
+          signerName,
+          signatureImage: png.toString('base64'),
+          signatureImageHash,
+          signedAt,
+          signerIp: signerIp?.slice(0, 45) ?? null,
+          seal,
+          sealKeyId: key.keyId,
+        },
+      });
     });
-    const fresh = await this.prisma.subscriptionContract.findUniqueOrThrow({ where: { id: c.id } });
+    const fresh = await this.prisma.subscriptionContract.findUniqueOrThrow({
+      where: { id: c.id },
+    });
     if (moved.count === 1) {
       await this.notifications?.notify(userId, {
         title: 'Đã ký hợp đồng vé tháng',
@@ -267,29 +327,47 @@ export class ContractsService {
       });
     }
     return PbmsResponseDto.ok(
-      moved.count === 1 ? 'Ký hợp đồng thành công' : 'Hợp đồng đã được ký trước đó',
+      moved.count === 1
+        ? 'Ký hợp đồng thành công'
+        : 'Hợp đồng đã được ký trước đó',
       this.map(fresh),
     );
   }
 
   /** Kiểm tra hợp đồng: nội dung còn nguyên vẹn và niêm phong hợp lệ. */
-  async verify(contractId: string, userId: string, role: string): Promise<PbmsResponseDto> {
+  async verify(
+    contractId: string,
+    userId: string,
+    role: string,
+  ): Promise<PbmsResponseDto> {
     if (isEmptyGuid(contractId)) {
       return PbmsResponseDto.fail('ContractId không hợp lệ');
     }
-    const c = await this.prisma.subscriptionContract.findUnique({ where: { id: contractId } });
+    const c = await this.prisma.subscriptionContract.findUnique({
+      where: { id: contractId },
+    });
     if (!c) {
       return PbmsResponseDto.fail('Không tìm thấy hợp đồng', 404);
     }
     if (c.userId !== userId && !this.canManage(role)) {
-      return PbmsResponseDto.fail('Bạn không có quyền kiểm tra hợp đồng này', 403);
+      return PbmsResponseDto.fail(
+        'Bạn không có quyền kiểm tra hợp đồng này',
+        403,
+      );
     }
     const contentIntact = sha256Hex(c.content) === c.contentHash;
     let signatureIntact = false;
     let sealValid = false;
     let keyMatches = false;
-    if (sameStatus(c.status, 'Signed') && c.signatureImage && c.signedAt && c.seal) {
-      signatureIntact = sha256Hex(Buffer.from(c.signatureImage, 'base64')) === c.signatureImageHash;
+    if (
+      sameStatus(c.status, 'Signed') &&
+      c.signatureImage &&
+      c.signedAt &&
+      c.seal
+    ) {
+      signatureIntact =
+        sha256Hex(Buffer.from(c.signatureImage, 'base64')) ===
+        c.signatureImageHash;
       const key = loadSealKey();
       keyMatches = !!key && key.keyId === c.sealKeyId;
       if (key && keyMatches) {
@@ -297,7 +375,9 @@ export class ContractsService {
           sealPayload({
             contractNumber: c.contractNumber,
             contentHash: sha256Hex(c.content),
-            signatureImageHash: sha256Hex(Buffer.from(c.signatureImage, 'base64')),
+            signatureImageHash: sha256Hex(
+              Buffer.from(c.signatureImage, 'base64'),
+            ),
             signedAt: c.signedAt,
             userId: c.userId,
           }),
@@ -330,9 +410,11 @@ export class ContractsService {
     return PbmsResponseDto.ok('Lấy khoá công khai thành công', {
       keyId: key.keyId,
       algorithm: 'ECDSA P-256 SHA-256',
-      publicKeyPem: key.publicKey.export({ type: 'spki', format: 'pem' }).toString(),
-      payloadFormat: 'PBMS-CONTRACT|v1|contractNumber|sha256(content)|sha256(signaturePng)|signedAtISO|userId',
+      publicKeyPem: key.publicKey
+        .export({ type: 'spki', format: 'pem' })
+        .toString(),
+      payloadFormat:
+        'PBMS-CONTRACT|v1|contractNumber|sha256(content)|sha256(signaturePng)|signedAtISO|userId',
     });
   }
-
 }

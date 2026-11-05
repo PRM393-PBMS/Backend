@@ -1,3 +1,5 @@
+import { randomUUID } from 'node:crypto';
+import { requestContext } from './common/errors';
 import { ValidationPipe } from '@nestjs/common';
 import { NestFactory } from '@nestjs/core';
 import { NestExpressApplication } from '@nestjs/platform-express';
@@ -32,12 +34,23 @@ async function bootstrap() {
   app.enableCors({
     origin: corsOrigin,
     credentials: true,
-    allowedHeaders: ['Content-Type', 'Authorization'],
+    allowedHeaders: ['Content-Type', 'Authorization', 'Idempotency-Key'],
     methods: ['GET', 'HEAD', 'PUT', 'PATCH', 'POST', 'DELETE', 'OPTIONS'],
   });
 
+  app.enableShutdownHooks();
+  app.use(
+    (_req: unknown, res: import('express').Response, next: () => void) => {
+      const requestId = randomUUID();
+      res.setHeader('X-Request-Id', requestId);
+      requestContext.run({ requestId }, next);
+    },
+  );
+
   const uploadDir = process.env.UPLOAD_DIR ?? './public/uploads';
-  const uploadAbs = isAbsolute(uploadDir) ? uploadDir : resolve(process.cwd(), uploadDir);
+  const uploadAbs = isAbsolute(uploadDir)
+    ? uploadDir
+    : resolve(process.cwd(), uploadDir);
   await mkdir(uploadAbs, { recursive: true });
   const publicRoot = dirname(uploadAbs);
   app.useStaticAssets(publicRoot, { prefix: '/' });
@@ -45,9 +58,9 @@ async function bootstrap() {
   // 1. Kích hoạt ValidationPipe toàn cục: whitelist strip trường lạ, transform tự động
   app.useGlobalPipes(
     new ValidationPipe({
-      whitelist: true,            // Loại bỏ các trường không khai báo trong DTO (chống Mass Assignment)
+      whitelist: true, // Loại bỏ các trường không khai báo trong DTO (chống Mass Assignment)
       forbidNonWhitelisted: true, // Ném BadRequestException nếu client cố tình truyền trường lạ
-      transform: true,            // Ép kiểu tự động theo class-transformer
+      transform: true, // Ép kiểu tự động theo class-transformer
     }),
   );
 
@@ -76,6 +89,23 @@ async function bootstrap() {
     .build();
 
   const document = SwaggerModule.createDocument(app, config);
+  for (const path of Object.values(document.paths))
+    for (const operation of Object.values(path ?? {})) {
+      if (
+        !operation ||
+        typeof operation !== 'object' ||
+        !('responses' in operation)
+      )
+        continue;
+      for (const status of [
+        400, 401, 402, 403, 404, 409, 413, 415, 422, 429, 500, 502, 503, 504,
+      ]) {
+        operation.responses[String(status)] ??= {
+          description:
+            'Lỗi PBMS: statusCode, message, isSuccess=false, result, errorCode, requestId',
+        };
+      }
+    }
   hideLegacyPascalCaseProperties(document);
   SwaggerModule.setup('api/docs', app, document, {
     swaggerOptions: {
@@ -85,7 +115,9 @@ async function bootstrap() {
 
   const port = process.env.PORT ?? 3000;
   await app.listen(port);
-  console.log(`🚀 PRM393 Backend Application đang chạy tại: http://localhost:${port}`);
+  console.log(
+    `🚀 PRM393 Backend Application đang chạy tại: http://localhost:${port}`,
+  );
   console.log(`📚 Tài liệu Swagger UI: http://localhost:${port}/api/docs`);
 }
 void bootstrap();

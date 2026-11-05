@@ -1,4 +1,5 @@
-import { Injectable, Logger } from '@nestjs/common';
+import { logFailure } from '../common/errors';
+import { Injectable } from '@nestjs/common';
 import { Prisma } from '@prisma/client';
 import { PbmsResponseDto } from '../common/dto/pbms-response.dto';
 import { isEmptyGuid } from '../common/pbms-fields';
@@ -45,11 +46,12 @@ const PAGE_SIZE = 50;
  */
 @Injectable()
 export class NotificationsService {
-  private readonly logger = new Logger(NotificationsService.name);
-
   constructor(private readonly prisma: PrismaService) {}
 
-  async notify(userId: string | null | undefined, input: NotificationInput): Promise<void> {
+  async notify(
+    userId: string | null | undefined,
+    input: NotificationInput,
+  ): Promise<void> {
     if (!userId || isEmptyGuid(userId)) return;
     try {
       await this.prisma.notification.create({
@@ -58,16 +60,20 @@ export class NotificationsService {
           title: input.title.slice(0, 120),
           message: input.message.slice(0, 500),
           type: input.type,
-          metadata: (input.metadata ?? undefined) as Prisma.InputJsonValue | undefined,
+          metadata: (input.metadata ?? undefined) as
+            Prisma.InputJsonValue | undefined,
         },
       });
     } catch (error: unknown) {
-      this.logger.warn(`Không ghi được thông báo cho ${userId}: ${String(error)}`);
+      logFailure(error);
     }
   }
 
   /** Báo cho chủ xe theo biển số (xe vãng lai chưa đăng ký thì bỏ qua). */
-  async notifyPlateOwner(plate: string | null | undefined, input: NotificationInput): Promise<void> {
+  async notifyPlateOwner(
+    plate: string | null | undefined,
+    input: NotificationInput,
+  ): Promise<void> {
     const licensePlate = normalizeLicensePlate(plate);
     if (!licensePlate) return;
     try {
@@ -77,7 +83,7 @@ export class NotificationsService {
       });
       await this.notify(vehicle?.userId, input);
     } catch (error: unknown) {
-      this.logger.warn(`Không tìm được chủ xe ${licensePlate}: ${String(error)}`);
+      logFailure(error);
     }
   }
 
@@ -108,7 +114,8 @@ export class NotificationsService {
   }
 
   async markRead(userId: string, id: string): Promise<PbmsResponseDto> {
-    if (isEmptyGuid(id)) return PbmsResponseDto.fail('NotificationId không hợp lệ');
+    if (isEmptyGuid(id))
+      return PbmsResponseDto.fail('NotificationId không hợp lệ');
     const { count } = await this.prisma.notification.updateMany({
       where: { id, userId },
       data: { isRead: true },
@@ -123,12 +130,17 @@ export class NotificationsService {
       where: { userId, isRead: false },
       data: { isRead: true },
     });
-    return PbmsResponseDto.ok('Đã đánh dấu tất cả thông báo đã đọc', { updated: count });
+    return PbmsResponseDto.ok('Đã đánh dấu tất cả thông báo đã đọc', {
+      updated: count,
+    });
   }
 
   async remove(userId: string, id: string): Promise<PbmsResponseDto> {
-    if (isEmptyGuid(id)) return PbmsResponseDto.fail('NotificationId không hợp lệ');
-    const { count } = await this.prisma.notification.deleteMany({ where: { id, userId } });
+    if (isEmptyGuid(id))
+      return PbmsResponseDto.fail('NotificationId không hợp lệ');
+    const { count } = await this.prisma.notification.deleteMany({
+      where: { id, userId },
+    });
     return count === 0
       ? PbmsResponseDto.fail('Không tìm thấy thông báo', 404)
       : PbmsResponseDto.ok('Đã xoá thông báo');

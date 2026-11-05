@@ -4,7 +4,10 @@ import { ContractsService } from './contracts.service';
 import { Prisma } from '@prisma/client';
 import { PrismaService } from '../prisma/prisma.service';
 import { PayosService } from '../integrations/payos-files.service';
-import { InsufficientWalletFundsError, WalletsService } from '../wallets/wallets.service';
+import {
+  InsufficientWalletFundsError,
+  WalletsService,
+} from '../wallets/wallets.service';
 import { MonthlySubscriptionsService } from './monthly-subscriptions.service';
 
 describe('MonthlySubscriptionsService register payment methods', () => {
@@ -29,6 +32,9 @@ describe('MonthlySubscriptionsService register payment methods', () => {
 
   let service: MonthlySubscriptionsService;
   let prisma: {
+    $queryRaw: jest.Mock;
+    wallet: { findUnique: jest.Mock };
+    subscriptionContract: { findUnique: jest.Mock };
     subscriptionPackage: { findUnique: jest.Mock };
     vehicle: { findFirst: jest.Mock };
     monthlySubscription: {
@@ -40,36 +46,44 @@ describe('MonthlySubscriptionsService register payment methods', () => {
     };
     payment: { create: jest.Mock; update: jest.Mock };
     user: { findUnique: jest.Mock };
-    wallet: { findUnique: jest.Mock };
     parking: { findMany: jest.Mock; findUnique: jest.Mock };
     $transaction: jest.Mock;
-    $queryRaw: jest.Mock;
   };
   let payos: { createPaymentLink: jest.Mock };
   let wallets: { debitForUser: jest.Mock; getBalanceForUser: jest.Mock };
 
   beforeEach(async () => {
     prisma = {
+      $queryRaw: jest.fn().mockResolvedValue([]),
+      wallet: { findUnique: jest.fn() },
+      subscriptionContract: { findUnique: jest.fn().mockResolvedValue(null) },
       subscriptionPackage: { findUnique: jest.fn().mockResolvedValue(pkg) },
       // Hệ thống một bãi: vé tự gắn vào bãi đó.
       parking: {
-        findMany: jest.fn().mockResolvedValue([{ id: 'c56a4180-65aa-42ec-a945-5fd21dec0538' }]),
-        findUnique: jest.fn().mockResolvedValue({ id: 'c56a4180-65aa-42ec-a945-5fd21dec0538' }),
+        findMany: jest
+          .fn()
+          .mockResolvedValue([{ id: 'c56a4180-65aa-42ec-a945-5fd21dec0538' }]),
+        findUnique: jest
+          .fn()
+          .mockResolvedValue({ id: 'c56a4180-65aa-42ec-a945-5fd21dec0538' }),
       },
       vehicle: { findFirst: jest.fn().mockResolvedValue(vehicle) },
       monthlySubscription: {
+        findUnique: jest.fn().mockResolvedValue({
+          id: 'sub-1',
+          status: 'PendingPayment',
+          package: pkg,
+          vehicle,
+          fixedSlotId: null,
+        }),
         findFirst: jest.fn().mockResolvedValue(null),
         create: jest.fn(),
         update: jest.fn(),
-        findUnique: jest.fn(),
-        updateMany: jest.fn(),
+        updateMany: jest.fn().mockResolvedValue({ count: 1 }),
       },
       payment: { create: jest.fn(), update: jest.fn() },
       user: { findUnique: jest.fn() },
-      wallet: { findUnique: jest.fn() },
       $transaction: jest.fn(),
-      // Database đã migrate đúng: không còn cột cũ của bảng vé tháng.
-      $queryRaw: jest.fn().mockResolvedValue([]),
     };
     payos = { createPaymentLink: jest.fn() };
     wallets = {
@@ -86,8 +100,17 @@ describe('MonthlySubscriptionsService register payment methods', () => {
         { provide: PrismaService, useValue: prisma },
         { provide: PayosService, useValue: payos },
         { provide: WalletsService, useValue: wallets },
-        { provide: ContractsService, useValue: { createForSubscription: jest.fn() } },
-        { provide: HashingService, useValue: { compare: jest.fn().mockResolvedValue(true), hash: jest.fn() } },
+        {
+          provide: ContractsService,
+          useValue: { createForSubscription: jest.fn() },
+        },
+        {
+          provide: HashingService,
+          useValue: {
+            compare: jest.fn().mockResolvedValue(true),
+            hash: jest.fn(),
+          },
+        },
       ],
     }).compile();
     service = module.get(MonthlySubscriptionsService);
@@ -100,12 +123,14 @@ describe('MonthlySubscriptionsService register payment methods', () => {
       true,
     );
     expect(result.isSuccess).toBe(false);
-    expect(result.message).toBe('Phương thức thanh toán gói chỉ được là PayOS hoặc Wallet');
+    expect(result.message).toBe(
+      'Phương thức thanh toán gói chỉ được là PayOS hoặc Wallet',
+    );
   });
 
   it('returns PayOS checkout fields when paymentMethod is omitted', async () => {
-    prisma.$transaction.mockImplementation(async (fn: (tx: typeof prisma) => Promise<unknown>) =>
-      fn(prisma),
+    prisma.$transaction.mockImplementation(
+      async (fn: (tx: typeof prisma) => Promise<unknown>) => fn(prisma),
     );
     prisma.monthlySubscription.create.mockResolvedValue({
       id: 'sub-1',
@@ -126,7 +151,11 @@ describe('MonthlySubscriptionsService register payment methods', () => {
       orderCode: '1727',
     });
 
-    const result = await service.register(userId, { packageId, vehicleId: vehicle.id }, true);
+    const result = await service.register(
+      userId,
+      { packageId, vehicleId: vehicle.id },
+      true,
+    );
 
     expect(result.statusCode).toBe(201);
     expect(result.result).toEqual(
@@ -139,8 +168,8 @@ describe('MonthlySubscriptionsService register payment methods', () => {
   });
 
   it('returns remaining balance details when the wallet cannot cover the package', async () => {
-    prisma.$transaction.mockImplementation(async (fn: (tx: typeof prisma) => Promise<unknown>) =>
-      fn(prisma),
+    prisma.$transaction.mockImplementation(
+      async (fn: (tx: typeof prisma) => Promise<unknown>) => fn(prisma),
     );
     prisma.monthlySubscription.create.mockResolvedValue({
       id: 'sub-1',
@@ -163,7 +192,7 @@ describe('MonthlySubscriptionsService register payment methods', () => {
     );
 
     expect(result.isSuccess).toBe(false);
-    expect(result.statusCode).toBe(400);
+    expect(result.statusCode).toBe(402);
     expect(result.message).toBe('Số dư ví không đủ để thanh toán gói này');
     expect(result.result).toEqual({
       paymentMethod: 'Wallet',
@@ -175,8 +204,8 @@ describe('MonthlySubscriptionsService register payment methods', () => {
   });
 
   it('activates the subscription from wallet without creating a PayOS link', async () => {
-    prisma.$transaction.mockImplementation(async (fn: (tx: typeof prisma) => Promise<unknown>) =>
-      fn(prisma),
+    prisma.$transaction.mockImplementation(
+      async (fn: (tx: typeof prisma) => Promise<unknown>) => fn(prisma),
     );
     prisma.monthlySubscription.create.mockResolvedValue({
       id: 'sub-1',

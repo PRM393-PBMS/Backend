@@ -9,10 +9,9 @@ export class VehicleTypesService {
   constructor(private readonly prisma: PrismaService) {}
 
   async getAll(): Promise<PbmsResponseDto> {
-    const items = await this.prisma.vehicleType.findMany({ orderBy: { typeName: 'asc' } });
-    if (items.length === 0) {
-      return PbmsResponseDto.fail('Không tìm thấy loại phương tiện nào', 404);
-    }
+    const items = await this.prisma.vehicleType.findMany({
+      orderBy: { typeName: 'asc' },
+    });
     return PbmsResponseDto.ok(
       'Lấy danh sách loại phương tiện thành công',
       items.map((v) => this.map(v)),
@@ -27,7 +26,10 @@ export class VehicleTypesService {
     if (!item) {
       return PbmsResponseDto.fail('Không tìm thấy loại phương tiện', 404);
     }
-    return PbmsResponseDto.ok('Lấy loại phương tiện thành công', this.map(item));
+    return PbmsResponseDto.ok(
+      'Lấy loại phương tiện thành công',
+      this.map(item),
+    );
   }
 
   async create(dto: object): Promise<PbmsResponseDto> {
@@ -39,15 +41,20 @@ export class VehicleTypesService {
       where: { typeName: { equals: typeName, mode: 'insensitive' } },
     });
     if (exists) {
-      return PbmsResponseDto.fail('Tên loại phương tiện đã tồn tại');
+      return PbmsResponseDto.fail('Tên loại phương tiện đã tồn tại', 409);
     }
     const dimensions = pbmsPick(dto, 'dimensions', 'Dimensions').trim() || null;
     try {
-      const item = await this.prisma.vehicleType.create({ data: { typeName, dimensions } });
-      return PbmsResponseDto.ok('Tạo loại phương tiện thành công', this.map(item), 201);
+      const item = await this.prisma.vehicleType.create({
+        data: { typeName, dimensions },
+      });
+      return PbmsResponseDto.ok(
+        'Tạo loại phương tiện thành công',
+        this.map(item),
+        201,
+      );
     } catch (error: unknown) {
-      const message = error instanceof Error ? error.message : 'unknown';
-      return PbmsResponseDto.fail(`Lỗi tạo loại phương tiện: ${message}`, 500);
+      return PbmsResponseDto.fromError(error);
     }
   }
 
@@ -56,7 +63,9 @@ export class VehicleTypesService {
     if (isEmptyGuid(id)) {
       return PbmsResponseDto.fail('Dữ liệu không hợp lệ');
     }
-    const existing = await this.prisma.vehicleType.findUnique({ where: { id } });
+    const existing = await this.prisma.vehicleType.findUnique({
+      where: { id },
+    });
     if (!existing) {
       return PbmsResponseDto.fail('Không tìm thấy loại phương tiện', 404);
     }
@@ -65,10 +74,13 @@ export class VehicleTypesService {
       return PbmsResponseDto.fail('Vui lòng nhập TypeName');
     }
     const dup = await this.prisma.vehicleType.findFirst({
-      where: { typeName: { equals: typeName, mode: 'insensitive' }, NOT: { id } },
+      where: {
+        typeName: { equals: typeName, mode: 'insensitive' },
+        NOT: { id },
+      },
     });
     if (dup) {
-      return PbmsResponseDto.fail('TypeName đã tồn tại');
+      return PbmsResponseDto.fail('TypeName đã tồn tại', 409);
     }
     try {
       const item = await this.prisma.vehicleType.update({
@@ -78,10 +90,12 @@ export class VehicleTypesService {
           dimensions: pbmsPick(dto, 'dimensions', 'Dimensions').trim() || null,
         },
       });
-      return PbmsResponseDto.ok('Cập nhật loại phương tiện thành công', this.map(item));
+      return PbmsResponseDto.ok(
+        'Cập nhật loại phương tiện thành công',
+        this.map(item),
+      );
     } catch (error: unknown) {
-      const message = error instanceof Error ? error.message : 'unknown';
-      return PbmsResponseDto.fail(`Lỗi cập nhật loại phương tiện: ${message}`, 500);
+      return PbmsResponseDto.fromError(error);
     }
   }
 
@@ -89,7 +103,9 @@ export class VehicleTypesService {
     if (isEmptyGuid(id)) {
       return PbmsResponseDto.fail('Vui lòng nhập VehicleTypeId');
     }
-    const existing = await this.prisma.vehicleType.findUnique({ where: { id } });
+    const existing = await this.prisma.vehicleType.findUnique({
+      where: { id },
+    });
     if (!existing) {
       return PbmsResponseDto.fail('Không tìm thấy loại phương tiện', 404);
     }
@@ -98,14 +114,17 @@ export class VehicleTypesService {
       return PbmsResponseDto.ok('Xóa loại phương tiện thành công');
     } catch (error: unknown) {
       if (error instanceof Prisma.PrismaClientKnownRequestError) {
-        return PbmsResponseDto.fail(`Lỗi xóa loại phương tiện: ${error.message}`, 500);
+        return PbmsResponseDto.fromError(error);
       }
-      const message = error instanceof Error ? error.message : 'unknown';
-      return PbmsResponseDto.fail(`Lỗi xóa loại phương tiện: ${message}`, 500);
+      return PbmsResponseDto.fromError(error);
     }
   }
 
-  private map(item: { id: string; typeName: string; dimensions: string | null }) {
+  private map(item: {
+    id: string;
+    typeName: string;
+    dimensions: string | null;
+  }) {
     return {
       vehicleTypeId: item.id,
       typeName: item.typeName,

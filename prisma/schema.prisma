@@ -154,12 +154,12 @@ model Vehicle {
 }
 
 model Floor {
-  id                     String  @id @default(uuid()) @db.Uuid
-  parkingId              String  @map("parking_id") @db.Uuid
-  floorName              String  @unique @map("floor_name") @db.VarChar(50)
-  dedicatedVehicleTypeId String? @map("dedicated_vehicle_type_id") @db.Uuid
-  totalCapacity          Int     @map("total_capacity")
-  isResident             Boolean @default(false) @map("is_resident")
+  id                     String    @id @default(uuid()) @db.Uuid
+  parkingId              String    @map("parking_id") @db.Uuid
+  floorName              String    @unique @map("floor_name") @db.VarChar(50)
+  dedicatedVehicleTypeId String?   @map("dedicated_vehicle_type_id") @db.Uuid
+  totalCapacity          Int       @map("total_capacity")
+  isResident             Boolean   @default(false) @map("is_resident")
   /// Sơ đồ đã xuất bản (app khách đọc) và bản nháp admin đang vẽ: JSON lưới (src/parking/floor-layout.ts).
   layout                 Json?
   layoutDraft            Json?     @map("layout_draft")
@@ -276,6 +276,7 @@ model SubscriptionPackage {
 
   vehicleType          VehicleType           @relation(fields: [vehicleTypeId], references: [id], onDelete: Restrict)
   monthlySubscriptions MonthlySubscription[]
+  renewalPayments      Payment[]             @relation("RenewalPackage")
 
   @@index([vehicleTypeId], name: "idx_subscription_packages_vehicle_type_id")
   @@map("subscription_packages")
@@ -421,30 +422,48 @@ model ParkingSession {
   @@map("parking_sessions")
 }
 
+model IdempotencyRecord {
+  id          String   @id @default(uuid()) @db.Uuid
+  userId      String   @map("user_id") @db.Uuid
+  operation   String   @db.VarChar(255)
+  key         String   @db.VarChar(128)
+  payloadHash String   @map("payload_hash") @db.VarChar(64)
+  response    Json?
+  createdAt   DateTime @default(now()) @map("created_at") @db.Timestamptz(6)
+
+  @@unique([userId, operation, key])
+  @@map("idempotency_records")
+}
+
 model Payment {
-  id                   String   @id @default(uuid()) @db.Uuid
-  userId               String?  @map("user_id") @db.Uuid
-  sessionId            String?  @map("session_id") @db.Uuid
-  reservationId        String?  @map("reservation_id") @db.Uuid
-  subscriptionId       String?  @map("subscription_id") @db.Uuid
-  amount               Decimal  @db.Decimal(15, 2)
+  id                   String               @id @default(uuid()) @db.Uuid
+  userId               String?              @map("user_id") @db.Uuid
+  sessionId            String?              @map("session_id") @db.Uuid
+  reservationId        String?              @map("reservation_id") @db.Uuid
+  subscriptionId       String?              @map("subscription_id") @db.Uuid
+  amount               Decimal              @db.Decimal(15, 2)
   /// PaymentMethod: PayOS, Cash, Wallet. required varchar(20).
-  paymentMethod        String   @map("payment_method") @db.VarChar(20)
+  paymentMethod        String               @map("payment_method") @db.VarChar(20)
   /// PaymentType: Deposit, CheckoutFee, SubscriptionFee, SubscriptionRenewal, WalletTopUp. varchar(30) nullable.
-  paymentType          String?  @map("payment_type") @db.VarChar(30)
-  paymentTime          DateTime @map("payment_time") @db.Timestamptz(6)
+  paymentType          String?              @map("payment_type") @db.VarChar(30)
+  paymentTime          DateTime             @map("payment_time") @db.Timestamptz(6)
   /// PaymentStatus: Pending, Success, Failed. Default Pending. varchar(10).
-  paymentStatus        String   @default("Pending") @map("payment_status") @db.VarChar(10)
-  transactionReference String?  @map("transaction_reference") @db.VarChar(100)
+  paymentStatus        String               @default("Pending") @map("payment_status") @db.VarChar(10)
+  transactionReference String?              @map("transaction_reference") @db.VarChar(100)
   /// Gói khách chọn khi gia hạn: thời hạn cộng thêm lấy theo gói đã trả, không theo gói cũ của vé.
-  packageId            String?  @map("package_id") @db.Uuid
+  packageId            String?              @map("package_id") @db.Uuid
   /// Mã khuyến mãi khách nhập khi nạp ví: tiền tặng cộng vào ngăn BONUS khi tiền nạp về.
-  promoCodeId          String?  @map("promo_code_id") @db.Uuid
+  promoCodeId          String?              @map("promo_code_id") @db.Uuid
   /// Tiền mặt: nhân viên xác nhận đã nhận tiền và cổng thu. Null với khoản nhập tay hoặc trước khi có sổ quỹ.
-  collectedById        String?  @map("collected_by_id") @db.Uuid
-  collectedGateId      String?  @map("collected_gate_id") @db.Uuid
+  collectedById        String?              @map("collected_by_id") @db.Uuid
+  collectedGateId      String?              @map("collected_gate_id") @db.Uuid
   /// Phiếu nộp tiền chứa khoản này; null = nhân viên thu còn đang giữ tiền.
-  cashHandoverId       String?  @map("cash_handover_id") @db.Uuid
+  cashHandoverId       String?              @map("cash_handover_id") @db.Uuid
+  renewalPackageId     String?              @map("renewal_package_id") @db.Uuid
+  renewalDurationDays  Int?                 @map("renewal_duration_days")
+  renewalPackage       SubscriptionPackage? @relation("RenewalPackage", fields: [renewalPackageId], references: [id], onDelete: Restrict)
+  appliedAt            DateTime?            @map("applied_at") @db.Timestamptz(6)
+  reconciliationReason String?              @map("reconciliation_reason") @db.VarChar(120)
 
   user               User?                @relation(fields: [userId], references: [id], onDelete: SetNull)
   cashHandover       CashHandover?        @relation(fields: [cashHandoverId], references: [id], onDelete: SetNull)
@@ -460,6 +479,7 @@ model Payment {
   @@index([transactionReference], name: "idx_payments_transaction_reference")
   @@index([paymentStatus], name: "idx_payments_payment_status")
   @@index([collectedById, cashHandoverId], name: "idx_payments_cash_holding")
+  @@index([renewalPackageId], map: "payments_renewal_package_idx")
   @@map("payments")
 }
 
@@ -505,21 +525,21 @@ model Wallet {
 
 /// Mã khuyến mãi nạp ví: nạp từ [minTopUp] trở lên được tặng [bonusAmount] vào ngăn BONUS.
 model PromoCode {
-  id             String    @id @default(uuid()) @db.Uuid
+  id             String   @id @default(uuid()) @db.Uuid
   /// Chữ in hoa và số, khách gõ không phân biệt hoa thường.
-  code           String    @unique @db.VarChar(30)
-  description    String?   @db.VarChar(255)
-  minTopUp       Decimal   @map("min_top_up") @db.Decimal(15, 2)
-  bonusAmount    Decimal   @map("bonus_amount") @db.Decimal(15, 2)
+  code           String   @unique @db.VarChar(30)
+  description    String?  @db.VarChar(255)
+  minTopUp       Decimal  @map("min_top_up") @db.Decimal(15, 2)
+  bonusAmount    Decimal  @map("bonus_amount") @db.Decimal(15, 2)
   /// Tiền tặng dùng được trong bao nhiêu ngày kể từ lúc cộng.
-  bonusValidDays Int       @default(30) @map("bonus_valid_days")
+  bonusValidDays Int      @default(30) @map("bonus_valid_days")
   /// Tổng số lượt dùng tối đa; null = không giới hạn.
-  maxUses        Int?      @map("max_uses")
-  usedCount      Int       @default(0) @map("used_count")
-  startsAt       DateTime  @map("starts_at") @db.Timestamptz(6)
-  endsAt         DateTime  @map("ends_at") @db.Timestamptz(6)
-  isActive       Boolean   @default(true) @map("is_active")
-  createdAt      DateTime  @default(now()) @map("created_at") @db.Timestamptz(6)
+  maxUses        Int?     @map("max_uses")
+  usedCount      Int      @default(0) @map("used_count")
+  startsAt       DateTime @map("starts_at") @db.Timestamptz(6)
+  endsAt         DateTime @map("ends_at") @db.Timestamptz(6)
+  isActive       Boolean  @default(true) @map("is_active")
+  createdAt      DateTime @default(now()) @map("created_at") @db.Timestamptz(6)
 
   redemptions PromoRedemption[]
 

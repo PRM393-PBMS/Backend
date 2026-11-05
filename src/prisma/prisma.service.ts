@@ -4,6 +4,7 @@ import {
   OnModuleDestroy,
   OnModuleInit,
 } from '@nestjs/common';
+import { logFailure } from '../common/errors';
 import { PrismaClient } from '@prisma/client';
 
 @Injectable()
@@ -15,10 +16,7 @@ export class PrismaService
 
   constructor() {
     super({
-      log:
-        process.env.NODE_ENV === 'development'
-          ? ['query', 'info', 'warn', 'error']
-          : ['error', 'warn'],
+      log: ['warn'],
     });
   }
 
@@ -28,9 +26,11 @@ export class PrismaService
   async onModuleInit(): Promise<void> {
     try {
       await this.$connect();
-      this.logger.log('✅ Đã kết nối thành công tới PostgreSQL Database qua Prisma ORM.');
+      this.logger.log(
+        '✅ Đã kết nối thành công tới PostgreSQL Database qua Prisma ORM.',
+      );
     } catch (error: unknown) {
-      this.logger.error('❌ Kết nối tới PostgreSQL thất bại:', error);
+      logFailure(error);
       throw error;
     }
   }

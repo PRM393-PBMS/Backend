@@ -23,6 +23,7 @@ describe('VehiclesService: tên xe và mẫu xe', () => {
     reservation: { count: jest.Mock };
     parkingSession: { count: jest.Mock };
     $transaction: jest.Mock;
+    $queryRaw: jest.Mock;
   };
 
   beforeEach(async () => {
@@ -35,10 +36,16 @@ describe('VehiclesService: tên xe và mẫu xe', () => {
       monthlySubscription: { count: jest.fn().mockResolvedValue(1) },
       reservation: { count: jest.fn().mockResolvedValue(0) },
       parkingSession: { count: jest.fn().mockResolvedValue(0) },
-      $transaction: jest.fn((ops: Promise<number>[]) => Promise.all(ops)),
+      $transaction: jest.fn((ops) =>
+        typeof ops === 'function' ? ops({ ...prisma }) : Promise.all(ops),
+      ),
+      $queryRaw: jest.fn().mockResolvedValue([]),
     };
     const module: TestingModule = await Test.createTestingModule({
-      providers: [VehiclesService, { provide: PrismaService, useValue: prisma }],
+      providers: [
+        VehiclesService,
+        { provide: PrismaService, useValue: prisma },
+      ],
     }).compile();
     service = module.get(VehiclesService);
   });
@@ -56,7 +63,10 @@ describe('VehiclesService: tên xe và mẫu xe', () => {
       nickname: 'Xe của mẹ',
       modelName: 'Toyota Vios 2020',
     });
-    expect(res.result).toMatchObject({ nickname: 'Xe của mẹ', modelName: 'Toyota Vios 2020' });
+    expect(res.result).toMatchObject({
+      nickname: 'Xe của mẹ',
+      modelName: 'Toyota Vios 2020',
+    });
   });
 
   it('trả null khi xe chưa có tên / mẫu', async () => {
@@ -76,7 +86,9 @@ describe('VehiclesService: tên xe và mẫu xe', () => {
   });
 
   it('cho đổi tên / mẫu xe kể cả khi xe đang có gói tháng', async () => {
-    const res = await service.update(userId, vehicleId, { modelName: 'Honda City' });
+    const res = await service.update(userId, vehicleId, {
+      modelName: 'Honda City',
+    });
 
     expect(res.isSuccess).toBe(true);
     expect(prisma.$transaction).not.toHaveBeenCalled();
@@ -88,7 +100,9 @@ describe('VehiclesService: tên xe và mẫu xe', () => {
 
   it('chuỗi rỗng thì xoá tên tự đặt', async () => {
     await service.update(userId, vehicleId, { nickname: '' });
-    expect(prisma.vehicle.update.mock.calls[0][0].data).toMatchObject({ nickname: null });
+    expect(prisma.vehicle.update.mock.calls[0][0].data).toMatchObject({
+      nickname: null,
+    });
   });
 
   it('vẫn chặn đổi biển số khi xe có gói tháng', async () => {

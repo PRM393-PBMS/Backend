@@ -1,7 +1,9 @@
+import { AppError } from '../../common/errors';
+import { requiredSecret } from '../../common/config';
 import { Injectable } from '@nestjs/common';
 import { JwtService } from '@nestjs/jwt';
 import { Prisma, UserRole } from '@prisma/client';
-import { createHash, randomInt } from 'crypto';
+import { createHash, randomInt, randomUUID } from 'crypto';
 import { PrismaService } from '../../prisma/prisma.service';
 import { HashingService } from '../services/hashing.service';
 import { MailService } from '../services/mail.service';
@@ -32,7 +34,7 @@ interface CachedRegister {
   fullName: string;
   email: string;
   phoneNumber: string;
-  password: string;
+  passwordHash: string;
   otpHash: string;
   attempts?: number;
   sentAt?: number;
@@ -56,14 +58,24 @@ export class PbmsAuthService {
 
   async login(dto: PbmsLoginDto): Promise<PbmsResponseDto> {
     // Ô đăng nhập nhận email hoặc tên đăng nhập (app gửi cả hai qua field "email").
-    const identifier = pbmsPick(dto, 'email', 'Email', 'userName', 'UserName').trim();
+    const identifier = pbmsPick(
+      dto,
+      'email',
+      'Email',
+      'userName',
+      'UserName',
+    ).trim();
     const password = pbmsPick(dto, 'password', 'Password');
 
     const user = identifier.includes('@')
       ? await this.findUserByEmail(this.normalizeEmail(identifier))
       : await this.findUserByUserName(identifier);
     if (!user) {
-      return new PbmsResponseDto('Không tìm thấy người dùng', 400, false);
+      return new PbmsResponseDto(
+        'Tài khoản hoặc mật khẩu không đúng. Vui lòng kiểm tra lại.',
+        400,
+        false,
+      );
     }
 
     const isPasswordValid = await this.hashingService.compare(
@@ -71,7 +83,11 @@ export class PbmsAuthService {
       user.passwordHash,
     );
     if (!isPasswordValid) {
-      return new PbmsResponseDto('Sai mật khẩu', 400, false);
+      return new PbmsResponseDto(
+        'Tài khoản hoặc mật khẩu không đúng. Vui lòng kiểm tra lại.',
+        400,
+        false,
+      );
     }
 
     if (!this.isPbmsActive(user.status, user.isActive)) {
@@ -103,7 +119,7 @@ export class PbmsAuthService {
       });
     } catch {
       return new PbmsResponseDto(
-        'Lỗi lưu refresh token vào cơ sở dữ liệu',
+        'Chưa thể đăng nhập lúc này. Vui lòng thử lại sau.',
         500,
         false,
       );
@@ -113,17 +129,21 @@ export class PbmsAuthService {
   async sendRegisterOtp(dto: PbmsRegisterDto): Promise<PbmsResponseDto> {
     let userName = pbmsPick(dto, 'userName', 'UserName').trim();
     if (!userName) {
-      return new PbmsResponseDto('Vui lòng nhập UserName', 400, false);
+      return new PbmsResponseDto('Vui lòng nhập tên đăng nhập', 400, false);
     }
     if (userName.length > 50) {
       return new PbmsResponseDto(
-        'UserName không được vượt quá 50 ký tự',
+        'Tên đăng nhập không được vượt quá 50 ký tự',
         400,
         false,
       );
     }
     if (await this.prisma.user.findUnique({ where: { userName } })) {
-      return new PbmsResponseDto('UserName đã tồn tại', 409, false);
+      return new PbmsResponseDto(
+        'Tên đăng nhập đã được sử dụng. Vui lòng chọn tên khác.',
+        409,
+        false,
+      );
     }
 
     const rawEmail = pbmsPick(dto, 'email', 'Email');
@@ -181,14 +201,21 @@ export class PbmsAuthService {
       return new PbmsResponseDto('Số điện thoại đã được đăng ký', 409, false);
     }
 
-    if (await this.resentTooSoon(`Register_${email}`)) {
-      return new PbmsResponseDto(OTP_RESEND_WAIT, 429, false);
-    }
+    await this.otpStore.throttle('send:' + email, 1, 60000);
     const otp = randomInt(100000, 1000000).toString();
     const otpHash = this.hashSha256(otp);
     await this.otpStore.set<CachedRegister>(
       `Register_${email}`,
-      { userName, fullName, email, phoneNumber, password, otpHash, attempts: 0, sentAt: Date.now() },
+      {
+        userName,
+        fullName,
+        email,
+        phoneNumber,
+        passwordHash: await this.hashingService.hash(password),
+        otpHash,
+        attempts: 0,
+        sentAt: Date.now(),
+      },
       OTP_TTL_MS,
     );
 
@@ -200,12 +227,49 @@ export class PbmsAuthService {
         true,
       );
     } catch (error: unknown) {
-      const message = error instanceof Error ? error.message : 'unknown';
-      return new PbmsResponseDto(
-        `Đã xảy ra lỗi khi gửi OTP đăng ký: ${message}`,
-        500,
-        false,
+      return PbmsResponseDto.fromError(error);
+    }
+  }
+
+  async resendRegisterOtp(dto: PbmsRequestOtpDto): Promise<PbmsResponseDto> {
+    const email = this.normalizeEmail(pbmsPick(dto, 'email', 'Email'));
+    if (!this.isValidEmail(email))
+      return PbmsResponseDto.fail('Email sai định dạng');
+    try {
+      const key = 'Register_' + email;
+      const cached = await this.otpStore.get<CachedRegister>(key);
+      if (!cached)
+        throw new AppError(
+          400,
+          'OTP_EXPIRED',
+          'Yêu cầu đăng ký đã hết hạn. Vui lòng quay lại đăng ký',
+        );
+      const retryAfterSeconds = Math.ceil(
+        (OTP_RESEND_MS - (Date.now() - (cached.sentAt ?? 0))) / 1000,
       );
+      if (retryAfterSeconds > 0)
+        throw new AppError(
+          429,
+          'OTP_RATE_LIMIT',
+          'Vui lòng chờ trước khi gửi lại mã',
+          { retryAfterSeconds },
+        );
+      await this.otpStore.throttle('send:' + email, 1, OTP_RESEND_MS);
+      const code = randomInt(100000, 1000000).toString();
+      await this.otpStore.set(
+        key,
+        {
+          ...cached,
+          otpHash: this.hashSha256(code),
+          attempts: 0,
+          sentAt: Date.now(),
+        },
+        OTP_TTL_MS,
+      );
+      await this.mailService.sendOtpEmail(email, code, 'registration');
+      return PbmsResponseDto.ok('Mã xác thực đã được gửi lại');
+    } catch (error) {
+      return PbmsResponseDto.fromError(error);
     }
   }
 
@@ -219,6 +283,7 @@ export class PbmsAuthService {
     }
 
     const email = this.normalizeEmail(emailRaw);
+    await this.otpStore.throttle('verify-register:' + email, 5, OTP_TTL_MS);
     const cached = await this.otpStore.get<CachedRegister>(`Register_${email}`);
     if (!cached) {
       return new PbmsResponseDto(
@@ -275,7 +340,13 @@ export class PbmsAuthService {
       );
     }
 
-    const passwordHash = await this.hashingService.hash(cached.password);
+    const passwordHash = cached.passwordHash;
+    if (!(await this.otpStore.consume(`Register_${email}`, cached)))
+      throw new AppError(
+        409,
+        'OTP_ALREADY_USED',
+        'OTP vừa được sử dụng; hãy yêu cầu mã mới',
+      );
     try {
       const newUser = await this.prisma.user.create({
         data: {
@@ -291,7 +362,6 @@ export class PbmsAuthService {
           roleId: defaultRole.id,
         },
       });
-      await this.otpStore.delete(`Register_${email}`);
       return new PbmsResponseDto('Đăng ký thành công', 200, true, {
         userId: newUser.id,
       });
@@ -350,12 +420,7 @@ export class PbmsAuthService {
         true,
       );
     } catch (error: unknown) {
-      const message = error instanceof Error ? error.message : 'unknown';
-      return new PbmsResponseDto(
-        `Đã xảy ra lỗi khi gửi OTP reset mật khẩu: ${message}`,
-        500,
-        false,
-      );
+      return PbmsResponseDto.fromError(error);
     }
   }
 
@@ -379,6 +444,7 @@ export class PbmsAuthService {
     }
 
     const email = this.normalizeEmail(emailRaw);
+    await this.otpStore.throttle('verify-reset:' + email, 5, OTP_TTL_MS);
     const cached = await this.otpStore.get<CachedOtp>(`Reset_${email}`);
     // Mã cũ trước bản này lưu dạng chuỗi: coi như hết hạn, khách xin mã mới.
     if (!cached || typeof cached !== 'object') {
@@ -404,23 +470,25 @@ export class PbmsAuthService {
 
     try {
       const passwordHash = await this.hashingService.hash(newPassword);
+      if (!(await this.otpStore.consume(`Reset_${email}`, cached)))
+        throw new AppError(
+          409,
+          'OTP_ALREADY_USED',
+          'OTP vừa được sử dụng; hãy yêu cầu mã mới',
+        );
       await this.prisma.$transaction([
         this.prisma.user.update({
           where: { id: user.id },
           data: { passwordHash },
         }),
-        // Quên mật khẩu thường vì bị lộ: đăng xuất mọi thiết bị đang đăng nhập.
-        this.prisma.refreshToken.deleteMany({ where: { userId: user.id } }),
+        this.prisma.refreshToken.updateMany({
+          where: { userId: user.id, isRevoked: false },
+          data: { isRevoked: true },
+        }),
       ]);
-      await this.otpStore.delete(`Reset_${email}`);
       return new PbmsResponseDto('Đặt lại mật khẩu thành công', 200, true);
     } catch (error: unknown) {
-      const message = error instanceof Error ? error.message : 'unknown';
-      return new PbmsResponseDto(
-        `Lỗi hệ thống khi cập nhật mật khẩu mới: ${message}`,
-        500,
-        false,
-      );
+      return PbmsResponseDto.fromError(error);
     }
   }
 
@@ -562,7 +630,11 @@ export class PbmsAuthService {
     const attempts = (cached.attempts ?? 0) + 1;
     if (attempts >= MAX_OTP_ATTEMPTS) {
       await this.otpStore.delete(key);
-      return new PbmsResponseDto('Nhập sai quá nhiều lần, vui lòng yêu cầu mã OTP mới', 400, false);
+      return new PbmsResponseDto(
+        'Nhập sai quá nhiều lần, vui lòng yêu cầu mã OTP mới',
+        400,
+        false,
+      );
     }
     await this.otpStore.set<T>(key, { ...cached, attempts }, OTP_TTL_MS);
     return new PbmsResponseDto('Mã OTP không đúng', 400, false);
@@ -581,6 +653,7 @@ export class PbmsAuthService {
       { sub: user.id, email: user.email, TokenPurpose: 'RefreshToken' },
       {
         secret: this.refreshSecret(),
+        jwtid: randomUUID(),
         expiresIn: `${REFRESH_TOKEN_EXPIRATION_DAYS}d`,
       },
     );
@@ -617,6 +690,7 @@ export class PbmsAuthService {
       },
       {
         secret: this.accessSecret(),
+        jwtid: randomUUID(),
         expiresIn: ACCESS_TOKEN_EXPIRATION,
       },
     );
@@ -663,16 +737,10 @@ export class PbmsAuthService {
   }
 
   private accessSecret(): string {
-    return (
-      process.env.JWT_ACCESS_SECRET ||
-      'prm393_enterprise_access_secret_key_2026'
-    );
+    return requiredSecret('JWT_ACCESS_SECRET');
   }
 
   private refreshSecret(): string {
-    return (
-      process.env.JWT_REFRESH_SECRET ||
-      'prm393_enterprise_refresh_secret_key_2026'
-    );
+    return requiredSecret('JWT_REFRESH_SECRET');
   }
 }

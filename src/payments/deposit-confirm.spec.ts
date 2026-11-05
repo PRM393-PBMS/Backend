@@ -1,85 +1,73 @@
 import { Prisma } from '@prisma/client';
-import { NotificationsService } from '../notifications/notifications.service';
-import { PayosService } from '../integrations/payos-files.service';
+import { PaymentsService } from './payments.service';
 import { PrismaService } from '../prisma/prisma.service';
 import { WalletsService } from '../wallets/wallets.service';
-import { PaymentsService } from './payments.service';
-
-describe('Xác nhận tiền cọc đặt chỗ', () => {
-  const userId = '9b1deb4d-3b7d-4bad-9bdd-2b0d7b3dcb6d';
-  const deposit = {
-    id: 'pay-1',
-    userId,
-    amount: new Prisma.Decimal(30000),
-    paymentStatus: 'Success',
-    paymentType: 'Deposit',
-    reservationId: 'r1',
-  };
-  let prisma: {
-    payment: { findUnique: jest.Mock; update: jest.Mock };
-    reservation: { findUnique: jest.Mock; update: jest.Mock; updateMany: jest.Mock };
-    vehicle: { findUnique: jest.Mock };
-    $transaction: jest.Mock;
-  };
-  let wallets: { creditRefund: jest.Mock };
-  let notifications: { notify: jest.Mock };
-  let apply: (paymentId: string) => Promise<void>;
-
-  beforeEach(() => {
-    prisma = {
-      payment: { findUnique: jest.fn().mockResolvedValue(deposit), update: jest.fn().mockResolvedValue({}) },
-      reservation: {
-        findUnique: jest.fn(),
-        update: jest.fn().mockResolvedValue({}),
-        updateMany: jest.fn().mockResolvedValue({ count: 1 }),
-      },
-      vehicle: { findUnique: jest.fn().mockResolvedValue({ licensePlate: '51A12345' }) },
-      $transaction: jest.fn(),
+import { PayosService } from '../integrations/payos-files.service';
+describe('Xác nhận tiền cọc nguyên tử, tiền về trễ cần đối soát', () => {
+  function setup(status = 'Pending', late = false) {
+    const payment: any = {
+      id: 'pay-1',
+      userId: 'user-1',
+      amount: new Prisma.Decimal(30000),
+      paymentStatus: 'Success',
+      paymentType: 'Deposit',
+      reservationId: 'r1',
+      appliedAt: null,
+      reconciliationReason: null,
     };
-    prisma.$transaction.mockImplementation((fn: (tx: typeof prisma) => unknown) => fn(prisma));
-    wallets = { creditRefund: jest.fn().mockResolvedValue(true) };
-    notifications = { notify: jest.fn().mockResolvedValue(undefined) };
+    const reservation = {
+      id: 'r1',
+      status,
+      createdAt: new Date(),
+    expectedEntryTime: new Date(Date.now() + (late ? -31 : 60) * 60000),
+    };
+    const db: any = {
+      $queryRaw: jest.fn().mockResolvedValue([]),
+      payment: {
+        findUnique: jest.fn(async () => ({ ...payment })),
+        findUniqueOrThrow: jest.fn(async () => ({ ...payment })),
+        findFirst: jest.fn().mockResolvedValue(null),
+        update: jest.fn(async ({ data }) => Object.assign(payment, data)),
+        updateMany: jest.fn(async ({ data }) => {
+          Object.assign(payment, data);
+          return { count: 1 };
+        }),
+      },
+      reservation: {
+        findUnique: jest.fn(async () => ({ ...reservation })),
+        updateMany: jest.fn(async ({ data }) => {
+          Object.assign(reservation, data);
+          return { count: 1 };
+        }),
+      },
+    };
+    db.$transaction = jest.fn(async (fn) => fn(db));
+    const wallets = { creditRefund: jest.fn() };
     const service = new PaymentsService(
-      prisma as unknown as PrismaService,
+      db as PrismaService,
       wallets as unknown as WalletsService,
       {} as PayosService,
-      notifications as unknown as NotificationsService,
     );
-    apply = (id) => (service as unknown as { applyPaidPayment(id: string): Promise<void> }).applyPaidPayment(id);
+    return { service, db, payment, reservation, wallets };
+  }
+  it('đơn Pending nhận cọc và ghi appliedAt cùng transaction', async () => {
+    const f = setup();
+    await f.service.dispatchPayment('pay-1');
+    expect(f.reservation.status).toBe('Confirmed');
+    expect(f.payment.appliedAt).toBeInstanceOf(Date);
+    expect(f.wallets.creditRefund).not.toHaveBeenCalled();
   });
-
-  const soon = () => new Date(Date.now() + 60 * 60e3);
-
-  it('đơn đang chờ: chuyển sang Confirmed', async () => {
-    prisma.reservation.findUnique.mockResolvedValue({ id: 'r1', status: 'Pending', vehicleId: 'v1', expectedEntryTime: soon() });
-    await apply('pay-1');
-    expect(prisma.reservation.updateMany).toHaveBeenCalledWith({
-      where: { id: 'r1', status: 'Pending' },
-      data: { status: 'Confirmed' },
-    });
-    expect(wallets.creditRefund).not.toHaveBeenCalled();
-  });
-
-  it('cọc về khi đã quá khung vào bãi: huỷ đơn, hoàn cọc vào ví', async () => {
-    const late = { id: 'r1', status: 'Pending', vehicleId: 'v1', expectedEntryTime: new Date(Date.now() - 31 * 60e3) };
-    prisma.reservation.findUnique.mockResolvedValue(late);
-    await apply('pay-1');
-    expect(prisma.reservation.updateMany).toHaveBeenCalledWith({
-      where: { id: 'r1', status: 'Pending' },
-      data: { status: 'Cancelled' },
-    });
-    expect(prisma.reservation.updateMany).not.toHaveBeenCalledWith(
-      expect.objectContaining({ data: { status: 'Confirmed' } }),
-    );
-    expect(wallets.creditRefund).toHaveBeenCalled();
-  });
-
-  it('đơn đã huỷ trước khi cọc về: không mở lại đơn, hoàn cọc vào ví', async () => {
-    prisma.reservation.findUnique.mockResolvedValue({ id: 'r1', status: 'Cancelled', vehicleId: 'v1', expectedEntryTime: soon() });
-    await apply('pay-1');
-    expect(prisma.reservation.updateMany).not.toHaveBeenCalled();
-    expect(wallets.creditRefund).toHaveBeenCalledWith(prisma, deposit, 'Deposit', expect.stringContaining('51A12345'));
-    expect(prisma.payment.update).toHaveBeenCalledWith({ where: { id: 'pay-1' }, data: { paymentStatus: 'Refunded' } });
-    expect(notifications.notify).toHaveBeenCalledWith(userId, expect.objectContaining({ title: 'Đã hoàn tiền cọc' }));
+  it.each([
+    ['Cancelled', false],
+    ['NoShow', false],
+    ['Completed', false],
+    ['Pending', true],
+  ])('đơn %s / trễ=%s không phục hồi hoặc tự hoàn ví', async (status, late) => {
+    const f = setup(status, late);
+    await f.service.dispatchPayment('pay-1');
+    expect(f.reservation.status).toBe(status);
+    expect(f.payment.appliedAt).toBeNull();
+    expect(f.payment.reconciliationReason).toBe('LATE_DEPOSIT');
+    expect(f.wallets.creditRefund).not.toHaveBeenCalled();
   });
 });

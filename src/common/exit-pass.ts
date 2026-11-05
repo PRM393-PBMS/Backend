@@ -1,6 +1,17 @@
 import { randomInt } from 'crypto';
 import QRCode from 'qrcode';
-import { PrismaService } from '../prisma/prisma.service';
+import { Db } from './transactions';
+import { AppError } from './errors';
+export const EXIT_GRACE_MS = 15 * 60 * 1000;
+export function exitPassExpired(
+  session: { prepaidAt: Date | null },
+  now = new Date(),
+): boolean {
+  return (
+    !session.prepaidAt ||
+    now.getTime() > session.prepaidAt.getTime() + EXIT_GRACE_MS
+  );
+}
 
 const ALPHABET = 'ABCDEFGHJKLMNPQRSTUVWXYZ23456789';
 
@@ -31,18 +42,34 @@ export function exitPassPayload(sessionId: string, code: string): string {
 }
 
 /** Ghi nhận đã thanh toán trước và cấp mã ra cổng (giữ mã cũ nếu đã có). */
-export async function issueExitPass(prisma: PrismaService, sessionId: string): Promise<string> {
-  const session = await prisma.parkingSession.findUnique({ where: { id: sessionId } });
+export async function issueExitPass(
+  prisma: Db,
+  sessionId: string,
+  now = new Date(),
+): Promise<string> {
+  const session = await prisma.parkingSession.findUnique({
+    where: { id: sessionId },
+  });
   if (!session) {
-    throw new Error(`Không tìm thấy phiên gửi xe ${sessionId} để cấp mã ra cổng.`);
+    throw new AppError(
+      409,
+      'SESSION_MISSING',
+      `Không tìm thấy phiên gửi xe ${sessionId} để cấp mã ra cổng.`,
+    );
   }
-  if (session.exitPassCode) {
+  if (session.status !== 'Active')
+    throw new AppError(
+      409,
+      'SESSION_CLOSED',
+      'Phiên đã kết thúc, thanh toán cần đối soát',
+    );
+  if (session.exitPassCode && !exitPassExpired(session, now)) {
     return session.exitPassCode;
   }
   const code = generateExitPassCode();
   await prisma.parkingSession.update({
     where: { id: sessionId },
-    data: { prepaidAt: new Date(), exitPassCode: code },
+    data: { prepaidAt: now, exitPassCode: code },
   });
   return code;
 }
@@ -60,7 +87,15 @@ export async function mapExitPass(session: {
   return {
     code: session.exitPassCode,
     qrPayload,
-    qrCodeDataUrl: await QRCode.toDataURL(qrPayload, { errorCorrectionLevel: 'Q', margin: 1, width: 256 }),
+    qrCodeDataUrl: await QRCode.toDataURL(qrPayload, {
+      errorCorrectionLevel: 'Q',
+      margin: 1,
+      width: 256,
+    }).catch(() => null),
     prepaidAt: session.prepaidAt,
+    expiresAt: session.prepaidAt
+      ? new Date(session.prepaidAt.getTime() + EXIT_GRACE_MS)
+      : null,
+    isExpired: exitPassExpired(session),
   };
 }

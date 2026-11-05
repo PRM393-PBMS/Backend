@@ -1,0 +1,9 @@
+{
+  "folders": [
+    { "name": "PBMS Backend", "path": "." },
+    { "name": "PBMS Flutter Frontend", "path": "../Frontend" }
+  ],
+  "settings": {
+    "search.exclude": { "**/node_modules": true, "**/.dart_tool": true, "**/.tmp": true, "**/build": true }
+  }
+}

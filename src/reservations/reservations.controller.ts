@@ -17,8 +17,15 @@ import { PbmsRolesGuard } from '../auth/common/guards/pbms-roles.guard';
 import { PbmsBodyDto } from '../common/dto/pbms-body.dto';
 import { PbmsResponseDto } from '../common/dto/pbms-response.dto';
 import { PbmsStatusInterceptor } from '../common/interceptors/pbms-status.interceptor';
-import { ids, reservationExample, subscriptionPaymentExample } from '../common/swagger/pbms-example-data';
-import { ApiPbmsBodyExample, ApiPbmsOkResponse } from '../common/swagger/pbms-swagger';
+import {
+  ids,
+  reservationExample,
+  subscriptionPaymentExample,
+} from '../common/swagger/pbms-example-data';
+import {
+  ApiPbmsBodyExample,
+  ApiPbmsOkResponse,
+} from '../common/swagger/pbms-swagger';
 import { ReservationsService } from './reservations.service';
 
 @ApiTags('PBMS Reservations')
@@ -39,7 +46,10 @@ export class ReservationsController {
     reservation: reservationExample,
     payment: subscriptionPaymentExample,
   })
-  create(@GetPbmsUserId() userId: string, @Body() dto: PbmsBodyDto): Promise<PbmsResponseDto> {
+  create(
+    @GetPbmsUserId() userId: string,
+    @Body() dto: PbmsBodyDto,
+  ): Promise<PbmsResponseDto> {
     return this.reservations.create(userId, dto);
   }
 
@@ -53,9 +63,13 @@ export class ReservationsController {
   @Get('availability')
   @ApiOperation({
     summary: 'Suất đặt trước còn lại của một bãi',
-    description: '`parkingId` bãi khách chọn; `time` giờ vào dự kiến (ISO, mặc định 30 phút nữa). Trả hạn mức, số suất đang giữ quanh giờ đó, số còn lại và tiền cọc.',
+    description:
+      '`parkingId` bãi khách chọn; `time` giờ vào dự kiến (ISO, mặc định 30 phút nữa). Trả hạn mức, số suất đang giữ quanh giờ đó, số còn lại và tiền cọc.',
   })
-  availability(@Query('parkingId') parkingId?: string, @Query('time') time?: string): Promise<PbmsResponseDto> {
+  availability(
+    @Query('parkingId') parkingId?: string,
+    @Query('time') time?: string,
+  ): Promise<PbmsResponseDto> {
     return this.reservations.availability(parkingId, time);
   }
 
@@ -65,7 +79,9 @@ export class ReservationsController {
     orderCode: 'PBMS-20260917-1001',
     paymentStatus: 'Success',
   })
-  checkPayment(@Param('orderCode') orderCode: string): Promise<PbmsResponseDto> {
+  checkPayment(
+    @Param('orderCode') orderCode: string,
+  ): Promise<PbmsResponseDto> {
     return this.reservations.checkPaymentStatus(orderCode);
   }
 
@@ -73,7 +89,8 @@ export class ReservationsController {
   @PbmsRoles('manager', 'staff')
   @ApiOperation({
     summary: 'Danh sách đặt chỗ',
-    description: '`date` là ngày theo giờ Việt Nam (YYYY-MM-DD); `parkingId` lọc theo bãi; `status` lọc trạng thái.',
+    description:
+      '`date` là ngày theo giờ Việt Nam (YYYY-MM-DD); `parkingId` lọc theo bãi; `status` lọc trạng thái.',
   })
   @ApiPbmsOkResponse('Lấy danh sách đặt chỗ thành công', [reservationExample])
   getAll(
@@ -86,14 +103,22 @@ export class ReservationsController {
 
   @Post(':id/recreate-payment')
   @ApiOperation({ summary: 'Tạo lại liên kết thanh toán đặt chỗ' })
-  @ApiPbmsOkResponse('Tạo lại liên kết thanh toán thành công', subscriptionPaymentExample)
-  recreate(@Param('id') id: string, @GetPbmsUserId() userId: string): Promise<PbmsResponseDto> {
+  @ApiPbmsOkResponse(
+    'Tạo lại liên kết thanh toán thành công',
+    subscriptionPaymentExample,
+  )
+  recreate(
+    @Param('id') id: string,
+    @GetPbmsUserId() userId: string,
+  ): Promise<PbmsResponseDto> {
     return this.reservations.recreatePayment(id, userId);
   }
 
   @Put(':reservationId/change-time')
   @ApiOperation({ summary: 'Đổi giờ đặt chỗ' })
-  @ApiPbmsBodyExample(PbmsBodyDto, { newExpectedTime: '2026-09-18T10:30:00.000Z' })
+  @ApiPbmsBodyExample(PbmsBodyDto, {
+    newExpectedTime: '2026-09-18T10:30:00.000Z',
+  })
   @ApiPbmsOkResponse('Đổi giờ đặt chỗ thành công', reservationExample)
   changeTime(
     @Param('reservationId') reservationId: string,

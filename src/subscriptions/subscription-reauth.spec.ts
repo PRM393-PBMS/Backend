@@ -17,10 +17,22 @@ describe('Vé tháng: xác thực lại mật khẩu và đơn chờ thanh toán
   let renewals: SubscriptionRenewalsService;
   let changes: VehicleChangeRequestsService;
   let hashing: { compare: jest.Mock; hash: jest.Mock };
-  let payos: { getPaymentStatus: jest.Mock; cancelPaymentLink: jest.Mock; createPaymentLink: jest.Mock };
+  let payos: {
+    getPaymentStatus: jest.Mock;
+    cancelPaymentLink: jest.Mock;
+    createPaymentLink: jest.Mock;
+  };
   let prisma: {
+    $transaction: jest.Mock;
+    $queryRaw: jest.Mock;
+    parkingSession: { findFirst: jest.Mock };
     user: { findUnique: jest.Mock };
-    monthlySubscription: { findUnique: jest.Mock; findFirst: jest.Mock; update: jest.Mock };
+    monthlySubscription: {
+      findUnique: jest.Mock;
+      findUniqueOrThrow: jest.Mock;
+      findFirst: jest.Mock;
+      update: jest.Mock;
+    };
     payment: { findMany: jest.Mock; updateMany: jest.Mock };
     subscriptionContract: { updateMany: jest.Mock; findUnique: jest.Mock };
     subscriptionPackage: { findUnique: jest.Mock };
@@ -31,13 +43,21 @@ describe('Vé tháng: xác thực lại mật khẩu và đơn chờ thanh toán
   beforeEach(async () => {
     hashing = { compare: jest.fn().mockResolvedValue(true), hash: jest.fn() };
     payos = {
-      getPaymentStatus: jest.fn().mockResolvedValue({ status: 'PENDING', amount: 0, amountPaid: 0 }),
+      getPaymentStatus: jest
+        .fn()
+        .mockResolvedValue({ status: 'PENDING', amount: 0, amountPaid: 0 }),
       cancelPaymentLink: jest.fn().mockResolvedValue(undefined),
       createPaymentLink: jest.fn(),
     };
     prisma = {
+      $transaction: jest.fn(async (fn) => fn({ ...prisma })),
+      $queryRaw: jest.fn().mockResolvedValue([]),
+      parkingSession: { findFirst: jest.fn().mockResolvedValue(null) },
       user: { findUnique: jest.fn().mockResolvedValue({ passwordHash: 'h' }) },
       monthlySubscription: {
+        findUniqueOrThrow: jest.fn(() =>
+          prisma.monthlySubscription.findUnique(),
+        ),
         findUnique: jest.fn().mockResolvedValue({
           id: subId,
           userId,
@@ -51,7 +71,11 @@ describe('Vé tháng: xác thực lại mật khẩu và đơn chờ thanh toán
         update: jest.fn().mockResolvedValue({}),
       },
       payment: {
-        findMany: jest.fn().mockResolvedValue([{ id: 'pay-1', transactionReference: '1729300000000' }]),
+        findMany: jest
+          .fn()
+          .mockResolvedValue([
+            { id: 'pay-1', transactionReference: '1729300000000' },
+          ]),
         updateMany: jest.fn().mockResolvedValue({ count: 1 }),
       },
       subscriptionContract: {
@@ -68,7 +92,15 @@ describe('Vé tháng: xác thực lại mật khẩu và đơn chờ thanh toán
           vehicleType: { typeName: 'Ô tô' },
         }),
       },
-      vehicle: { findFirst: jest.fn().mockResolvedValue({ id: 'veh', vehicleTypeId: 'vt', vehicleType: { typeName: 'Ô tô' } }) },
+      vehicle: {
+        findFirst: jest
+          .fn()
+          .mockResolvedValue({
+            id: 'veh',
+            vehicleTypeId: 'vt',
+            vehicleType: { typeName: 'Ô tô' },
+          }),
+      },
       parkingSlot: { update: jest.fn() },
     };
     const module: TestingModule = await Test.createTestingModule({
@@ -97,20 +129,26 @@ describe('Vé tháng: xác thực lại mật khẩu và đơn chờ thanh toán
 
   it('sai mật khẩu thì không huỷ', async () => {
     hashing.compare.mockResolvedValue(false);
-    const res = await subs.cancel(subId, userId, 'customer', { password: 'sai' });
+    const res = await subs.cancel(subId, userId, 'customer', {
+      password: 'sai',
+    });
     expect(res.message).toBe('Mật khẩu không đúng');
     expect(prisma.monthlySubscription.update).not.toHaveBeenCalled();
   });
 
   it('huỷ đơn chưa thanh toán: đóng link PayOS, thanh toán treo -> Failed, huỷ hợp đồng chưa ký', async () => {
-    const res = await subs.cancel(subId, userId, 'customer', { password: 'dung' });
+    const res = await subs.cancel(subId, userId, 'customer', {
+      password: 'dung',
+    });
     expect(res.isSuccess).toBe(true);
     expect(payos.cancelPaymentLink).toHaveBeenCalledWith('1729300000000');
     expect(prisma.payment.updateMany).toHaveBeenCalledWith({
       where: { id: 'pay-1', paymentStatus: 'Pending' },
       data: { paymentStatus: 'Failed' },
     });
-    expect(prisma.subscriptionContract.updateMany.mock.calls[0][0].data).toEqual({ status: 'Void' });
+    expect(
+      prisma.subscriptionContract.updateMany.mock.calls[0][0].data,
+    ).toEqual({ status: 'Void' });
   });
 
   it('quản lý huỷ hộ thì không cần mật khẩu khách', async () => {
@@ -120,23 +158,46 @@ describe('Vé tháng: xác thực lại mật khẩu và đơn chờ thanh toán
   });
 
   it('đổi sang trả bằng ví: link PayOS đã được trả thì không trừ ví', async () => {
-    payos.getPaymentStatus.mockResolvedValue({ status: 'PAID', amount: 1500000, amountPaid: 1500000 });
-    const res = await subs.createPayment(subId, userId, { paymentMethod: 'Wallet' });
+    payos.getPaymentStatus.mockResolvedValue({
+      status: 'PAID',
+      amount: 1500000,
+      amountPaid: 1500000,
+    });
+    const res = await subs.createPayment(subId, userId, {
+      paymentMethod: 'Wallet',
+    });
     expect(res.statusCode).toBe(409);
     expect(payos.cancelPaymentLink).not.toHaveBeenCalled();
   });
 
   it('đăng ký khi xe đang có đơn chờ thanh toán: trả mã đơn cũ để app cho chọn', async () => {
-    prisma.monthlySubscription.findFirst.mockResolvedValue({ id: subId, status: 'PendingPayment' });
-    const res = await subs.register(userId, { packageId: 'pkg', vehicleId: 'veh' }, true);
+    prisma.monthlySubscription.findFirst.mockResolvedValue({
+      id: subId,
+      status: 'PendingPayment',
+    });
+    const res = await subs.register(
+      userId,
+      { packageId: 'pkg', vehicleId: 'veh' },
+      true,
+    );
     expect(res.statusCode).toBe(409);
-    expect(res.result).toEqual({ existingSubscriptionId: subId, status: 'PendingPayment' });
+    expect(res.result).toEqual({
+      existingSubscriptionId: subId,
+      status: 'PendingPayment',
+    });
   });
 
   it('gia hạn và đổi biển số cũng phải nhập mật khẩu', async () => {
-    expect((await renewals.renew(subId, userId, { packageId: 'pkg' })).message).toContain('mật khẩu');
-    expect((await changes.create(userId, { subscriptionId: subId, newLicensePlate: '51H12345' })).message).toContain(
-      'mật khẩu',
-    );
+    expect(
+      (await renewals.renew(subId, userId, { packageId: 'pkg' })).message,
+    ).toContain('mật khẩu');
+    expect(
+      (
+        await changes.create(userId, {
+          subscriptionId: subId,
+          newLicensePlate: '51H12345',
+        })
+      ).message,
+    ).toContain('mật khẩu');
   });
 });

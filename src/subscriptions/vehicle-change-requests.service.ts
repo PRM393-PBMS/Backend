@@ -1,10 +1,20 @@
+import { AppError } from '../common/errors';
+import { lockResource } from '../common/transactions';
 import { HashingService } from '../auth/services/hashing.service';
 import { confirmPassword } from '../common/confirm-password';
 import { Injectable, Optional } from '@nestjs/common';
 import { PrismaService } from '../prisma/prisma.service';
 import { PbmsResponseDto } from '../common/dto/pbms-response.dto';
-import { errorMessage, isEmptyGuid, pbmsPick, pbmsPickGuid, sameStatus } from '../common/pbms-fields';
-import { isValidLicensePlate, normalizeLicensePlate } from '../common/license-plate';
+import {
+  isEmptyGuid,
+  pbmsPick,
+  pbmsPickGuid,
+  sameStatus,
+} from '../common/pbms-fields';
+import {
+  isValidLicensePlate,
+  normalizeLicensePlate,
+} from '../common/license-plate';
 import { NotificationsService } from '../notifications/notifications.service';
 
 @Injectable()
@@ -16,10 +26,21 @@ export class VehicleChangeRequestsService {
   ) {}
 
   async create(userId: string, dto: object): Promise<PbmsResponseDto> {
-    const denied = await confirmPassword(this.prisma, this.hashing, userId, dto);
+    const denied = await confirmPassword(
+      this.prisma,
+      this.hashing,
+      userId,
+      dto,
+    );
     if (denied) return denied;
-    const subscriptionId = pbmsPickGuid(dto, 'subscriptionId', 'SubscriptionId');
-    const newPlate = normalizeLicensePlate(pbmsPick(dto, 'newLicensePlate', 'NewLicensePlate'));
+    const subscriptionId = pbmsPickGuid(
+      dto,
+      'subscriptionId',
+      'SubscriptionId',
+    );
+    const newPlate = normalizeLicensePlate(
+      pbmsPick(dto, 'newLicensePlate', 'NewLicensePlate'),
+    );
     const reason = pbmsPick(dto, 'reason', 'Reason').trim();
     if (reason.length > 500) {
       return PbmsResponseDto.fail('Lý do không được vượt quá 500 ký tự');
@@ -32,10 +53,15 @@ export class VehicleChangeRequestsService {
       where: { subscriptionId, status: 'Pending' },
     });
     if (pending) {
-      return PbmsResponseDto.fail('Gói vé tháng này hiện đang có một yêu cầu đổi biển số chờ xử lý', 409);
+      return PbmsResponseDto.fail(
+        'Gói vé tháng này hiện đang có một yêu cầu đổi biển số chờ xử lý',
+        409,
+      );
     }
     if (validation.subscription!.vehicle?.licensePlate === newPlate) {
-      return PbmsResponseDto.fail('Biển số mới không được trùng với biển số hiện tại');
+      return PbmsResponseDto.fail(
+        'Biển số mới không được trùng với biển số hiện tại',
+      );
     }
     try {
       const request = await this.prisma.vehicleChangeRequest.create({
@@ -48,9 +74,13 @@ export class VehicleChangeRequestsService {
         },
       });
       const mapped = await this.loadOne(request.id);
-      return PbmsResponseDto.ok('Đã gửi yêu cầu đổi xe thành công', mapped, 201);
+      return PbmsResponseDto.ok(
+        'Đã gửi yêu cầu đổi xe thành công',
+        mapped,
+        201,
+      );
     } catch (error: unknown) {
-      return PbmsResponseDto.fail(`Lỗi gửi yêu cầu: ${errorMessage(error)}`, 500);
+      return PbmsResponseDto.fromError(error);
     }
   }
 
@@ -59,7 +89,10 @@ export class VehicleChangeRequestsService {
       include: this.include(),
       orderBy: { createdAt: 'desc' },
     });
-    return PbmsResponseDto.ok('Lấy danh sách yêu cầu đổi xe thành công', items.map((item) => this.map(item)));
+    return PbmsResponseDto.ok(
+      'Lấy danh sách yêu cầu đổi xe thành công',
+      items.map((item) => this.map(item)),
+    );
   }
 
   async getMine(userId: string): Promise<PbmsResponseDto> {
@@ -68,10 +101,17 @@ export class VehicleChangeRequestsService {
       include: this.include(),
       orderBy: { createdAt: 'desc' },
     });
-    return PbmsResponseDto.ok('Lấy yêu cầu đổi xe của tôi thành công', items.map((item) => this.map(item)));
+    return PbmsResponseDto.ok(
+      'Lấy yêu cầu đổi xe của tôi thành công',
+      items.map((item) => this.map(item)),
+    );
   }
 
-  async getById(id: string, userId: string, canManage: boolean): Promise<PbmsResponseDto> {
+  async getById(
+    id: string,
+    userId: string,
+    canManage: boolean,
+  ): Promise<PbmsResponseDto> {
     if (isEmptyGuid(id)) {
       return PbmsResponseDto.fail('Vui lòng nhập RequestId');
     }
@@ -94,14 +134,36 @@ export class VehicleChangeRequestsService {
       return PbmsResponseDto.fail('Chỉ yêu cầu đang chờ mới được duyệt');
     }
     await this.prisma.$transaction(async (tx) => {
-      await tx.vehicleChangeRequest.update({
+      await lockResource(tx, 'gate-entry');
+      await lockResource(tx, 'subscription:' + item.subscriptionId);
+      const request = await tx.vehicleChangeRequest.findUniqueOrThrow({
         where: { id },
+      });
+      const vehicle = await tx.vehicle.findUniqueOrThrow({
+        where: { id: item.subscription.vehicleId },
+      });
+      const inside = await tx.parkingSession.findFirst({
+        where: {
+          vehicleId: vehicle.id,
+          status: { in: ['Active', 'Exception'] },
+        },
+      });
+      if (inside || vehicle.licensePlate !== request.oldLicensePlate)
+        throw new AppError(
+          409,
+          'VEHICLE_STATE_CHANGED',
+          'Xe đang trong bãi hoặc biển số đã thay đổi',
+        );
+      const moved = await tx.vehicleChangeRequest.updateMany({
+        where: { id, status: 'Pending' },
         data: {
           status: 'Approved',
           processedAt: new Date(),
           handledByStaffId: staffId,
         },
       });
+      if (moved.count !== 1)
+        throw new AppError(409, 'REQUEST_CLOSED', 'Yêu cầu đã được xử lý');
       await tx.vehicle.update({
         where: { id: item.subscription.vehicleId! },
         data: { licensePlate: item.newLicensePlate },
@@ -111,12 +173,23 @@ export class VehicleChangeRequestsService {
       title: 'Yêu cầu đổi biển số đã được duyệt',
       message: `Vé tháng của bạn đã chuyển từ biển số ${item.oldLicensePlate} sang ${item.newLicensePlate}.`,
       type: 'subscription',
-      metadata: { requestId: id, subscriptionId: item.subscriptionId, status: 'Approved' },
+      metadata: {
+        requestId: id,
+        subscriptionId: item.subscriptionId,
+        status: 'Approved',
+      },
     });
-    return PbmsResponseDto.ok('Duyệt yêu cầu đổi xe thành công', await this.loadOne(id));
+    return PbmsResponseDto.ok(
+      'Duyệt yêu cầu đổi xe thành công',
+      await this.loadOne(id),
+    );
   }
 
-  async reject(id: string, staffId: string, dto: object): Promise<PbmsResponseDto> {
+  async reject(
+    id: string,
+    staffId: string,
+    dto: object,
+  ): Promise<PbmsResponseDto> {
     const item = await this.loadRecord(id);
     if (!item) {
       return PbmsResponseDto.fail('Không tìm thấy yêu cầu đổi xe', 404);
@@ -128,8 +201,8 @@ export class VehicleChangeRequestsService {
     if (!reason) {
       return PbmsResponseDto.fail('Vui lòng nhập lý do từ chối');
     }
-    await this.prisma.vehicleChangeRequest.update({
-      where: { id },
+    const moved = await this.prisma.vehicleChangeRequest.updateMany({
+      where: { id, status: 'Pending' },
       data: {
         status: 'Rejected',
         rejectionReason: reason,
@@ -137,17 +210,36 @@ export class VehicleChangeRequestsService {
         handledByStaffId: staffId,
       },
     });
+    if (moved.count !== 1)
+      return PbmsResponseDto.fail('Yêu cầu đã được xử lý', 409);
     await this.notifications?.notify(item.subscription.userId, {
       title: 'Yêu cầu đổi biển số bị từ chối',
       message: `Yêu cầu đổi sang biển số ${item.newLicensePlate} bị từ chối. Lý do: ${reason}`,
       type: 'subscription',
-      metadata: { requestId: id, subscriptionId: item.subscriptionId, status: 'Rejected', rejectionReason: reason },
+      metadata: {
+        requestId: id,
+        subscriptionId: item.subscriptionId,
+        status: 'Rejected',
+        rejectionReason: reason,
+      },
     });
-    return PbmsResponseDto.ok('Từ chối yêu cầu đổi xe thành công', await this.loadOne(id));
+    return PbmsResponseDto.ok(
+      'Từ chối yêu cầu đổi xe thành công',
+      await this.loadOne(id),
+    );
   }
 
-  async update(id: string, userId: string, dto: object): Promise<PbmsResponseDto> {
-    const denied = await confirmPassword(this.prisma, this.hashing, userId, dto);
+  async update(
+    id: string,
+    userId: string,
+    dto: object,
+  ): Promise<PbmsResponseDto> {
+    const denied = await confirmPassword(
+      this.prisma,
+      this.hashing,
+      userId,
+      dto,
+    );
     if (denied) return denied;
     const item = await this.loadRecord(id);
     if (!item) {
@@ -159,18 +251,25 @@ export class VehicleChangeRequestsService {
     if (!sameStatus(item.status, 'Pending')) {
       return PbmsResponseDto.fail('Chỉ yêu cầu đang chờ mới được cập nhật');
     }
-    const newPlate = normalizeLicensePlate(pbmsPick(dto, 'newLicensePlate', 'NewLicensePlate'));
+    const newPlate = normalizeLicensePlate(
+      pbmsPick(dto, 'newLicensePlate', 'NewLicensePlate'),
+    );
     if (!isValidLicensePlate(newPlate)) {
       return PbmsResponseDto.fail('Biển số phải gồm 4-15 chữ cái và chữ số');
     }
-    await this.prisma.vehicleChangeRequest.update({
-      where: { id },
+    const moved = await this.prisma.vehicleChangeRequest.updateMany({
+      where: { id, status: 'Pending' },
       data: {
         newLicensePlate: newPlate,
         reason: pbmsPick(dto, 'reason', 'Reason').trim() || item.reason,
       },
     });
-    return PbmsResponseDto.ok('Cập nhật yêu cầu đổi xe thành công', await this.loadOne(id));
+    if (moved.count !== 1)
+      return PbmsResponseDto.fail('Yêu cầu đã được xử lý', 409);
+    return PbmsResponseDto.ok(
+      'Cập nhật yêu cầu đổi xe thành công',
+      await this.loadOne(id),
+    );
   }
 
   async remove(id: string, userId: string): Promise<PbmsResponseDto> {
@@ -188,28 +287,55 @@ export class VehicleChangeRequestsService {
     return PbmsResponseDto.ok('Xóa yêu cầu đổi xe thành công');
   }
 
-  private async validate(userId: string, subscriptionId: string, newPlate: string) {
+  private async validate(
+    userId: string,
+    subscriptionId: string,
+    newPlate: string,
+  ) {
     if (isEmptyGuid(subscriptionId) || !newPlate) {
-      return { subscription: null, error: PbmsResponseDto.fail('Dữ liệu không hợp lệ') };
+      return {
+        subscription: null,
+        error: PbmsResponseDto.fail('Dữ liệu không hợp lệ'),
+      };
     }
     if (!isValidLicensePlate(newPlate)) {
-      return { subscription: null, error: PbmsResponseDto.fail('Biển số phải gồm 4-15 chữ cái và chữ số') };
+      return {
+        subscription: null,
+        error: PbmsResponseDto.fail('Biển số phải gồm 4-15 chữ cái và chữ số'),
+      };
     }
     const subscription = await this.prisma.monthlySubscription.findUnique({
       where: { id: subscriptionId },
       include: { vehicle: true },
     });
     if (!subscription) {
-      return { subscription: null, error: PbmsResponseDto.fail('Không tìm thấy gói tháng', 404) };
+      return {
+        subscription: null,
+        error: PbmsResponseDto.fail('Không tìm thấy gói tháng', 404),
+      };
     }
     if (subscription.userId !== userId) {
-      return { subscription: null, error: PbmsResponseDto.fail('Bạn không có quyền đổi biển số gói này', 403) };
+      return {
+        subscription: null,
+        error: PbmsResponseDto.fail(
+          'Bạn không có quyền đổi biển số gói này',
+          403,
+        ),
+      };
     }
     if (!sameStatus(subscription.status, 'Active')) {
-      return { subscription: null, error: PbmsResponseDto.fail('Chỉ gói đang hiệu lực mới được đổi biển số') };
+      return {
+        subscription: null,
+        error: PbmsResponseDto.fail(
+          'Chỉ gói đang hiệu lực mới được đổi biển số',
+        ),
+      };
     }
     if (!subscription.vehicle) {
-      return { subscription: null, error: PbmsResponseDto.fail('Gói tháng chưa được liên kết với xe', 409) };
+      return {
+        subscription: null,
+        error: PbmsResponseDto.fail('Gói tháng chưa được liên kết với xe', 409),
+      };
     }
     return { subscription, error: null };
   }

@@ -1,10 +1,16 @@
+import { AppError } from '../common/errors';
 import { Injectable, StreamableFile } from '@nestjs/common';
 import PDFDocument from 'pdfkit';
 import { PrismaService } from '../prisma/prisma.service';
 import { PbmsResponseDto } from '../common/dto/pbms-response.dto';
 import { sameStatus, toMoney } from '../common/pbms-fields';
 
-type Range = { from: Date; to: Date; groupBy: string; vehicleTypeId?: string | null };
+type Range = {
+  from: Date;
+  to: Date;
+  groupBy: string;
+  vehicleTypeId?: string | null;
+};
 
 @Injectable()
 export class ReportsService {
@@ -15,44 +21,74 @@ export class ReportsService {
       {
         key: 'full',
         name: 'Báo cáo thống kê đầy đủ',
-        description: 'Gộp tổng quan, doanh thu và vận hành bãi xe trong cùng một file PDF.',
+        description:
+          'Gộp tổng quan, doanh thu và vận hành bãi xe trong cùng một file PDF.',
         supportedFormats: ['pdf'],
       },
     ]);
   }
 
-  async summary(query: Record<string, string | undefined>): Promise<PbmsResponseDto> {
+  async summary(
+    query: Record<string, string | undefined>,
+  ): Promise<PbmsResponseDto> {
     const range = this.normalizeRange(query);
     const payments = await this.successfulPayments(range);
-    const totalRevenue = payments.reduce((sum, p) => sum + toMoney(p.amount), 0);
-    const slots = await this.slotOverview();
+    const totalRevenue = payments.reduce(
+      (sum, p) => sum + toMoney(p.amount),
+      0,
+    );
+    const slots = await this.slotOverview(range.vehicleTypeId);
     const sessions = await this.prisma.parkingSession.findMany({
-      where: { entryTime: { gte: range.from, lte: range.to } },
+      where: {
+        entryTime: { gte: range.from, lte: range.to },
+        ...(range.vehicleTypeId ? { vehicleTypeId: range.vehicleTypeId } : {}),
+      },
     });
     const exits = await this.prisma.parkingSession.findMany({
-      where: { exitTime: { gte: range.from, lte: range.to } },
+      where: {
+        exitTime: { gte: range.from, lte: range.to },
+        ...(range.vehicleTypeId ? { vehicleTypeId: range.vehicleTypeId } : {}),
+      },
     });
     return PbmsResponseDto.ok('Lấy báo cáo tổng quan thành công', {
       range,
       metrics: [
         this.metric('totalRevenue', 'Tổng doanh thu', totalRevenue, 'VND'),
-        this.metric('successfulPayments', 'Số thanh toán thành công', payments.length, 'lần'),
+        this.metric(
+          'successfulPayments',
+          'Số thanh toán thành công',
+          payments.length,
+          'lần',
+        ),
         this.metric('entries', 'Lượt xe vào', sessions.length, 'lượt'),
         this.metric('exits', 'Lượt xe ra', exits.length, 'lượt'),
-        this.metric('slotUtilizationRate', 'Tỷ lệ sử dụng chỗ đỗ', slots.utilizationRate, '%'),
+        this.metric(
+          'slotUtilizationRate',
+          'Tỷ lệ sử dụng chỗ đỗ',
+          slots.utilizationRate,
+          '%',
+        ),
       ],
       revenueSeries: this.series(payments, range),
-      revenueByPaymentType: this.breakdown(payments, (p) => p.paymentType ?? 'Unknown'),
+      revenueByPaymentType: this.breakdown(
+        payments,
+        (p) => p.paymentType ?? 'Unknown',
+      ),
       revenueByPaymentMethod: this.breakdown(payments, (p) => p.paymentMethod),
       slots,
-      slotOccupancyByFloor: await this.floorOccupancy(),
+      slotOccupancyByFloor: await this.floorOccupancy(range.vehicleTypeId),
     });
   }
 
-  async revenue(query: Record<string, string | undefined>): Promise<PbmsResponseDto> {
+  async revenue(
+    query: Record<string, string | undefined>,
+  ): Promise<PbmsResponseDto> {
     const range = this.normalizeRange(query);
     const payments = await this.successfulPayments(range);
-    const totalRevenue = payments.reduce((sum, p) => sum + toMoney(p.amount), 0);
+    const totalRevenue = payments.reduce(
+      (sum, p) => sum + toMoney(p.amount),
+      0,
+    );
     const avg = payments.length ? totalRevenue / payments.length : 0;
     return PbmsResponseDto.ok('Lấy báo cáo doanh thu thành công', {
       range,
@@ -69,7 +105,10 @@ export class ReportsService {
         lowestRevenuePeriod: range.groupBy,
       },
       revenueSeries: this.series(payments, range),
-      byPaymentType: this.breakdown(payments, (p) => p.paymentType ?? 'Unknown'),
+      byPaymentType: this.breakdown(
+        payments,
+        (p) => p.paymentType ?? 'Unknown',
+      ),
       byPaymentMethod: this.breakdown(payments, (p) => p.paymentMethod),
       latestPayments: payments.slice(0, 100).map((p) => ({
         paymentId: p.id,
@@ -83,17 +122,30 @@ export class ReportsService {
     });
   }
 
-  async operations(query: Record<string, string | undefined>): Promise<PbmsResponseDto> {
+  async operations(
+    query: Record<string, string | undefined>,
+  ): Promise<PbmsResponseDto> {
     const range = this.normalizeRange(query);
     const entries = await this.prisma.parkingSession.findMany({
-      where: { entryTime: { gte: range.from, lte: range.to } },
+      where: {
+        entryTime: { gte: range.from, lte: range.to },
+        ...(range.vehicleTypeId ? { vehicleTypeId: range.vehicleTypeId } : {}),
+      },
       include: { vehicleType: true },
     });
     const exits = await this.prisma.parkingSession.findMany({
-      where: { exitTime: { gte: range.from, lte: range.to } },
+      where: {
+        exitTime: { gte: range.from, lte: range.to },
+        ...(range.vehicleTypeId ? { vehicleTypeId: range.vehicleTypeId } : {}),
+      },
     });
     const reservations = await this.prisma.reservation.findMany({
-      where: { createdAt: { gte: range.from, lte: range.to } },
+      where: {
+        createdAt: { gte: range.from, lte: range.to },
+        ...(range.vehicleTypeId
+          ? { vehicle: { vehicleTypeId: range.vehicleTypeId } }
+          : {}),
+      },
     });
     const incidents = await this.prisma.incidentReport.findMany();
     return PbmsResponseDto.ok('Lấy báo cáo vận hành thành công', {
@@ -101,28 +153,46 @@ export class ReportsService {
       sessions: {
         entries: entries.length,
         exits: exits.length,
-        activeSessions: entries.filter((s) => sameStatus(s.status, 'Active')).length,
-        completedSessions: exits.filter((s) => sameStatus(s.status, 'Completed')).length,
+        activeSessions: entries.filter((s) => sameStatus(s.status, 'Active'))
+          .length,
+        completedSessions: exits.filter((s) =>
+          sameStatus(s.status, 'Completed'),
+        ).length,
         averageParkingMinutes: 0,
       },
       reservations: {
         total: reservations.length,
-        pending: reservations.filter((r) => sameStatus(r.status, 'Pending')).length,
-        confirmed: reservations.filter((r) => sameStatus(r.status, 'Confirmed')).length,
-        checkedIn: reservations.filter((r) => sameStatus(r.status, 'CheckedIn')).length,
-        completed: reservations.filter((r) => sameStatus(r.status, 'Completed')).length,
-        cancelled: reservations.filter((r) => sameStatus(r.status, 'Cancelled')).length,
-        noShow: reservations.filter((r) => sameStatus(r.status, 'NoShow')).length,
+        pending: reservations.filter((r) => sameStatus(r.status, 'Pending'))
+          .length,
+        confirmed: reservations.filter((r) => sameStatus(r.status, 'Confirmed'))
+          .length,
+        checkedIn: reservations.filter((r) => sameStatus(r.status, 'CheckedIn'))
+          .length,
+        completed: reservations.filter((r) => sameStatus(r.status, 'Completed'))
+          .length,
+        cancelled: reservations.filter((r) => sameStatus(r.status, 'Cancelled'))
+          .length,
+        noShow: reservations.filter((r) => sameStatus(r.status, 'NoShow'))
+          .length,
       },
       incidents: {
-        openIncidents: incidents.filter((i) => sameStatus(i.status, 'Open')).length,
-        inProgressIncidents: incidents.filter((i) => sameStatus(i.status, 'InProgress')).length,
-        resolvedInRange: incidents.filter((i) => sameStatus(i.status, 'Resolved')).length,
-        cancelledIncidents: incidents.filter((i) => sameStatus(i.status, 'Cancelled')).length,
+        openIncidents: incidents.filter((i) => sameStatus(i.status, 'Open'))
+          .length,
+        inProgressIncidents: incidents.filter((i) =>
+          sameStatus(i.status, 'InProgress'),
+        ).length,
+        resolvedInRange: incidents.filter((i) =>
+          sameStatus(i.status, 'Resolved'),
+        ).length,
+        cancelledIncidents: incidents.filter((i) =>
+          sameStatus(i.status, 'Cancelled'),
+        ).length,
       },
       slots: await this.slotOverview(),
       slotOccupancyByFloor: await this.floorOccupancy(),
-      sessionsByVehicleType: this.countBreakdown(entries.map((s) => s.vehicleType.typeName)),
+      sessionsByVehicleType: this.countBreakdown(
+        entries.map((s) => s.vehicleType.typeName),
+      ),
       latestSessions: entries.slice(0, 100).map((s) => ({
         sessionId: s.id,
         licensePlate: s.licensePlateIn,
@@ -134,7 +204,9 @@ export class ReportsService {
     });
   }
 
-  async exportPdf(query: Record<string, string | undefined>): Promise<StreamableFile | PbmsResponseDto> {
+  async exportPdf(
+    query: Record<string, string | undefined>,
+  ): Promise<StreamableFile | PbmsResponseDto> {
     const format = (query.format ?? query.Format ?? 'pdf').toLowerCase();
     if (format !== 'pdf') {
       return PbmsResponseDto.fail('Định dạng xuất chỉ hỗ trợ pdf');
@@ -143,7 +215,8 @@ export class ReportsService {
     const chunks: Buffer[] = [];
     const doc = new PDFDocument({ size: 'A4', margin: 48 });
     doc.on('data', (chunk: Buffer) => chunks.push(chunk));
-    const done = new Promise<Buffer>((resolve) => {
+    const done = new Promise<Buffer>((resolve, reject) => {
+      doc.on('error', reject);
       doc.on('end', () => resolve(Buffer.concat(chunks)));
     });
     doc.fontSize(18).text('Báo cáo thống kê PBMS', { align: 'center' });
@@ -158,14 +231,29 @@ export class ReportsService {
   }
 
   private normalizeRange(query: Record<string, string | undefined>): Range {
-    const to = query.to || query.To ? new Date(query.to || query.To || '') : new Date();
-    const from = query.from || query.From
-      ? new Date(query.from || query.From || '')
-      : new Date(to.getTime() - 7 * 86400000);
+    const to =
+      query.to || query.To ? new Date(query.to || query.To || '') : new Date();
+    const from =
+      query.from || query.From
+        ? new Date(query.from || query.From || '')
+        : new Date(to.getTime() - 7 * 86400000);
+    const groupBy = query.groupBy || query.GroupBy || 'day';
+    if (
+      Number.isNaN(from.getTime()) ||
+      Number.isNaN(to.getTime()) ||
+      from > to ||
+      to.getTime() - from.getTime() > 366 * 86400000 ||
+      !['day', 'month', 'year'].includes(groupBy)
+    )
+      throw new AppError(
+        400,
+        'INVALID_REPORT_RANGE',
+        'Khoảng báo cáo phải hợp lệ, tối đa 366 ngày; groupBy: day, month, year',
+      );
     return {
-      from: Number.isNaN(from.getTime()) ? new Date(to.getTime() - 7 * 86400000) : from,
-      to: Number.isNaN(to.getTime()) ? new Date() : to,
-      groupBy: query.groupBy || query.GroupBy || 'day',
+      from,
+      to,
+      groupBy,
       vehicleTypeId: query.vehicleTypeId || query.VehicleTypeId || null,
     };
   }
@@ -174,28 +262,58 @@ export class ReportsService {
     return this.prisma.payment.findMany({
       where: {
         paymentStatus: 'Success',
+        ...(range.vehicleTypeId
+          ? {
+              OR: [
+                { session: { vehicleTypeId: range.vehicleTypeId } },
+                {
+                  subscription: {
+                    vehicle: { vehicleTypeId: range.vehicleTypeId },
+                  },
+                },
+                {
+                  reservation: {
+                    vehicle: { vehicleTypeId: range.vehicleTypeId },
+                  },
+                },
+              ],
+            }
+          : {}),
         paymentTime: { gte: range.from, lte: range.to },
       },
       orderBy: { paymentTime: 'desc' },
     });
   }
 
-  private async slotOverview() {
-    const slots = await this.prisma.parkingSlot.findMany();
-    const available = slots.filter((s) => sameStatus(s.status, 'Available')).length;
-    const occupied = slots.filter((s) => sameStatus(s.status, 'Occupied')).length;
-    const assigned = slots.filter((s) => sameStatus(s.status, 'Assigned')).length;
+  private async slotOverview(vehicleTypeId?: string | null) {
+    const slots = await this.prisma.parkingSlot.findMany({
+      where: vehicleTypeId ? { vehicleTypeId } : {},
+    });
+    const available = slots.filter((s) =>
+      sameStatus(s.status, 'Available'),
+    ).length;
+    const occupied = slots.filter((s) =>
+      sameStatus(s.status, 'Occupied'),
+    ).length;
+    const assigned = slots.filter((s) =>
+      sameStatus(s.status, 'Assigned'),
+    ).length;
     return {
       totalSlots: slots.length,
       availableSlots: available,
       occupiedSlots: occupied,
       assignedSlots: assigned,
-      utilizationRate: slots.length ? Math.round(((occupied + assigned) / slots.length) * 10000) / 100 : 0,
+      utilizationRate: slots.length
+        ? Math.round(((occupied + assigned) / slots.length) * 10000) / 100
+        : 0,
     };
   }
 
-  private async floorOccupancy() {
-    const slots = await this.prisma.parkingSlot.findMany({ include: { floor: true } });
+  private async floorOccupancy(vehicleTypeId?: string | null) {
+    const slots = await this.prisma.parkingSlot.findMany({
+      where: vehicleTypeId ? { vehicleTypeId } : {},
+      include: { floor: true },
+    });
     const map = new Map<
       string,
       {
@@ -223,17 +341,29 @@ export class ReportsService {
       if (sameStatus(slot.status, 'Occupied')) current.occupiedSlots += 1;
       if (sameStatus(slot.status, 'Assigned')) current.assignedSlots += 1;
       current.utilizationRate = current.totalSlots
-        ? Math.round(((current.occupiedSlots + current.assignedSlots) / current.totalSlots) * 10000) / 100
+        ? Math.round(
+            ((current.occupiedSlots + current.assignedSlots) /
+              current.totalSlots) *
+              10000,
+          ) / 100
         : 0;
       map.set(slot.floorId, current);
     }
     return [...map.values()];
   }
 
-  private series(payments: Array<{ paymentTime: Date; amount: { toString(): string } }>, range: Range) {
+  private series(
+    payments: Array<{ paymentTime: Date; amount: { toString(): string } }>,
+    range: Range,
+  ) {
     const byDay = new Map<string, { count: number; amount: number }>();
     for (const payment of payments) {
-      const key = payment.paymentTime.toISOString().slice(0, 10);
+      const key = payment.paymentTime
+        .toISOString()
+        .slice(
+          0,
+          range.groupBy === 'year' ? 4 : range.groupBy === 'month' ? 7 : 10,
+        );
       const current = byDay.get(key) ?? { count: 0, amount: 0 };
       current.count += 1;
       current.amount += toMoney(payment.amount);
@@ -248,8 +378,16 @@ export class ReportsService {
   }
 
   private breakdown(
-    payments: Array<{ amount: { toString(): string }; paymentType?: string | null; paymentMethod: string }>,
-    key: (p: { amount: { toString(): string }; paymentType?: string | null; paymentMethod: string }) => string,
+    payments: Array<{
+      amount: { toString(): string };
+      paymentType?: string | null;
+      paymentMethod: string;
+    }>,
+    key: (p: {
+      amount: { toString(): string };
+      paymentType?: string | null;
+      paymentMethod: string;
+    }) => string,
   ) {
     const map = new Map<string, { count: number; amount: number }>();
     const total = payments.reduce((sum, p) => sum + toMoney(p.amount), 0) || 1;
@@ -273,7 +411,12 @@ export class ReportsService {
     for (const name of names) {
       map.set(name, (map.get(name) ?? 0) + 1);
     }
-    return [...map.entries()].map(([name, count]) => ({ name, count, amount: 0, percent: 0 }));
+    return [...map.entries()].map(([name, count]) => ({
+      name,
+      count,
+      amount: 0,
+      percent: 0,
+    }));
   }
 
   private metric(key: string, label: string, value: number, unit: string) {
