@@ -1,3 +1,4 @@
+import { PrismaService } from '../src/prisma/prisma.service';
 import { Test, TestingModule } from '@nestjs/testing';
 import { Controller, Get, INestApplication } from '@nestjs/common';
 import { APP_GUARD } from '@nestjs/core';
@@ -11,7 +12,9 @@ import { AtStrategy } from '../src/auth/strategies/at.strategy';
 @Controller('protected-probe')
 class ProtectedProbeController {
   @Get()
-  get(): string { return 'protected'; }
+  get(): string {
+    return 'protected';
+  }
 }
 
 describe('AppController (e2e)', () => {
@@ -20,11 +23,21 @@ describe('AppController (e2e)', () => {
   beforeEach(async () => {
     const moduleFixture: TestingModule = await Test.createTestingModule({
       controllers: [AppController, ProtectedProbeController],
-      providers: [AtStrategy, { provide: APP_GUARD, useClass: AtGuard }],
+      providers: [
+        {
+          provide: PrismaService,
+          useValue: { user: { findUnique: jest.fn() } },
+        },
+        AtStrategy,
+        { provide: APP_GUARD, useClass: AtGuard },
+      ],
     }).compile();
 
     app = moduleFixture.createNestApplication();
-    const document = SwaggerModule.createDocument(app, new DocumentBuilder().build());
+    const document = SwaggerModule.createDocument(
+      app,
+      new DocumentBuilder().build(),
+    );
     SwaggerModule.setup('api/docs', app, document);
     await app.init();
   });
@@ -41,7 +54,10 @@ describe('AppController (e2e)', () => {
   });
 
   it('serves health without a token', () => {
-    return request(app.getHttpServer()).get('/health').expect(200).expect({ status: 'ok' });
+    return request(app.getHttpServer())
+      .get('/health')
+      .expect(200)
+      .expect({ status: 'ok' });
   });
 
   it('keeps non-public routes protected', () => {

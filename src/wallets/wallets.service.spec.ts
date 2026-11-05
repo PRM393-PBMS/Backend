@@ -11,7 +11,10 @@ import { PBMS_ROLES_KEY } from '../auth/common/decorators/pbms-roles.decorator';
 import { PbmsRolesGuard } from '../auth/common/guards/pbms-roles.guard';
 import { CreateWalletAdjustmentDto } from './dto/create-wallet-adjustment.dto';
 import { WalletsController } from './wallets.controller';
-import { InsufficientWalletFundsError, WalletsService } from './wallets.service';
+import {
+  InsufficientWalletFundsError,
+  WalletsService,
+} from './wallets.service';
 
 const D = (value: number) => new Prisma.Decimal(value);
 
@@ -22,10 +25,20 @@ describe('WalletsService', () => {
   let service: WalletsService;
   let prisma: {
     user: { findUnique: jest.Mock };
-    wallet: { findUnique: jest.Mock; create: jest.Mock; update: jest.Mock; updateMany: jest.Mock };
-    walletTransaction: { findMany: jest.Mock; findFirst: jest.Mock; findUnique: jest.Mock; create: jest.Mock };
+    wallet: {
+      findUnique: jest.Mock;
+      create: jest.Mock;
+      update: jest.Mock;
+      updateMany: jest.Mock;
+    };
+    walletTransaction: {
+      findMany: jest.Mock;
+      findFirst: jest.Mock;
+      findUnique: jest.Mock;
+      create: jest.Mock;
+    };
     walletAdjustmentLog: { create: jest.Mock };
-    payment: { create: jest.Mock; update: jest.Mock };
+    payment: { findFirst: jest.Mock; create: jest.Mock; update: jest.Mock };
     $queryRaw: jest.Mock;
     $transaction: jest.Mock;
   };
@@ -33,7 +46,11 @@ describe('WalletsService', () => {
   let notifications: { notify: jest.Mock };
 
   /** Ví giả: cash = ngăn CASH, bonus = ngăn BONUS. */
-  const wallet = (cash: number, bonus = 0, bonusExpiresAt: Date | null = null) => ({
+  const wallet = (
+    cash: number,
+    bonus = 0,
+    bonusExpiresAt: Date | null = null,
+  ) => ({
     id: walletId,
     userId,
     balance: D(cash),
@@ -44,7 +61,12 @@ describe('WalletsService', () => {
   beforeEach(async () => {
     prisma = {
       user: { findUnique: jest.fn() },
-      wallet: { findUnique: jest.fn(), create: jest.fn(), update: jest.fn(), updateMany: jest.fn() },
+      wallet: {
+        findUnique: jest.fn(),
+        create: jest.fn(),
+        update: jest.fn(),
+        updateMany: jest.fn(),
+      },
       walletTransaction: {
         findMany: jest.fn(),
         findFirst: jest.fn(),
@@ -52,11 +74,17 @@ describe('WalletsService', () => {
         create: jest.fn().mockResolvedValue({}),
       },
       walletAdjustmentLog: { create: jest.fn() },
-      payment: { create: jest.fn(), update: jest.fn() },
+      payment: {
+        findFirst: jest.fn().mockResolvedValue(null),
+        create: jest.fn(),
+        update: jest.fn(),
+      },
       $queryRaw: jest.fn().mockResolvedValue([]),
       $transaction: jest.fn(),
     };
-    prisma.$transaction.mockImplementation((fn: (tx: typeof prisma) => unknown) => fn(prisma));
+    prisma.$transaction.mockImplementation(
+      (fn: (tx: typeof prisma) => unknown) => fn(prisma),
+    );
     payos = { createPaymentLink: jest.fn() };
     notifications = { notify: jest.fn().mockResolvedValue(undefined) };
     const module: TestingModule = await Test.createTestingModule({
@@ -71,7 +99,9 @@ describe('WalletsService', () => {
   });
 
   const createdRows = () =>
-    prisma.walletTransaction.create.mock.calls.map(([arg]) => arg.data as Record<string, unknown>);
+    prisma.walletTransaction.create.mock.calls.map(
+      ([arg]) => arg.data as Record<string, unknown>,
+    );
 
   describe('xem ví', () => {
     it('returns 401 when listing a wallet without a user', async () => {
@@ -81,7 +111,10 @@ describe('WalletsService', () => {
     });
 
     it('forbids reading another user wallet', async () => {
-      prisma.wallet.findUnique.mockResolvedValue({ ...wallet(1), userId: 'aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa' });
+      prisma.wallet.findUnique.mockResolvedValue({
+        ...wallet(1),
+        userId: 'aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa',
+      });
       const result = await service.getById(userId, walletId);
       expect(result.statusCode).toBe(403);
       expect(result.message).toBe('Bạn không sở hữu ví này');
@@ -92,13 +125,23 @@ describe('WalletsService', () => {
       prisma.wallet.findUnique.mockResolvedValue(wallet(100000, 30000));
       const fresh = await service.getById(userId, walletId);
       expect(fresh.result).toEqual(
-        expect.objectContaining({ walletBalance: 130000, cashBalance: 100000, bonusBalance: 30000 }),
+        expect.objectContaining({
+          walletBalance: 130000,
+          cashBalance: 100000,
+          bonusBalance: 30000,
+        }),
       );
 
-      prisma.wallet.findUnique.mockResolvedValue(wallet(100000, 30000, new Date(Date.now() - 1000)));
+      prisma.wallet.findUnique.mockResolvedValue(
+        wallet(100000, 30000, new Date(Date.now() - 1000)),
+      );
       const expired = await service.getById(userId, walletId);
       expect(expired.result).toEqual(
-        expect.objectContaining({ walletBalance: 100000, cashBalance: 100000, bonusBalance: 0 }),
+        expect.objectContaining({
+          walletBalance: 100000,
+          cashBalance: 100000,
+          bonusBalance: 0,
+        }),
       );
     });
 
@@ -202,7 +245,11 @@ describe('WalletsService', () => {
 
     it('creates a PayOS top-up link without changing the current balance', async () => {
       prisma.wallet.findUnique.mockResolvedValue(wallet(20000));
-      prisma.payment.create.mockResolvedValue({ id: 'pay-1', amount: D(100000), paymentType: 'WalletTopUp' });
+      prisma.payment.create.mockResolvedValue({
+        id: 'pay-1',
+        amount: D(100000),
+        paymentType: 'WalletTopUp',
+      });
       payos.createPaymentLink.mockResolvedValue({
         paymentUrl: 'https://pay.payos.vn/web/demo',
         paymentLinkId: 'plink_demo',
@@ -234,10 +281,18 @@ describe('WalletsService', () => {
       await service.creditFromPayment(prisma as never, payment);
 
       expect(prisma.walletTransaction.findUnique).toHaveBeenCalledWith({
-        where: { paymentId_bucket: { paymentId: 'pay-top', bucket: WalletBucket.CASH } },
+        where: {
+          paymentId_bucket: { paymentId: 'pay-top', bucket: WalletBucket.CASH },
+        },
       });
-      expect(prisma.wallet.update.mock.calls[0][0].data).toEqual({ balance: { increment: D(100000) } });
-      expect(createdRows()[0]).toMatchObject({ type: 'TOP_UP', bucket: 'CASH', referenceId: 'pay-top' });
+      expect(prisma.wallet.update.mock.calls[0][0].data).toEqual({
+        balance: { increment: D(100000) },
+      });
+      expect(createdRows()[0]).toMatchObject({
+        type: 'TOP_UP',
+        bucket: 'CASH',
+        referenceId: 'pay-top',
+      });
 
       prisma.wallet.update.mockClear();
       prisma.walletTransaction.findUnique.mockResolvedValue({ id: 'existing' });
@@ -248,7 +303,14 @@ describe('WalletsService', () => {
 
   describe('trừ tiền: BONUS trước, CASH sau', () => {
     const debit = (amount: number) =>
-      service.debitInTransaction(prisma as never, walletId, D(amount), 'SubscriptionFee', 'pay-1', 'Mua gói tháng');
+      service.debitInTransaction(
+        prisma as never,
+        walletId,
+        D(amount),
+        'SubscriptionFee',
+        'pay-1',
+        'Mua gói tháng',
+      );
 
     beforeEach(() => {
       prisma.wallet.updateMany.mockResolvedValue({ count: 1 });
@@ -286,7 +348,11 @@ describe('WalletsService', () => {
       expect(result.bonusDebited.toNumber()).toBe(30000);
       expect(result.cashDebited.toNumber()).toBe(0);
       expect(createdRows()).toEqual([
-        expect.objectContaining({ bucket: 'BONUS', amount: D(-30000), balanceAfter: D(20000) }),
+        expect.objectContaining({
+          bucket: 'BONUS',
+          amount: D(-30000),
+          balanceAfter: D(20000),
+        }),
       ]);
       expect(result.balanceAfter.toNumber()).toBe(120000);
     });
@@ -298,21 +364,36 @@ describe('WalletsService', () => {
 
       expect(prisma.wallet.updateMany.mock.calls[0][0]).toEqual({
         where: { id: walletId, balance: D(100000), bonusBalance: D(30000) },
-        data: { balance: { decrement: D(20000) }, bonusBalance: { decrement: D(30000) } },
+        data: {
+          balance: { decrement: D(20000) },
+          bonusBalance: { decrement: D(30000) },
+        },
       });
       expect(createdRows()).toEqual([
-        expect.objectContaining({ bucket: 'BONUS', amount: D(-30000), balanceAfter: D(0) }),
-        expect.objectContaining({ bucket: 'CASH', amount: D(-20000), balanceAfter: D(80000) }),
+        expect.objectContaining({
+          bucket: 'BONUS',
+          amount: D(-30000),
+          balanceAfter: D(0),
+        }),
+        expect.objectContaining({
+          bucket: 'CASH',
+          amount: D(-20000),
+          balanceAfter: D(80000),
+        }),
       ]);
       expect(result.balanceAfter.toNumber()).toBe(80000);
     });
 
     it('khuyến mãi đã hết hạn thì không được dùng, trừ hẳn vào CASH', async () => {
-      prisma.wallet.findUnique.mockResolvedValue(wallet(100000, 50000, new Date(Date.now() - 1000)));
+      prisma.wallet.findUnique.mockResolvedValue(
+        wallet(100000, 50000, new Date(Date.now() - 1000)),
+      );
 
       await debit(30000);
 
-      expect(createdRows()).toEqual([expect.objectContaining({ bucket: 'CASH', amount: D(-30000) })]);
+      expect(createdRows()).toEqual([
+        expect.objectContaining({ bucket: 'CASH', amount: D(-30000) }),
+      ]);
     });
 
     it('tổng CASH + BONUS không đủ: ném 400 "Số dư khả dụng không đủ", không đụng số dư', async () => {
@@ -331,27 +412,48 @@ describe('WalletsService', () => {
       prisma.wallet.findUnique
         .mockResolvedValueOnce(wallet(100000, 30000))
         .mockResolvedValueOnce(wallet(100000, 0));
-      prisma.wallet.updateMany.mockResolvedValueOnce({ count: 0 }).mockResolvedValueOnce({ count: 1 });
+      prisma.wallet.updateMany
+        .mockResolvedValueOnce({ count: 0 })
+        .mockResolvedValueOnce({ count: 1 });
 
       await debit(50000);
 
       expect(prisma.wallet.updateMany).toHaveBeenCalledTimes(2);
-      expect(createdRows()).toEqual([expect.objectContaining({ bucket: 'CASH', amount: D(-50000) })]);
+      expect(createdRows()).toEqual([
+        expect.objectContaining({ bucket: 'CASH', amount: D(-50000) }),
+      ]);
     });
 
     it('debitForUser tìm ví theo userId rồi trừ', async () => {
       prisma.wallet.findUnique.mockResolvedValue(wallet(100000));
 
-      await service.debitForUser(prisma as never, userId, D(10000), 'ParkingFee', 'pay-9', 'Phí gửi xe');
+      await service.debitForUser(
+        prisma as never,
+        userId,
+        D(10000),
+        'ParkingFee',
+        'pay-9',
+        'Phí gửi xe',
+      );
 
-      expect(prisma.wallet.findUnique.mock.calls[0][0]).toEqual({ where: { userId } });
-      expect(createdRows()[0]).toMatchObject({ referenceType: 'ParkingFee', paymentId: 'pay-9' });
+      expect(prisma.wallet.findUnique.mock.calls[0][0]).toEqual({
+        where: { userId },
+      });
+      expect(createdRows()[0]).toMatchObject({
+        referenceType: 'ParkingFee',
+        paymentId: 'pay-9',
+      });
     });
   });
 
   describe('hoàn tiền về đúng ngăn đã trừ', () => {
     const debitRows = [
-      { walletId, type: 'DEBIT', bucket: WalletBucket.BONUS, amount: D(-30000) },
+      {
+        walletId,
+        type: 'DEBIT',
+        bucket: WalletBucket.BONUS,
+        amount: D(-30000),
+      },
       { walletId, type: 'DEBIT', bucket: WalletBucket.CASH, amount: D(-20000) },
     ];
 
@@ -362,7 +464,11 @@ describe('WalletsService', () => {
         .mockResolvedValueOnce({ balance: D(80000), bonusBalance: D(30000) })
         .mockResolvedValueOnce({ balance: D(100000), bonusBalance: D(30000) });
 
-      const result = await service.refundTransaction(prisma as never, 'SubscriptionFee', 'pay-1');
+      const result = await service.refundTransaction(
+        prisma as never,
+        'SubscriptionFee',
+        'pay-1',
+      );
 
       expect(prisma.$queryRaw).toHaveBeenCalled();
       expect(prisma.wallet.update.mock.calls.map(([arg]) => arg.data)).toEqual([
@@ -370,8 +476,18 @@ describe('WalletsService', () => {
         { balance: { increment: D(20000) } },
       ]);
       expect(createdRows()).toEqual([
-        expect.objectContaining({ type: 'REFUND', bucket: 'BONUS', amount: D(30000), balanceAfter: D(30000) }),
-        expect.objectContaining({ type: 'REFUND', bucket: 'CASH', amount: D(20000), balanceAfter: D(100000) }),
+        expect.objectContaining({
+          type: 'REFUND',
+          bucket: 'BONUS',
+          amount: D(30000),
+          balanceAfter: D(30000),
+        }),
+        expect.objectContaining({
+          type: 'REFUND',
+          bucket: 'CASH',
+          amount: D(20000),
+          balanceAfter: D(100000),
+        }),
       ]);
       expect(result?.bonusRefunded.toNumber()).toBe(30000);
       expect(result?.cashRefunded.toNumber()).toBe(20000);
@@ -381,7 +497,11 @@ describe('WalletsService', () => {
       prisma.walletTransaction.findMany.mockResolvedValue(debitRows);
       prisma.walletTransaction.findFirst.mockResolvedValue({ id: 'refund-1' });
 
-      const result = await service.refundTransaction(prisma as never, 'SubscriptionFee', 'pay-1');
+      const result = await service.refundTransaction(
+        prisma as never,
+        'SubscriptionFee',
+        'pay-1',
+      );
 
       expect(prisma.wallet.update).not.toHaveBeenCalled();
       expect(result?.cashRefunded.toNumber()).toBe(0);
@@ -389,7 +509,13 @@ describe('WalletsService', () => {
 
     it('nghiệp vụ không trừ ví: trả null', async () => {
       prisma.walletTransaction.findMany.mockResolvedValue([]);
-      expect(await service.refundTransaction(prisma as never, 'SubscriptionFee', 'pay-x')).toBeNull();
+      expect(
+        await service.refundTransaction(
+          prisma as never,
+          'SubscriptionFee',
+          'pay-x',
+        ),
+      ).toBeNull();
     });
   });
 
@@ -403,22 +529,39 @@ describe('WalletsService', () => {
       }) as CreateWalletAdjustmentDto;
 
     beforeEach(() => {
-      prisma.walletAdjustmentLog.create.mockResolvedValue({ id: 'adj-1', reasonType: 'COMPENSATION' });
+      prisma.walletAdjustmentLog.create.mockResolvedValue({
+        id: 'adj-1',
+        reasonType: 'COMPENSATION',
+      });
     });
 
     it('cộng khuyến mãi: chỉ đổi bonusBalance, đặt hạn dùng, ghi ADJUSTMENT + log + báo khách', async () => {
       prisma.wallet.findUnique.mockResolvedValue(wallet(100000, 10000));
-      prisma.wallet.update.mockResolvedValue(wallet(100000, 60000, new Date(Date.now() + 30 * 864e5)));
+      prisma.wallet.update.mockResolvedValue(
+        wallet(100000, 60000, new Date(Date.now() + 30 * 864e5)),
+      );
 
-      const res = await service.adjustBonusBalance(walletId, adminId, dto({ expiryDays: 30 }));
+      const res = await service.adjustBonusBalance(
+        walletId,
+        adminId,
+        dto({ expiryDays: 30 }),
+      );
 
       expect(res.statusCode).toBe(201);
       const update = prisma.wallet.update.mock.calls[0][0].data;
       expect(update.bonusBalance).toEqual({ increment: D(50000) });
       expect(update).not.toHaveProperty('balance');
-      expect(update.bonusExpiresAt.getTime()).toBeGreaterThan(Date.now() + 29 * 864e5);
+      expect(update.bonusExpiresAt.getTime()).toBeGreaterThan(
+        Date.now() + 29 * 864e5,
+      );
       expect(prisma.walletAdjustmentLog.create).toHaveBeenCalledWith({
-        data: { walletId, adminId, amount: D(50000), reasonType: 'COMPENSATION', note: 'Bồi thường sự cố barie' },
+        data: {
+          walletId,
+          adminId,
+          amount: D(50000),
+          reasonType: 'COMPENSATION',
+          note: 'Bồi thường sự cố barie',
+        },
       });
       expect(createdRows()[0]).toMatchObject({
         type: 'ADJUSTMENT',
@@ -427,14 +570,27 @@ describe('WalletsService', () => {
         balanceAfter: D(60000),
         referenceId: 'adj-1',
       });
-      expect(res.result).toEqual(expect.objectContaining({ cashBalance: 100000, bonusBalance: 60000, walletBalance: 160000 }));
-      expect(notifications.notify).toHaveBeenCalledWith(userId, expect.objectContaining({ type: 'wallet' }));
+      expect(res.result).toEqual(
+        expect.objectContaining({
+          cashBalance: 100000,
+          bonusBalance: 60000,
+          walletBalance: 160000,
+        }),
+      );
+      expect(notifications.notify).toHaveBeenCalledWith(
+        userId,
+        expect.objectContaining({ type: 'wallet' }),
+      );
     });
 
     it('thu hồi: không cho ngăn BONUS âm', async () => {
       prisma.wallet.findUnique.mockResolvedValue(wallet(100000, 10000));
 
-      const res = await service.adjustBonusBalance(walletId, adminId, dto({ amount: -20000, reasonType: 'CORRECTION' }));
+      const res = await service.adjustBonusBalance(
+        walletId,
+        adminId,
+        dto({ amount: -20000, reasonType: 'CORRECTION' }),
+      );
 
       expect(res.statusCode).toBe(400);
       expect(res.message).toBe('Số dư khuyến mãi không đủ để thu hồi');
@@ -446,10 +602,18 @@ describe('WalletsService', () => {
       prisma.wallet.findUnique.mockResolvedValue(wallet(100000, 10000));
       prisma.wallet.update.mockResolvedValue(wallet(100000, 0));
 
-      const res = await service.adjustBonusBalance(walletId, adminId, dto({ amount: -10000, reasonType: 'EXPIRED' }));
+      const res = await service.adjustBonusBalance(
+        walletId,
+        adminId,
+        dto({ amount: -10000, reasonType: 'EXPIRED' }),
+      );
 
       expect(res.statusCode).toBe(201);
-      expect(createdRows()[0]).toMatchObject({ bucket: 'BONUS', amount: D(-10000), balanceAfter: D(0) });
+      expect(createdRows()[0]).toMatchObject({
+        bucket: 'BONUS',
+        amount: D(-10000),
+        balanceAfter: D(0),
+      });
     });
 
     it('ví không tồn tại: 404', async () => {
@@ -461,14 +625,30 @@ describe('WalletsService', () => {
 
   describe('CreateWalletAdjustmentDto', () => {
     const errorsOf = async (body: Record<string, unknown>) =>
-      (await validate(plainToInstance(CreateWalletAdjustmentDto, body))).map((e) => e.property);
+      (await validate(plainToInstance(CreateWalletAdjustmentDto, body))).map(
+        (e) => e.property,
+      );
 
     it('hợp lệ khi đủ trường', async () => {
-      expect(await errorsOf({ amount: -5000, reasonType: 'PROMOTION', note: 'Tặng khách mới', expiryDays: 7 })).toEqual([]);
+      expect(
+        await errorsOf({
+          amount: -5000,
+          reasonType: 'PROMOTION',
+          note: 'Tặng khách mới',
+          expiryDays: 7,
+        }),
+      ).toEqual([]);
     });
 
     it('từ chối amount = 0, reasonType lạ, note < 5 ký tự, expiryDays không dương', async () => {
-      expect(await errorsOf({ amount: 0, reasonType: 'GIFT', note: 'abc', expiryDays: 0 })).toEqual(
+      expect(
+        await errorsOf({
+          amount: 0,
+          reasonType: 'GIFT',
+          note: 'abc',
+          expiryDays: 0,
+        }),
+      ).toEqual(
         expect.arrayContaining(['amount', 'reasonType', 'note', 'expiryDays']),
       );
     });
@@ -476,7 +656,12 @@ describe('WalletsService', () => {
 
   it('endpoint điều chỉnh chỉ cho Admin/Manager và gắn guard phân quyền', () => {
     const handler = WalletsController.prototype.adjustBonus;
-    expect(Reflect.getMetadata(PBMS_ROLES_KEY, handler)).toEqual(['admin', 'manager']);
-    expect(Reflect.getMetadata('__guards__', handler)).toContain(PbmsRolesGuard);
+    expect(Reflect.getMetadata(PBMS_ROLES_KEY, handler)).toEqual([
+      'admin',
+      'manager',
+    ]);
+    expect(Reflect.getMetadata('__guards__', handler)).toContain(
+      PbmsRolesGuard,
+    );
   });
 });

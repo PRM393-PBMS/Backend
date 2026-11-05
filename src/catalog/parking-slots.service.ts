@@ -1,12 +1,7 @@
 import { Injectable } from '@nestjs/common';
 import { PrismaService } from '../prisma/prisma.service';
 import { PbmsResponseDto } from '../common/dto/pbms-response.dto';
-import {
-  errorMessage,
-  isEmptyGuid,
-  pbmsPick,
-  pbmsPickGuid,
-} from '../common/pbms-fields';
+import { isEmptyGuid, pbmsPick, pbmsPickGuid } from '../common/pbms-fields';
 
 const SLOT_STATUSES = [
   'Available',
@@ -25,9 +20,6 @@ export class ParkingSlotsService {
       include: { floor: true, vehicleType: true },
       orderBy: { slotCode: 'asc' },
     });
-    if (slots.length === 0) {
-      return PbmsResponseDto.fail('Không tìm thấy ô đỗ nào', 404);
-    }
     return PbmsResponseDto.ok(
       'Lấy danh sách ô đỗ thành công',
       slots.map((s) => this.map(s)),
@@ -86,7 +78,7 @@ export class ParkingSlotsService {
       });
       return PbmsResponseDto.ok('Tạo ô đỗ thành công', this.map(slot), 201);
     } catch (error: unknown) {
-      return PbmsResponseDto.fail(`Lỗi tạo ô đỗ: ${errorMessage(error)}`, 500);
+      return PbmsResponseDto.fromError(error);
     }
   }
 
@@ -141,10 +133,7 @@ export class ParkingSlotsService {
       });
       return PbmsResponseDto.ok('Cập nhật ô đỗ thành công', this.map(slot));
     } catch (error: unknown) {
-      return PbmsResponseDto.fail(
-        `Lỗi cập nhật ô đỗ: ${errorMessage(error)}`,
-        500,
-      );
+      return PbmsResponseDto.fromError(error);
     }
   }
 
@@ -188,7 +177,7 @@ export class ParkingSlotsService {
       await this.prisma.parkingSlot.delete({ where: { id } });
       return PbmsResponseDto.ok('Xóa ô đỗ thành công');
     } catch (error: unknown) {
-      return PbmsResponseDto.fail(`Lỗi xóa ô đỗ: ${errorMessage(error)}`, 500);
+      return PbmsResponseDto.fromError(error);
     }
   }
 
@@ -216,7 +205,7 @@ export class ParkingSlotsService {
       where: { id: floorId },
     });
     if (!floor) {
-      return { error: PbmsResponseDto.fail('Tầng không tồn tại') };
+      return { error: PbmsResponseDto.fail('Tầng không tồn tại', 404) };
     }
     if (floor.parkingId !== parkingId) {
       return { error: PbmsResponseDto.fail('Tầng không thuộc bãi đỗ đã chọn') };
@@ -225,7 +214,9 @@ export class ParkingSlotsService {
       where: { id: vehicleTypeId },
     });
     if (!vehicleType) {
-      return { error: PbmsResponseDto.fail('Loại phương tiện không tồn tại') };
+      return {
+        error: PbmsResponseDto.fail('Loại phương tiện không tồn tại', 404),
+      };
     }
     const dup = await this.prisma.parkingSlot.findFirst({
       where: {
@@ -235,7 +226,7 @@ export class ParkingSlotsService {
       },
     });
     if (dup) {
-      return { error: PbmsResponseDto.fail('Mã ô đỗ đã tồn tại') };
+      return { error: PbmsResponseDto.fail('Mã ô đỗ đã tồn tại', 409) };
     }
     return { error: null };
   }

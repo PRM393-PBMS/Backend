@@ -37,7 +37,7 @@ describe('MailService', () => {
 
     await expect(
       service.sendOtpEmail('user@example.com', '123456', 'registration'),
-    ).rejects.toThrow('Chưa cấu hình Resend: cần RESEND_API_KEY trong môi trường.');
+    ).rejects.toThrow('Dịch vụ email chưa được cấu hình');
 
     expect(ResendMock).not.toHaveBeenCalled();
     expect(sendMock).not.toHaveBeenCalled();
@@ -48,7 +48,7 @@ describe('MailService', () => {
 
     await expect(
       service.sendOtpEmail('user@example.com', '123456', 'registration'),
-    ).rejects.toThrow('Chưa cấu hình Resend: cần MAIL_FROM trong môi trường.');
+    ).rejects.toThrow('Dịch vụ email chưa được cấu hình');
 
     expect(ResendMock).not.toHaveBeenCalled();
   });
@@ -101,6 +101,6 @@ describe('MailService', () => {
 
     await expect(
       service.sendOtpEmail('user@example.com', '123456', 'registration'),
-    ).rejects.toThrow('Gửi email Resend thất bại: Invalid from address');
+    ).rejects.toThrow('Chưa gửi được email OTP; vui lòng thử lại sau');
   });
 });

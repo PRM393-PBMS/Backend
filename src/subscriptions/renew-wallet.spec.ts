@@ -3,7 +3,10 @@ import { Prisma } from '@prisma/client';
 import { HashingService } from '../auth/services/hashing.service';
 import { PayosService } from '../integrations/payos-files.service';
 import { PrismaService } from '../prisma/prisma.service';
-import { InsufficientWalletFundsError, WalletsService } from '../wallets/wallets.service';
+import {
+  InsufficientWalletFundsError,
+  WalletsService,
+} from '../wallets/wallets.service';
 import { SubscriptionRenewalsService } from './subscription-renewals.service';
 
 describe('Gia hạn vé tháng bằng ví', () => {
@@ -15,31 +18,58 @@ describe('Gia hạn vé tháng bằng ví', () => {
   let service: SubscriptionRenewalsService;
   let wallets: { debitForUser: jest.Mock; getBalanceForUser: jest.Mock };
   let payos: { createPaymentLink: jest.Mock };
-  let tx: {
-    payment: { create: jest.Mock };
-    monthlySubscription: { findUnique: jest.Mock; updateMany: jest.Mock };
-    subscriptionRenewal: { create: jest.Mock };
-  };
+  let tx: any;
   let subscriptionStatus: string;
-  let payment: { create: jest.Mock; update: jest.Mock };
+  let payment: { create: jest.Mock; update: jest.Mock; findFirst: jest.Mock };
 
   beforeEach(async () => {
     subscriptionStatus = 'Active';
     tx = {
-      payment: { create: jest.fn().mockResolvedValue({ id: 'pay-1' }) },
+      subscriptionContract: { findUnique: jest.fn().mockResolvedValue(null) },
+      $queryRaw: jest.fn().mockResolvedValue([]),
+      payment: {
+        create: jest.fn().mockResolvedValue({ id: 'pay-1' }),
+        findFirst: jest.fn().mockResolvedValue(null),
+      },
       monthlySubscription: {
-        findUnique: jest.fn(() => Promise.resolve({ endDate: oldEnd, status: subscriptionStatus })),
+        findUniqueOrThrow: jest.fn(() =>
+          Promise.resolve({
+            status: subscriptionStatus,
+            parkingId: 'p1',
+            userId,
+            endDate: oldEnd,
+          }),
+        ),
+        findUnique: jest.fn(() =>
+          Promise.resolve({
+            endDate: oldEnd,
+            status: subscriptionStatus,
+            fixedSlotId: null,
+            package: { allParkings: false, durationDays: 30 },
+            vehicle: { vehicleType: { typeName: 'Xe máy' } },
+          }),
+        ),
+        update: jest.fn().mockResolvedValue({}),
         updateMany: jest.fn().mockResolvedValue({ count: 1 }),
       },
       subscriptionRenewal: { create: jest.fn().mockResolvedValue({}) },
     };
     wallets = {
-      debitForUser: jest.fn().mockResolvedValue({ walletId: 'w1', balanceAfter: new Prisma.Decimal(100000) }),
-      getBalanceForUser: jest.fn().mockResolvedValue({ walletId: 'w1', walletBalance: 5000 }),
+      debitForUser: jest.fn().mockResolvedValue({
+        walletId: 'w1',
+        balanceAfter: new Prisma.Decimal(100000),
+      }),
+      getBalanceForUser: jest
+        .fn()
+        .mockResolvedValue({ walletId: 'w1', walletBalance: 5000 }),
     };
     payos = { createPaymentLink: jest.fn() };
     payment = {
-      create: jest.fn().mockResolvedValue({ id: 'pay-2', amount: new Prisma.Decimal(1500000) }),
+      findFirst: jest.fn().mockResolvedValue(null),
+      create: jest.fn().mockResolvedValue({
+        id: 'pay-2',
+        amount: new Prisma.Decimal(1500000),
+      }),
       update: jest.fn(),
     };
     const prisma = {
@@ -52,6 +82,7 @@ describe('Gia hạn vé tháng bằng ví', () => {
             userId,
             status: subscriptionStatus,
             endDate: oldEnd,
+            parkingId: 'p1',
             vehicle: { vehicleTypeId: 'vt' },
           }),
         ),
@@ -63,6 +94,8 @@ describe('Gia hạn vé tháng bằng ví', () => {
           vehicleTypeId: 'vt',
           price: new Prisma.Decimal(1500000),
           durationDays: 30,
+          allParkings: false,
+          durationMonths: 1,
         }),
       },
       $transaction: jest.fn((fn: (t: typeof tx) => Promise<unknown>) => fn(tx)),
@@ -72,7 +105,13 @@ describe('Gia hạn vé tháng bằng ví', () => {
         SubscriptionRenewalsService,
         { provide: PrismaService, useValue: prisma },
         { provide: PayosService, useValue: payos },
-        { provide: HashingService, useValue: { compare: jest.fn().mockResolvedValue(true), hash: jest.fn() } },
+        {
+          provide: HashingService,
+          useValue: {
+            compare: jest.fn().mockResolvedValue(true),
+            hash: jest.fn(),
+          },
+        },
         { provide: WalletsService, useValue: wallets },
       ],
     }).compile();
@@ -80,11 +119,15 @@ describe('Gia hạn vé tháng bằng ví', () => {
   });
 
   it('trừ ví, nối thêm 30 ngày từ ngày hết hạn cũ, không tạo link PayOS', async () => {
-    const res = await service.renew(subId, userId, { packageId: pkgId, paymentMethod: 'Wallet', password: 'x' });
+    const res = await service.renew(subId, userId, {
+      packageId: pkgId,
+      paymentMethod: 'Wallet',
+      password: 'x',
+    });
     expect(res.isSuccess).toBe(true);
     expect(wallets.debitForUser).toHaveBeenCalled();
     expect(payos.createPaymentLink).not.toHaveBeenCalled();
-    const update = tx.monthlySubscription.updateMany.mock.calls[0][0];
+    const update = tx.monthlySubscription.updateMany.mock.calls.find(([arg]:any) => arg.data.endDate)[0];
     // Chỉ cập nhật khi ngày hết hạn vẫn là ngày vừa đọc.
     expect(update.where).toMatchObject({ id: subId, endDate: oldEnd });
     const newEnd = update.data.endDate as Date;
@@ -97,41 +140,65 @@ describe('Gia hạn vé tháng bằng ví', () => {
     });
   });
 
-  it('bấm đúp: lần sau thấy ngày hết hạn đã đổi thì đọc lại và cộng tiếp từ ngày mới', async () => {
-    const firstEnd = new Date(oldEnd.getTime() + 30 * 864e5);
-    tx.monthlySubscription.findUnique
-      .mockResolvedValueOnce({ endDate: oldEnd, status: 'Active' })
-      .mockResolvedValueOnce({ endDate: firstEnd, status: 'Active' });
-    tx.monthlySubscription.updateMany.mockResolvedValueOnce({ count: 0 }).mockResolvedValueOnce({ count: 1 });
-    const res = await service.renew(subId, userId, { packageId: pkgId, paymentMethod: 'Wallet', password: 'x' });
-    expect(res.isSuccess).toBe(true);
-    const newEnd = tx.monthlySubscription.updateMany.mock.calls[1][0].data.endDate as Date;
-    expect(Math.round((newEnd.getTime() - firstEnd.getTime()) / 864e5)).toBe(30);
-    expect(tx.subscriptionRenewal.create).toHaveBeenCalledTimes(1);
+  it('không trừ ví khi vé đã bị hủy trước lúc lấy khóa', async () => {
+    tx.monthlySubscription.findUniqueOrThrow.mockResolvedValue({
+      status: 'Cancelled',
+      userId,
+      parkingId: 'p1',
+    });
+    const res = await service.renew(subId, userId, {
+      packageId: pkgId,
+      paymentMethod: 'Wallet',
+      password: 'x',
+    });
+    expect(res.statusCode).toBe(409);
+    expect(wallets.debitForUser).not.toHaveBeenCalled();
+    expect(tx.payment.create).not.toHaveBeenCalled();
   });
 
   it('vé chưa thanh toán thì không gia hạn được', async () => {
     subscriptionStatus = 'PendingPayment';
-    const res = await service.renew(subId, userId, { packageId: pkgId, paymentMethod: 'Wallet', password: 'x' });
+    const res = await service.renew(subId, userId, {
+      packageId: pkgId,
+      paymentMethod: 'Wallet',
+      password: 'x',
+    });
     expect(res.statusCode).toBe(409);
     expect(wallets.debitForUser).not.toHaveBeenCalled();
   });
 
   it('gia hạn PayOS lưu gói khách chọn vào thanh toán', async () => {
-    payos.createPaymentLink.mockResolvedValue({ orderCode: '9', paymentUrl: 'u', paymentLinkId: 'l' });
+    payos.createPaymentLink.mockResolvedValue({
+      orderCode: '9',
+      paymentUrl: 'u',
+      paymentLinkId: 'l',
+    });
     await service.renew(subId, userId, { packageId: pkgId, password: 'x' });
-    expect(payment.create.mock.calls[0][0].data).toMatchObject({ packageId: pkgId, paymentMethod: 'PayOS' });
+    expect(tx.payment.create.mock.calls[0][0].data).toMatchObject({
+      packageId: pkgId,
+      renewalPackageId: pkgId,
+      renewalDurationDays: 30,
+      paymentMethod: 'PayOS',
+    });
   });
 
   it('thiếu tiền: 402 kèm số dư, không gia hạn', async () => {
     wallets.debitForUser.mockRejectedValue(new InsufficientWalletFundsError());
-    const res = await service.renew(subId, userId, { packageId: pkgId, paymentMethod: 'Wallet', password: 'x' });
+    const res = await service.renew(subId, userId, {
+      packageId: pkgId,
+      paymentMethod: 'Wallet',
+      password: 'x',
+    });
     expect(res.statusCode).toBe(402);
     expect(res.result).toMatchObject({ walletBalance: 5000, amount: 1500000 });
   });
 
   it('phương thức lạ thì từ chối', async () => {
-    const res = await service.renew(subId, userId, { packageId: pkgId, paymentMethod: 'Cash', password: 'x' });
+    const res = await service.renew(subId, userId, {
+      packageId: pkgId,
+      paymentMethod: 'Cash',
+      password: 'x',
+    });
     expect(res.isSuccess).toBe(false);
   });
 });

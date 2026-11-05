@@ -16,7 +16,8 @@ describe('Thông báo cho khách từ thao tác back-office và cron', () => {
     notifications = { notify: jest.fn().mockResolvedValue(undefined) };
   });
 
-  const asNotifications = () => notifications as unknown as NotificationsService;
+  const asNotifications = () =>
+    notifications as unknown as NotificationsService;
 
   it('từ chối đổi biển số: báo chủ vé kèm lý do', async () => {
     const record = {
@@ -30,13 +31,18 @@ describe('Thông báo cho khách từ thao tác back-office và cron', () => {
       createdAt: new Date(),
       processedAt: null,
       handledByStaffId: null,
-      subscription: { userId, user: { fullName: 'A' }, package: { packageName: 'P' } },
+      subscription: {
+        userId,
+        user: { fullName: 'A' },
+        package: { packageName: 'P' },
+      },
       handledByStaff: null,
     };
     const prisma = {
       vehicleChangeRequest: {
         findUnique: jest.fn().mockResolvedValue(record),
         update: jest.fn().mockResolvedValue({}),
+        updateMany: jest.fn().mockResolvedValue({ count: 1 }),
       },
     };
     const service = new VehicleChangeRequestsService(
@@ -45,7 +51,9 @@ describe('Thông báo cho khách từ thao tác back-office và cron', () => {
       asNotifications(),
     );
 
-    const res = await service.reject('req-1', 'staff-1', { reason: 'Giấy tờ không khớp' });
+    const res = await service.reject('req-1', 'staff-1', {
+      reason: 'Giấy tờ không khớp',
+    });
 
     expect(res.isSuccess).toBe(true);
     expect(notifications.notify).toHaveBeenCalledWith(
@@ -53,7 +61,10 @@ describe('Thông báo cho khách từ thao tác back-office và cron', () => {
       expect.objectContaining({
         type: 'subscription',
         message: expect.stringContaining('Giấy tờ không khớp'),
-        metadata: expect.objectContaining({ rejectionReason: 'Giấy tờ không khớp', status: 'Rejected' }),
+        metadata: expect.objectContaining({
+          rejectionReason: 'Giấy tờ không khớp',
+          status: 'Rejected',
+        }),
       }),
     );
   });
@@ -66,7 +77,12 @@ describe('Thông báo cho khách từ thao tác back-office và cron', () => {
           // Lần 1: đơn chờ cọc hết giờ giữ chỗ (không có). Lần 2: đơn đã cọc quá giờ hẹn.
           .mockResolvedValueOnce([])
           .mockResolvedValueOnce([
-            { id: 'r1', userId, expectedEntryTime: new Date(Date.now() - 40 * 60e3), vehicle: { licensePlate: '51A12345' } },
+            {
+              id: 'r1',
+              userId,
+              expectedEntryTime: new Date(Date.now() - 40 * 60e3),
+              vehicle: { licensePlate: '51A12345' },
+            },
           ]),
         updateMany: jest.fn().mockResolvedValue({ count: 1 }),
       },
@@ -85,7 +101,10 @@ describe('Thông báo cho khách từ thao tác back-office và cron', () => {
     });
     expect(notifications.notify).toHaveBeenCalledWith(
       userId,
-      expect.objectContaining({ type: 'reservation', metadata: { reservationId: 'r1', status: 'NoShow' } }),
+      expect.objectContaining({
+        type: 'reservation',
+        metadata: { reservationId: 'r1', status: 'NoShow' },
+      }),
     );
   });
 
@@ -116,7 +135,10 @@ describe('Thông báo cho khách từ thao tác back-office và cron', () => {
     });
     expect(notifications.notify).toHaveBeenCalledWith(
       userId,
-      expect.objectContaining({ type: 'subscription', metadata: { subscriptionId: 'sub-1', status: 'Expired' } }),
+      expect.objectContaining({
+        type: 'subscription',
+        metadata: { subscriptionId: 'sub-1', status: 'Expired' },
+      }),
     );
   });
 });

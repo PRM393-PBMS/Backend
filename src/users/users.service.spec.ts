@@ -59,30 +59,46 @@ describe('UsersService', () => {
     };
 
     it('returns 401 when the caller is missing', async () => {
-      const result = await service.updateAvatar('', jpeg, 'http://localhost:3000');
+      const result = await service.updateAvatar(
+        '',
+        jpeg,
+        'http://localhost:3000',
+      );
       expect(result.statusCode).toBe(401);
       expect(result.message).toBe('Vui lòng đăng nhập');
     });
 
     it('returns 400 when the file is missing', async () => {
-      const result = await service.updateAvatar(existing.id, undefined, 'http://localhost:3000');
+      const result = await service.updateAvatar(
+        existing.id,
+        undefined,
+        'http://localhost:3000',
+      );
       expect(result.statusCode).toBe(400);
       expect(result.message).toBe('Vui lòng gửi file ảnh');
     });
 
-    it('returns 400 when the file is not jpeg/png/webp', async () => {
+    it('returns 415 when the file is not jpeg/png/webp', async () => {
       const result = await service.updateAvatar(
         existing.id,
-        { buffer: Buffer.from('gif'), originalname: 'me.gif', mimetype: 'image/gif' },
+        {
+          buffer: Buffer.from('gif'),
+          originalname: 'me.gif',
+          mimetype: 'image/gif',
+        },
         'http://localhost:3000',
       );
-      expect(result.statusCode).toBe(400);
+      expect(result.statusCode).toBe(415);
       expect(result.message).toBe('Ảnh đại diện chỉ nhận JPEG, PNG hoặc WebP');
     });
 
     it('returns 404 when the user is missing', async () => {
       prisma.user.findUnique.mockResolvedValue(null);
-      const result = await service.updateAvatar(existing.id, jpeg, 'http://localhost:3000');
+      const result = await service.updateAvatar(
+        existing.id,
+        jpeg,
+        'http://localhost:3000',
+      );
       expect(result.statusCode).toBe(404);
       expect(result.message).toBe('Không tìm thấy người dùng');
     });
@@ -98,9 +114,17 @@ describe('UsersService', () => {
         avatarUrl: 'http://localhost:3000/uploads/avatars/abc.jpg',
       });
 
-      const result = await service.updateAvatar(existing.id, jpeg, 'http://localhost:3000');
+      const result = await service.updateAvatar(
+        existing.id,
+        jpeg,
+        'http://localhost:3000',
+      );
 
-      expect(files.saveUpload).toHaveBeenCalledWith(jpeg, 'http://localhost:3000', 'avatars');
+      expect(files.saveUpload).toHaveBeenCalledWith(
+        jpeg,
+        'http://localhost:3000',
+        'avatars',
+      );
       expect(result.statusCode).toBe(200);
       expect(result.isSuccess).toBe(true);
       expect(result.message).toBe('Cập nhật ảnh đại diện thành công');

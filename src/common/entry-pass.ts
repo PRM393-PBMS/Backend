@@ -14,18 +14,27 @@ export function entryPassPayload(passId: string, code: string): string {
 }
 
 /** Tách payload QR "PBMS-ENTRY:<id>:<mã>"; không đúng dạng thì null. */
-export function parseEntryPassPayload(payload: string | null | undefined): { passId: string; code: string } | null {
+export function parseEntryPassPayload(
+  payload: string | null | undefined,
+): { passId: string; code: string } | null {
   const value = (payload ?? '').trim();
   if (!value.startsWith(PREFIX)) return null;
   const match = value
     .slice(PREFIX.length)
-    .match(/^([0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{12}):([A-Z0-9]{4,12})$/);
+    .match(
+      /^([0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{12}):([A-Z0-9]{4,12})$/,
+    );
   return match ? { passId: match[1].toLowerCase(), code: match[2] } : null;
 }
 
 /** Trạng thái thực tế: mã "Active" đã quá hạn thì coi là "Expired". */
-export function effectiveEntryPassStatus(pass: { status: string; expiresAt: Date }, now = new Date()): string {
-  return pass.status === 'Active' && pass.expiresAt <= now ? 'Expired' : pass.status;
+export function effectiveEntryPassStatus(
+  pass: { status: string; expiresAt: Date },
+  now = new Date(),
+): string {
+  return pass.status === 'Active' && pass.expiresAt <= now
+    ? 'Expired'
+    : pass.status;
 }
 
 export async function mapEntryPass(pass: {
@@ -61,7 +70,11 @@ export async function mapEntryPass(pass: {
     qrPayload: status === 'Active' ? qrPayload : null,
     qrCodeDataUrl:
       status === 'Active'
-        ? await QRCode.toDataURL(qrPayload, { errorCorrectionLevel: 'Q', margin: 1, width: 256 })
+        ? await QRCode.toDataURL(qrPayload, {
+            errorCorrectionLevel: 'Q',
+            margin: 1,
+            width: 256,
+          }).catch(() => null)
         : null,
   };
 }

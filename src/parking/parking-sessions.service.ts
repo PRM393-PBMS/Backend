@@ -1,9 +1,9 @@
+import { AppError } from '../common/errors';
 import { Injectable } from '@nestjs/common';
 import { Prisma } from '@prisma/client';
 import { PrismaService } from '../prisma/prisma.service';
 import { PbmsResponseDto } from '../common/dto/pbms-response.dto';
 import {
-  errorMessage,
   isEmptyGuid,
   pbmsPick,
   pbmsPickDate,
@@ -52,49 +52,50 @@ export class ParkingSessionsService {
     if (!item) {
       return PbmsResponseDto.fail('Không tìm thấy phiên gửi xe', 404);
     }
-    return PbmsResponseDto.ok('Lấy phiên gửi xe thành công', await this.map(item));
+    return PbmsResponseDto.ok(
+      'Lấy phiên gửi xe thành công',
+      await this.map(item),
+    );
   }
 
-  async create(dto: object): Promise<PbmsResponseDto> {
-    const vehicleTypeId = pbmsPickGuid(dto, 'vehicleTypeId', 'VehicleTypeId');
-    const entryGateId = pbmsPickGuid(dto, 'entryGateId', 'EntryGateId');
-    const licensePlateIn = pbmsPick(dto, 'licensePlateIn', 'LicensePlateIn').trim();
-    if (isEmptyGuid(vehicleTypeId) || isEmptyGuid(entryGateId) || !licensePlateIn) {
-      return PbmsResponseDto.fail('Dữ liệu không hợp lệ');
-    }
-    try {
-      const session = await this.prisma.parkingSession.create({
-        data: {
-          vehicleId: pbmsPickGuid(dto, 'vehicleId', 'VehicleId') || null,
-          licensePlateIn,
-          licensePlateOut: pbmsPick(dto, 'licensePlateOut', 'LicensePlateOut').trim() || null,
-          entryImageUrl: pbmsPick(dto, 'entryImageUrl', 'EntryImageUrl').trim() || null,
-          driverEntryImageUrl: pbmsPick(dto, 'driverEntryImageUrl', 'DriverEntryImageUrl').trim() || null,
-          exitImageUrl: pbmsPick(dto, 'exitImageUrl', 'ExitImageUrl').trim() || null,
-          driverExitImageUrl: pbmsPick(dto, 'driverExitImageUrl', 'DriverExitImageUrl').trim() || null,
-          vehicleTypeId,
-          entryTime: pbmsPickDate(dto, 'entryTime', 'EntryTime') ?? new Date(),
-          exitTime: pbmsPickDate(dto, 'exitTime', 'ExitTime') ?? null,
-          entryGateId,
-          exitGateId: pbmsPickGuid(dto, 'exitGateId', 'ExitGateId') || null,
-          assignedSlotId: pbmsPickGuid(dto, 'assignedSlotId', 'AssignedSlotId') || null,
-          actualSlotId: pbmsPickGuid(dto, 'actualSlotId', 'ActualSlotId') || null,
-          status: pbmsPick(dto, 'status', 'Status').trim() || 'Active',
-        },
-        include: this.include(),
-      });
-      return PbmsResponseDto.ok('Tạo phiên gửi xe thành công', await this.map(session), 201);
-    } catch (error: unknown) {
-      return PbmsResponseDto.fail(`Lỗi tạo phiên gửi xe: ${errorMessage(error)}`, 500);
-    }
+  async create(_dto: object): Promise<PbmsResponseDto> {
+    throw new AppError(
+      409,
+      'USE_CHECKIN_WORKFLOW',
+      'Hãy dùng luồng check-in để tạo phiên và chiếm ô nguyên tử',
+    );
   }
 
   async update(dto: object): Promise<PbmsResponseDto> {
+    const blocked = [
+      'vehicleId',
+      'licensePlateIn',
+      'vehicleTypeId',
+      'entryTime',
+      'exitTime',
+      'entryGateId',
+      'exitGateId',
+      'assignedSlotId',
+      'actualSlotId',
+      'status',
+    ];
+    if (
+      Object.keys(dto).some((k) =>
+        blocked.some((b) => b.toLowerCase() === k.toLowerCase()),
+      )
+    )
+      throw new AppError(
+        409,
+        'USE_PARKING_WORKFLOW',
+        'Thông tin vận hành phải thay đổi qua check-in/checkout',
+      );
     const id = pbmsPickGuid(dto, 'sessionId', 'SessionId');
     if (isEmptyGuid(id)) {
       return PbmsResponseDto.fail('Dữ liệu cập nhật không hợp lệ');
     }
-    const existing = await this.prisma.parkingSession.findUnique({ where: { id } });
+    const existing = await this.prisma.parkingSession.findUnique({
+      where: { id },
+    });
     if (!existing) {
       return PbmsResponseDto.fail('Không tìm thấy phiên gửi xe', 404);
     }
@@ -102,29 +103,58 @@ export class ParkingSessionsService {
       const session = await this.prisma.parkingSession.update({
         where: { id },
         data: {
-          vehicleId: pbmsPickGuid(dto, 'vehicleId', 'VehicleId') || existing.vehicleId,
-          licensePlateIn: pbmsPick(dto, 'licensePlateIn', 'LicensePlateIn').trim() || existing.licensePlateIn,
-          licensePlateOut: pbmsPick(dto, 'licensePlateOut', 'LicensePlateOut').trim() || existing.licensePlateOut,
-          entryImageUrl: pbmsPick(dto, 'entryImageUrl', 'EntryImageUrl').trim() || existing.entryImageUrl,
+          vehicleId:
+            pbmsPickGuid(dto, 'vehicleId', 'VehicleId') || existing.vehicleId,
+          licensePlateIn:
+            pbmsPick(dto, 'licensePlateIn', 'LicensePlateIn').trim() ||
+            existing.licensePlateIn,
+          licensePlateOut:
+            pbmsPick(dto, 'licensePlateOut', 'LicensePlateOut').trim() ||
+            existing.licensePlateOut,
+          entryImageUrl:
+            pbmsPick(dto, 'entryImageUrl', 'EntryImageUrl').trim() ||
+            existing.entryImageUrl,
           driverEntryImageUrl:
-            pbmsPick(dto, 'driverEntryImageUrl', 'DriverEntryImageUrl').trim() || existing.driverEntryImageUrl,
-          exitImageUrl: pbmsPick(dto, 'exitImageUrl', 'ExitImageUrl').trim() || existing.exitImageUrl,
+            pbmsPick(
+              dto,
+              'driverEntryImageUrl',
+              'DriverEntryImageUrl',
+            ).trim() || existing.driverEntryImageUrl,
+          exitImageUrl:
+            pbmsPick(dto, 'exitImageUrl', 'ExitImageUrl').trim() ||
+            existing.exitImageUrl,
           driverExitImageUrl:
-            pbmsPick(dto, 'driverExitImageUrl', 'DriverExitImageUrl').trim() || existing.driverExitImageUrl,
-          vehicleTypeId: pbmsPickGuid(dto, 'vehicleTypeId', 'VehicleTypeId') || existing.vehicleTypeId,
-          entryTime: pbmsPickDate(dto, 'entryTime', 'EntryTime') ?? existing.entryTime,
-          exitTime: pbmsPickDate(dto, 'exitTime', 'ExitTime') ?? existing.exitTime,
-          entryGateId: pbmsPickGuid(dto, 'entryGateId', 'EntryGateId') || existing.entryGateId,
-          exitGateId: pbmsPickGuid(dto, 'exitGateId', 'ExitGateId') || existing.exitGateId,
-          assignedSlotId: pbmsPickGuid(dto, 'assignedSlotId', 'AssignedSlotId') || existing.assignedSlotId,
-          actualSlotId: pbmsPickGuid(dto, 'actualSlotId', 'ActualSlotId') || existing.actualSlotId,
+            pbmsPick(dto, 'driverExitImageUrl', 'DriverExitImageUrl').trim() ||
+            existing.driverExitImageUrl,
+          vehicleTypeId:
+            pbmsPickGuid(dto, 'vehicleTypeId', 'VehicleTypeId') ||
+            existing.vehicleTypeId,
+          entryTime:
+            pbmsPickDate(dto, 'entryTime', 'EntryTime') ?? existing.entryTime,
+          exitTime:
+            pbmsPickDate(dto, 'exitTime', 'ExitTime') ?? existing.exitTime,
+          entryGateId:
+            pbmsPickGuid(dto, 'entryGateId', 'EntryGateId') ||
+            existing.entryGateId,
+          exitGateId:
+            pbmsPickGuid(dto, 'exitGateId', 'ExitGateId') ||
+            existing.exitGateId,
+          assignedSlotId:
+            pbmsPickGuid(dto, 'assignedSlotId', 'AssignedSlotId') ||
+            existing.assignedSlotId,
+          actualSlotId:
+            pbmsPickGuid(dto, 'actualSlotId', 'ActualSlotId') ||
+            existing.actualSlotId,
           status: pbmsPick(dto, 'status', 'Status').trim() || existing.status,
         },
         include: this.include(),
       });
-      return PbmsResponseDto.ok('Cập nhật phiên gửi xe thành công', await this.map(session));
+      return PbmsResponseDto.ok(
+        'Cập nhật phiên gửi xe thành công',
+        await this.map(session),
+      );
     } catch (error: unknown) {
-      return PbmsResponseDto.fail(`Lỗi cập nhật phiên gửi xe: ${errorMessage(error)}`, 500);
+      return PbmsResponseDto.fromError(error);
     }
   }
 
@@ -132,16 +162,17 @@ export class ParkingSessionsService {
     if (isEmptyGuid(id)) {
       return PbmsResponseDto.fail('Vui lòng nhập SessionId');
     }
-    const existing = await this.prisma.parkingSession.findUnique({ where: { id } });
+    const existing = await this.prisma.parkingSession.findUnique({
+      where: { id },
+    });
     if (!existing) {
       return PbmsResponseDto.fail('Không tìm thấy phiên gửi xe', 404);
     }
-    try {
-      await this.prisma.parkingSession.delete({ where: { id } });
-      return PbmsResponseDto.ok('Xóa phiên gửi xe thành công');
-    } catch (error: unknown) {
-      return PbmsResponseDto.fail(`Lỗi xóa phiên gửi xe: ${errorMessage(error)}`, 500);
-    }
+    throw new AppError(
+      409,
+      'PARKING_HISTORY_PROTECTED',
+      'Không thể xóa lịch sử gửi xe; hãy xử lý qua luồng nghiệp vụ',
+    );
   }
 
   private include() {
@@ -160,7 +191,10 @@ export class ParkingSessionsService {
     id: string;
     reservationId: string | null;
     vehicleId: string | null;
-    vehicle: { licensePlate: string; user: { id: string; fullName: string | null } } | null;
+    vehicle: {
+      licensePlate: string;
+      user: { id: string; fullName: string | null };
+    } | null;
     licensePlateIn: string;
     licensePlateOut: string | null;
     entryImageUrl: string | null;
@@ -220,7 +254,9 @@ export class ParkingSessionsService {
       paymentStatus: payment?.paymentStatus ?? null,
       paymentMethod: payment?.paymentMethod ?? null,
       paymentTime: payment?.paymentTime ?? null,
-      ticket: sameStatus(item.status, 'Active') ? await createTicket(item.id) : null,
+      ticket: sameStatus(item.status, 'Active')
+        ? await createTicket(item.id)
+        : null,
       prepaidAt: item.prepaidAt ?? null,
       exitPass: await mapExitPass({
         id: item.id,

@@ -1,4 +1,13 @@
-import { Body, Controller, Get, Param, Post, Req, UseGuards, UseInterceptors } from '@nestjs/common';
+import {
+  Body,
+  Controller,
+  Get,
+  Param,
+  Post,
+  Req,
+  UseGuards,
+  UseInterceptors,
+} from '@nestjs/common';
 import { ApiBearerAuth, ApiOperation, ApiTags } from '@nestjs/swagger';
 import type { Request } from 'express';
 import { GetPbmsRole } from '../auth/common/decorators/get-pbms-role.decorator';
@@ -32,7 +41,9 @@ export class ContractsController {
 
   @Get('public-key')
   @PbmsRoles('customer', 'manager', 'staff', 'admin')
-  @ApiOperation({ summary: 'Khoá công khai dùng để kiểm tra niêm phong hợp đồng' })
+  @ApiOperation({
+    summary: 'Khoá công khai dùng để kiểm tra niêm phong hợp đồng',
+  })
   publicKey(): PbmsResponseDto {
     return this.contracts.publicKey();
   }
@@ -52,7 +63,8 @@ export class ContractsController {
   @PbmsRoles('customer')
   @ApiOperation({
     summary: 'Ký hợp đồng (chữ ký tay PNG) rồi thanh toán',
-    description: 'paymentMethod: PayOS (mặc định, trả link) hoặc Wallet (trừ ví ngay, kích hoạt gói).',
+    description:
+      'paymentMethod: PayOS (mặc định, trả link) hoặc Wallet (trừ ví ngay, kích hoạt gói).',
   })
   @ApiPbmsBodyExample(PbmsBodyDto, {
     agreed: true,
@@ -77,12 +89,16 @@ export class ContractsController {
     let payment: PbmsResponseDto | null = null;
     let paymentError: string | null = null;
     try {
-      payment = await this.subscriptions.createPayment(contract.subscriptionId, userId, dto);
+      payment = await this.subscriptions.createPayment(
+        contract.subscriptionId,
+        userId,
+        dto,
+      );
       if (!payment.isSuccess) {
         paymentError = payment.message;
       }
     } catch (error: unknown) {
-      paymentError = error instanceof Error ? error.message : 'Không tạo được thanh toán';
+      paymentError = PbmsResponseDto.fromError(error).message;
     }
     return PbmsResponseDto.ok(signed.message ?? 'Ký hợp đồng thành công', {
       Contract: signed.result,

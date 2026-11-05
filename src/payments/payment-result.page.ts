@@ -24,19 +24,19 @@ const TEXT: Record<PaymentResultState, { title: string; body: string; color: str
   },
   pending: {
     title: 'Đang chờ xác nhận',
-    body: 'Ngân hàng chưa báo kết quả. Quay lại ứng dụng, trạng thái sẽ tự cập nhật sau ít phút.',
+    body: 'Giao dịch đang được xác minh hoặc chờ áp dụng. Kiểm tra trạng thái trong ứng dụng trước khi thanh toán lại.',
     color: '#B45309',
     icon: '…',
   },
   cancelled: {
     title: 'Đã huỷ thanh toán',
-    body: 'Bạn chưa bị trừ tiền. Có thể thanh toán lại trong ứng dụng bất cứ lúc nào.',
+    body: 'Liên kết đã được hủy. Nếu ngân hàng đã ghi nợ, hãy kiểm tra lịch sử và liên hệ quản lý để đối soát trước khi trả lại.',
     color: '#64748B',
     icon: '×',
   },
   failed: {
     title: 'Thanh toán không thành công',
-    body: 'Giao dịch đã hết hạn hoặc bị từ chối. Bạn chưa bị trừ tiền; hãy thử lại trong ứng dụng.',
+    body: 'Giao dịch đã hết hạn hoặc bị từ chối. Nếu ngân hàng đã ghi nợ, hãy kiểm tra lịch sử và liên hệ quản lý trước khi trả lại.',
     color: '#DC2626',
     icon: '!',
   },

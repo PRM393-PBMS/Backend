@@ -1,7 +1,17 @@
-import { ForbiddenException, Injectable, Optional, UnauthorizedException } from '@nestjs/common';
+import {
+  ForbiddenException,
+  Injectable,
+  Optional,
+  UnauthorizedException,
+} from '@nestjs/common';
 import { PrismaService } from '../prisma/prisma.service';
 import { PbmsResponseDto } from '../common/dto/pbms-response.dto';
-import { errorMessage, isEmptyGuid, pbmsPick, pbmsPickGuid, sameStatus } from '../common/pbms-fields';
+import {
+  isEmptyGuid,
+  pbmsPick,
+  pbmsPickGuid,
+  sameStatus,
+} from '../common/pbms-fields';
 import { NotificationsService } from '../notifications/notifications.service';
 
 /** Mới nhất trước; id phá hoà khi cùng thời điểm. */
@@ -19,13 +29,17 @@ export class IncidentsService {
       include: this.include(),
       orderBy: NEWEST_FIRST,
     });
-    if (items.length === 0) {
-      return PbmsResponseDto.fail('Không có sự cố nào trong hệ thống', 404);
-    }
-    return PbmsResponseDto.ok('Lấy danh sách sự cố thành công', items.map((item) => this.map(item)));
+    return PbmsResponseDto.ok(
+      'Lấy danh sách sự cố thành công',
+      items.map((item) => this.map(item)),
+    );
   }
 
-  async getById(id: string, userId: string, role: string): Promise<PbmsResponseDto> {
+  async getById(
+    id: string,
+    userId: string,
+    role: string,
+  ): Promise<PbmsResponseDto> {
     const item = await this.prisma.incidentReport.findUnique({
       where: { id },
       include: this.include(),
@@ -66,7 +80,10 @@ export class IncidentsService {
       include: this.include(),
       orderBy: NEWEST_FIRST,
     });
-    return PbmsResponseDto.ok('Lấy sự cố của tôi thành công', items.map((item) => this.map(item)));
+    return PbmsResponseDto.ok(
+      'Lấy sự cố của tôi thành công',
+      items.map((item) => this.map(item)),
+    );
   }
 
   async create(userId: string, dto: object): Promise<PbmsResponseDto> {
@@ -78,16 +95,22 @@ export class IncidentsService {
     const item = await this.prisma.incidentReport.create({
       data: {
         sessionId: pbmsPickGuid(dto, 'sessionId', 'SessionId') || null,
-        reportedByUserId: userId || pbmsPickGuid(dto, 'reportedByUserId', 'ReportedByUserId'),
+        reportedByUserId:
+          userId || pbmsPickGuid(dto, 'reportedByUserId', 'ReportedByUserId'),
         issueType,
         description,
-        proofImageUrl: pbmsPick(dto, 'proofImageUrl', 'ProofImageUrl').trim() || null,
+        proofImageUrl:
+          pbmsPick(dto, 'proofImageUrl', 'ProofImageUrl').trim() || null,
         // Trạng thái và người xử lý do bãi quyết định, khách không tự đặt.
         status: 'Open',
       },
       include: this.include(),
     });
-    return PbmsResponseDto.ok('Tạo báo cáo sự cố thành công', this.map(item), 201);
+    return PbmsResponseDto.ok(
+      'Tạo báo cáo sự cố thành công',
+      this.map(item),
+      201,
+    );
   }
 
   async update(dto: object): Promise<PbmsResponseDto> {
@@ -95,20 +118,32 @@ export class IncidentsService {
     if (isEmptyGuid(id)) {
       return PbmsResponseDto.fail('Dữ liệu cập nhật không hợp lệ');
     }
-    const existing = await this.prisma.incidentReport.findUnique({ where: { id } });
+    const existing = await this.prisma.incidentReport.findUnique({
+      where: { id },
+    });
     if (!existing) {
       return PbmsResponseDto.fail('Không tìm thấy sự cố', 404);
     }
     const item = await this.prisma.incidentReport.update({
       where: { id },
       data: {
-        sessionId: pbmsPickGuid(dto, 'sessionId', 'SessionId') || existing.sessionId,
-        issueType: pbmsPick(dto, 'issueType', 'IssueType').trim() || existing.issueType,
-        description: pbmsPick(dto, 'description', 'Description').trim() || existing.description,
-        proofImageUrl: pbmsPick(dto, 'proofImageUrl', 'ProofImageUrl').trim() || existing.proofImageUrl,
+        sessionId:
+          pbmsPickGuid(dto, 'sessionId', 'SessionId') || existing.sessionId,
+        issueType:
+          pbmsPick(dto, 'issueType', 'IssueType').trim() || existing.issueType,
+        description:
+          pbmsPick(dto, 'description', 'Description').trim() ||
+          existing.description,
+        proofImageUrl:
+          pbmsPick(dto, 'proofImageUrl', 'ProofImageUrl').trim() ||
+          existing.proofImageUrl,
         status: pbmsPick(dto, 'status', 'Status').trim() || existing.status,
-        handledByStaffId: pbmsPickGuid(dto, 'handledByStaffId', 'HandledByStaffId') || existing.handledByStaffId,
-        resolutionNotes: pbmsPick(dto, 'resolutionNotes', 'ResolutionNotes').trim() || existing.resolutionNotes,
+        handledByStaffId:
+          pbmsPickGuid(dto, 'handledByStaffId', 'HandledByStaffId') ||
+          existing.handledByStaffId,
+        resolutionNotes:
+          pbmsPick(dto, 'resolutionNotes', 'ResolutionNotes').trim() ||
+          existing.resolutionNotes,
       },
       include: this.include(),
     });
@@ -116,7 +151,9 @@ export class IncidentsService {
   }
 
   async assign(id: string, staffId: string): Promise<PbmsResponseDto> {
-    const existing = await this.prisma.incidentReport.findUnique({ where: { id } });
+    const existing = await this.prisma.incidentReport.findUnique({
+      where: { id },
+    });
     if (!existing) {
       return PbmsResponseDto.fail('Không tìm thấy sự cố', 404);
     }
@@ -134,8 +171,14 @@ export class IncidentsService {
     return PbmsResponseDto.ok('Gán nhân viên xử lý thành công', this.map(item));
   }
 
-  async resolve(id: string, staffId: string, dto: object): Promise<PbmsResponseDto> {
-    const existing = await this.prisma.incidentReport.findUnique({ where: { id } });
+  async resolve(
+    id: string,
+    staffId: string,
+    dto: object,
+  ): Promise<PbmsResponseDto> {
+    const existing = await this.prisma.incidentReport.findUnique({
+      where: { id },
+    });
     if (!existing) {
       return PbmsResponseDto.fail('Không tìm thấy sự cố', 404);
     }
@@ -167,15 +210,22 @@ export class IncidentsService {
     if (isEmptyGuid(userId)) {
       return PbmsResponseDto.fail('Vui lòng đăng nhập', 401);
     }
-    const existing = await this.prisma.incidentReport.findUnique({ where: { id } });
+    const existing = await this.prisma.incidentReport.findUnique({
+      where: { id },
+    });
     if (!existing) {
       return PbmsResponseDto.fail('Không tìm thấy sự cố', 404);
     }
     if (existing.reportedByUserId !== userId) {
       return PbmsResponseDto.fail('Bạn không có quyền huỷ báo cáo này', 403);
     }
-    if (!sameStatus(existing.status, 'Open') && !sameStatus(existing.status, 'InProgress')) {
-      return PbmsResponseDto.fail('Chỉ huỷ được báo cáo đang chờ hoặc đang xử lý');
+    if (
+      !sameStatus(existing.status, 'Open') &&
+      !sameStatus(existing.status, 'InProgress')
+    ) {
+      return PbmsResponseDto.fail(
+        'Chỉ huỷ được báo cáo đang chờ hoặc đang xử lý',
+      );
     }
     const item = await this.prisma.incidentReport.update({
       where: { id },
@@ -186,7 +236,9 @@ export class IncidentsService {
   }
 
   async remove(id: string): Promise<PbmsResponseDto> {
-    const existing = await this.prisma.incidentReport.findUnique({ where: { id } });
+    const existing = await this.prisma.incidentReport.findUnique({
+      where: { id },
+    });
     if (!existing) {
       return PbmsResponseDto.fail('Không tìm thấy sự cố', 404);
     }
@@ -194,7 +246,7 @@ export class IncidentsService {
       await this.prisma.incidentReport.delete({ where: { id } });
       return PbmsResponseDto.ok('Xóa sự cố thành công');
     } catch (error: unknown) {
-      return PbmsResponseDto.fail(`Lỗi xóa sự cố: ${errorMessage(error)}`, 500);
+      return PbmsResponseDto.fromError(error);
     }
   }
 

@@ -9,16 +9,20 @@ export async function createTicket(id: string): Promise<{
     errorCorrectionLevel: 'Q',
     margin: 1,
     width: 256,
-  });
+  }).catch(() => '');
   return { qrPayload, qrCodeDataUrl };
 }
 
-export function extractGuidFromQrPayload(payload: string | undefined | null): string | null {
+export function extractGuidFromQrPayload(
+  payload: string | undefined | null,
+): string | null {
   if (!payload) {
     return null;
   }
   const match = payload
     .trim()
-    .match(/[0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{12}/);
+    .match(
+      /[0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{12}/,
+    );
   return match ? match[0] : null;
 }

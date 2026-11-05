@@ -1,18 +1,18 @@
+import { PrismaService } from '../../prisma/prisma.service';
+import { isUUID } from 'class-validator';
+import { requiredSecret } from '../../common/config';
 import { Injectable, UnauthorizedException } from '@nestjs/common';
 import { PassportStrategy } from '@nestjs/passport';
 import { ExtractJwt, Strategy } from 'passport-jwt';
 import { JwtPayload } from '../types';
-import { PrismaService } from '../../prisma/prisma.service';
 
 @Injectable()
 export class AtStrategy extends PassportStrategy(Strategy, 'jwt') {
   constructor(private readonly prisma: PrismaService) {
-    const secret = process.env.JWT_ACCESS_SECRET;
-    if (!secret) throw new Error('Thiếu cấu hình JWT_ACCESS_SECRET');
     super({
       jwtFromRequest: ExtractJwt.fromAuthHeaderAsBearerToken(),
       ignoreExpiration: false,
-      secretOrKey: secret,
+      secretOrKey: requiredSecret('JWT_ACCESS_SECRET'),
     });
   }
 
@@ -25,19 +25,17 @@ export class AtStrategy extends PassportStrategy(Strategy, 'jwt') {
         'Access Token không hợp lệ hoặc thiếu thông tin định danh.',
       );
     }
+    if (!isUUID(payload.sub))
+      throw new UnauthorizedException('Định danh token không hợp lệ');
     const user = await this.prisma.user.findUnique({
       where: { id: payload.sub },
-      select: { isActive: true, status: true },
+      include: { pbmsRole: true },
     });
-    if (
-      !user ||
-      !user.isActive ||
-      (user.status && user.status.toLowerCase() !== 'active')
-    ) {
-      throw new UnauthorizedException(
-        'Tài khoản không còn hoạt động. Vui lòng đăng nhập lại.',
-      );
-    }
-    return { ...payload, UserId: payload.sub };
+    if (!user || !user.isActive || user.status?.toLowerCase() !== 'active')
+      throw new UnauthorizedException('Tài khoản không còn hoạt động');
+    const role = user.pbmsRole?.roleName?.toLowerCase();
+    if (!role || !['customer', 'staff', 'manager', 'admin'].includes(role))
+      throw new UnauthorizedException('Quyền tài khoản không hợp lệ');
+    return { ...payload, role, UserId: payload.sub };
   }
 }

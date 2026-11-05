@@ -13,7 +13,12 @@ import {
   UseInterceptors,
 } from '@nestjs/common';
 import { FileInterceptor } from '@nestjs/platform-express';
-import { ApiBearerAuth, ApiConsumes, ApiOperation, ApiTags } from '@nestjs/swagger';
+import {
+  ApiBearerAuth,
+  ApiConsumes,
+  ApiOperation,
+  ApiTags,
+} from '@nestjs/swagger';
 import type { Request, Response } from 'express';
 import { GetPbmsRole } from '../auth/common/decorators/get-pbms-role.decorator';
 import { GetPbmsUserId } from '../auth/common/decorators/get-pbms-user-id.decorator';
@@ -22,8 +27,15 @@ import { PbmsRolesGuard } from '../auth/common/guards/pbms-roles.guard';
 import { PbmsBodyDto } from '../common/dto/pbms-body.dto';
 import { PbmsResponseDto } from '../common/dto/pbms-response.dto';
 import { PbmsStatusInterceptor } from '../common/interceptors/pbms-status.interceptor';
-import { ids, incidentExample, userExample } from '../common/swagger/pbms-example-data';
-import { ApiPbmsBodyExample, ApiPbmsOkResponse } from '../common/swagger/pbms-swagger';
+import {
+  ids,
+  incidentExample,
+  userExample,
+} from '../common/swagger/pbms-example-data';
+import {
+  ApiPbmsBodyExample,
+  ApiPbmsOkResponse,
+} from '../common/swagger/pbms-swagger';
 import { FilesService } from '../integrations/payos-files.service';
 import { IncidentsService } from './incidents.service';
 
@@ -52,7 +64,11 @@ export class IncidentsController {
   @Get('assignees')
   @ApiOperation({ summary: 'Danh sách người có thể gán xử lý' })
   @ApiPbmsOkResponse('Lấy danh sách người xử lý thành công', [
-    { userId: userExample.userId, fullName: userExample.fullName, roleName: 'staff' },
+    {
+      userId: userExample.userId,
+      fullName: userExample.fullName,
+      roleName: 'staff',
+    },
   ])
   getAssignees(): Promise<PbmsResponseDto> {
     return this.incidents.getAssignees();
@@ -88,7 +104,10 @@ export class IncidentsController {
     proofImageUrl: 'https://api.example.com/uploads/incidents/proof.jpg',
   })
   @ApiPbmsOkResponse('Tạo báo cáo sự cố thành công', incidentExample, 201)
-  create(@GetPbmsUserId() userId: string, @Body() dto: PbmsBodyDto): Promise<PbmsResponseDto> {
+  create(
+    @GetPbmsUserId() userId: string,
+    @Body() dto: PbmsBodyDto,
+  ): Promise<PbmsResponseDto> {
     return this.incidents.create(userId, dto);
   }
 
@@ -104,7 +123,9 @@ export class IncidentsController {
   }
 
   @Post('upload-proof')
-  @UseInterceptors(FileInterceptor('file'))
+  @UseInterceptors(
+    FileInterceptor('file', { limits: { fileSize: 5 * 1024 * 1024 } }),
+  )
   @ApiConsumes('multipart/form-data')
   @ApiOperation({ summary: 'Upload ảnh chứng minh sự cố' })
   async uploadProof(
@@ -116,7 +137,11 @@ export class IncidentsController {
       res.status(400).json({ message: 'Vui lòng gửi file ảnh' });
       return;
     }
-    const upload = await this.files.saveUpload(file, `${req.protocol}://${req.get('host')}`, 'incidents');
+    const upload = await this.files.saveUpload(
+      file,
+      `${req.protocol}://${req.get('host')}`,
+      'incidents',
+    );
     res.status(200).json({ imageUrl: upload.imageUrl });
   }
 
@@ -146,7 +171,10 @@ export class IncidentsController {
     handledByStaffId: ids.staffId,
     status: 'InProgress',
   })
-  assign(@Param('id') id: string, @Param('staffId') staffId: string): Promise<PbmsResponseDto> {
+  assign(
+    @Param('id') id: string,
+    @Param('staffId') staffId: string,
+  ): Promise<PbmsResponseDto> {
     return this.incidents.assign(id, staffId);
   }
 
@@ -155,7 +183,9 @@ export class IncidentsController {
   @UseInterceptors(PbmsStatusInterceptor)
   @Put(':id/resolve/:staffId')
   @ApiOperation({ summary: 'Đánh dấu sự cố đã xử lý' })
-  @ApiPbmsBodyExample(PbmsBodyDto, { resolutionNotes: 'Đã xác minh và giải phóng ô đỗ' })
+  @ApiPbmsBodyExample(PbmsBodyDto, {
+    resolutionNotes: 'Đã xác minh và giải phóng ô đỗ',
+  })
   @ApiPbmsOkResponse('Đã xử lý sự cố thành công', {
     ...incidentExample,
     status: 'Resolved',

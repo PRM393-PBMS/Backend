@@ -23,13 +23,20 @@ describe('PbmsAuthService', () => {
       create: jest.Mock;
       update: jest.Mock;
       deleteMany: jest.Mock;
+      updateMany: jest.Mock;
     };
     $transaction: jest.Mock;
   };
   let hashingService: { compare: jest.Mock; hash: jest.Mock };
   let jwtService: { signAsync: jest.Mock; verifyAsync: jest.Mock };
   let mailService: { sendOtpEmail: jest.Mock };
-  let otpStore: { set: jest.Mock; get: jest.Mock; delete: jest.Mock };
+  let otpStore: {
+    set: jest.Mock;
+    get: jest.Mock;
+    delete: jest.Mock;
+    throttle: jest.Mock;
+    consume: jest.Mock;
+  };
 
   const activeUser = {
     id: 'user-1',
@@ -59,6 +66,7 @@ describe('PbmsAuthService', () => {
         create: jest.fn(),
         update: jest.fn(),
         deleteMany: jest.fn(),
+        updateMany: jest.fn().mockResolvedValue({ count: 1 }),
       },
       $transaction: jest.fn((ops: Promise<unknown>[]) => Promise.all(ops)),
     };
@@ -75,6 +83,8 @@ describe('PbmsAuthService', () => {
       set: jest.fn().mockResolvedValue(undefined),
       get: jest.fn().mockResolvedValue(undefined),
       delete: jest.fn().mockResolvedValue(undefined),
+      throttle: jest.fn().mockResolvedValue(undefined),
+      consume: jest.fn().mockResolvedValue(true),
     };
 
     const module: TestingModule = await Test.createTestingModule({
@@ -102,7 +112,9 @@ describe('PbmsAuthService', () => {
 
       expect(result.statusCode).toBe(400);
       expect(result.isSuccess).toBe(false);
-      expect(result.message).toBe('Không tìm thấy người dùng');
+      expect(result.message).toBe(
+        'Tài khoản hoặc mật khẩu không đúng. Vui lòng kiểm tra lại.',
+      );
     });
 
     it('returns 400 when the password is wrong', async () => {
@@ -115,7 +127,9 @@ describe('PbmsAuthService', () => {
       });
 
       expect(result.statusCode).toBe(400);
-      expect(result.message).toBe('Sai mật khẩu');
+      expect(result.message).toBe(
+        'Tài khoản hoặc mật khẩu không đúng. Vui lòng kiểm tra lại.',
+      );
     });
 
     it('returns 403 when the account is banned', async () => {
@@ -165,7 +179,7 @@ describe('PbmsAuthService', () => {
     it('returns 400 when UserName is missing', async () => {
       const result = await service.sendRegisterOtp({ email: 'a@example.com' });
       expect(result.statusCode).toBe(400);
-      expect(result.message).toBe('Vui lòng nhập UserName');
+      expect(result.message).toBe('Vui lòng nhập tên đăng nhập');
     });
 
     it('sends OTP when registration fields are valid', async () => {
@@ -192,7 +206,8 @@ describe('PbmsAuthService', () => {
   });
 
   describe('OTP và mật khẩu', () => {
-    const otpHash = (otp: string) => createHash('sha256').update(otp).digest('hex');
+    const otpHash = (otp: string) =>
+      createHash('sha256').update(otp).digest('hex');
     const resetDto = (otp: string) => ({
       email: 'a@example.com',
       otp,
@@ -201,7 +216,11 @@ describe('PbmsAuthService', () => {
     });
 
     it('sai OTP đặt lại mật khẩu thì đếm, sai lần thứ 5 thì huỷ mã', async () => {
-      otpStore.get.mockResolvedValue({ otpHash: otpHash('123456'), attempts: 3, sentAt: 0 });
+      otpStore.get.mockResolvedValue({
+        otpHash: otpHash('123456'),
+        attempts: 3,
+        sentAt: 0,
+      });
       const fourth = await service.verifyResetPasswordOtp(resetDto('000000'));
       expect(fourth.message).toBe('Mã OTP không đúng');
       expect(otpStore.set).toHaveBeenCalledWith(
@@ -210,25 +229,44 @@ describe('PbmsAuthService', () => {
         expect.any(Number),
       );
 
-      otpStore.get.mockResolvedValue({ otpHash: otpHash('123456'), attempts: 4, sentAt: 0 });
+      otpStore.get.mockResolvedValue({
+        otpHash: otpHash('123456'),
+        attempts: 4,
+        sentAt: 0,
+      });
       const fifth = await service.verifyResetPasswordOtp(resetDto('000000'));
-      expect(fifth.message).toBe('Nhập sai quá nhiều lần, vui lòng yêu cầu mã OTP mới');
+      expect(fifth.message).toBe(
+        'Nhập sai quá nhiều lần, vui lòng yêu cầu mã OTP mới',
+      );
       expect(otpStore.delete).toHaveBeenCalledWith('Reset_a@example.com');
       expect(prisma.user.update).not.toHaveBeenCalled();
     });
 
     it('đặt lại mật khẩu đúng mã thì đăng xuất mọi thiết bị', async () => {
-      otpStore.get.mockResolvedValue({ otpHash: otpHash('123456'), attempts: 0, sentAt: 0 });
+      otpStore.get.mockResolvedValue({
+        otpHash: otpHash('123456'),
+        attempts: 0,
+        sentAt: 0,
+      });
       prisma.user.findFirst.mockResolvedValue(activeUser);
       const result = await service.verifyResetPasswordOtp(resetDto('123456'));
       expect(result.isSuccess).toBe(true);
-      expect(prisma.refreshToken.deleteMany).toHaveBeenCalledWith({ where: { userId: 'user-1' } });
+      expect(prisma.refreshToken.updateMany).toHaveBeenCalledWith({
+        where: { userId: 'user-1', isRevoked: false },
+        data: { isRevoked: true },
+      });
     });
 
     it('xin mã mới trong vòng 1 phút thì từ chối, không gửi mail', async () => {
       prisma.user.findFirst.mockResolvedValue(activeUser);
-      otpStore.get.mockResolvedValue({ otpHash: 'x', attempts: 0, sentAt: Date.now() - 10_000 });
-      const result = await service.requestResetPasswordOtp({ email: 'a@example.com' });
+      otpStore.get.mockResolvedValue({
+        otpHash: 'x',
+        attempts: 0,
+        sentAt: Date.now() - 10_000,
+      });
+      const result = await service.requestResetPasswordOtp({
+        email: 'a@example.com',
+      });
       expect(result.statusCode).toBe(429);
       expect(mailService.sendOtpEmail).not.toHaveBeenCalled();
     });
@@ -254,7 +292,9 @@ describe('PbmsAuthService', () => {
     it('returns 400 when the refresh token is empty', async () => {
       const result = await service.refreshToken({});
       expect(result.statusCode).toBe(400);
-      expect(result.message).toBe('Vui lòng nhập refresh token');
+      expect(result.message).toBe(
+        'Phiên đăng nhập đã hết hạn hoặc không hợp lệ. Vui lòng đăng nhập lại.',
+      );
     });
   });
 

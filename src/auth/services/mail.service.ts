@@ -1,3 +1,4 @@
+import { AppError } from '../../common/errors';
 import { Injectable } from '@nestjs/common';
 import { Resend } from 'resend';
 import {
@@ -18,14 +19,20 @@ export class MailService {
   ): Promise<void> {
     const apiKey = process.env.RESEND_API_KEY?.trim() ?? '';
     if (!apiKey) {
-      throw new Error(
-        'Chưa cấu hình Resend: cần RESEND_API_KEY trong môi trường.',
+      throw new AppError(
+        503,
+        'MAIL_NOT_CONFIGURED',
+        'Dịch vụ email chưa được cấu hình',
       );
     }
 
     const fromEmail = process.env.MAIL_FROM?.trim() ?? '';
     if (!fromEmail) {
-      throw new Error('Chưa cấu hình Resend: cần MAIL_FROM trong môi trường.');
+      throw new AppError(
+        503,
+        'MAIL_NOT_CONFIGURED',
+        'Dịch vụ email chưa được cấu hình',
+      );
     }
 
     const senderName = process.env.MAIL_SENDER_NAME?.trim() || 'NEO Force Lab';
@@ -39,17 +46,40 @@ export class MailService {
     });
 
     const resend = new Resend(apiKey);
-    const { error } = await resend.emails.send({
-      from: `"${senderName}" <${fromEmail}>`,
-      to,
-      replyTo,
-      subject: content.subject,
-      text: content.text,
-      html: content.html,
+    let timeout: ReturnType<typeof setTimeout> | undefined;
+    const { error } = await Promise.race([
+      resend.emails.send({
+        from: `"${senderName}" <${fromEmail}>`,
+        to,
+        replyTo,
+        subject: content.subject,
+        text: content.text,
+        html: content.html,
+      }),
+      new Promise<never>((_, reject) => {
+        timeout = setTimeout(
+          () =>
+            reject(
+              new AppError(
+                504,
+                'MAIL_TIMEOUT',
+                'Dịch vụ email phản hồi quá chậm',
+              ),
+            ),
+          10000,
+        );
+        timeout.unref();
+      }),
+    ]).finally(() => {
+      if (timeout) clearTimeout(timeout);
     });
 
     if (error) {
-      throw new Error(`Gửi email Resend thất bại: ${error.message}`);
+      throw new AppError(
+        502,
+        'MAIL_SEND_FAILED',
+        'Chưa gửi được email OTP; vui lòng thử lại sau',
+      );
     }
   }
 

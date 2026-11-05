@@ -3,7 +3,6 @@ import { Prisma } from '@prisma/client';
 import { PrismaService } from '../prisma/prisma.service';
 import { PbmsResponseDto } from '../common/dto/pbms-response.dto';
 import {
-  errorMessage,
   isEmptyGuid,
   pbmsPick,
   pbmsPickBool,
@@ -21,10 +20,10 @@ export class SubscriptionPackagesService {
       include: { vehicleType: true },
       orderBy: { packageName: 'asc' },
     });
-    if (items.length === 0) {
-      return PbmsResponseDto.fail('Không tìm thấy gói thuê bao nào', 404);
-    }
-    return PbmsResponseDto.ok('Lấy danh sách gói thuê bao thành công', items.map((p) => this.map(p)));
+    return PbmsResponseDto.ok(
+      'Lấy danh sách gói thuê bao thành công',
+      items.map((p) => this.map(p)),
+    );
   }
 
   async getById(id: string): Promise<PbmsResponseDto> {
@@ -47,30 +46,39 @@ export class SubscriptionPackagesService {
     if (isEmptyGuid(vehicleTypeId) || !packageName) {
       return PbmsResponseDto.fail('Dữ liệu không hợp lệ');
     }
-    const vehicleType = await this.prisma.vehicleType.findUnique({ where: { id: vehicleTypeId } });
+    const vehicleType = await this.prisma.vehicleType.findUnique({
+      where: { id: vehicleTypeId },
+    });
     if (!vehicleType) {
-      return PbmsResponseDto.fail('Loại phương tiện không tồn tại');
+      return PbmsResponseDto.fail('Loại phương tiện không tồn tại', 404);
     }
     try {
       const item = await this.prisma.subscriptionPackage.create({
         data: {
           vehicleTypeId,
           packageName,
-          durationMonths: pbmsPickNumber(dto, 'durationMonths', 'DurationMonths') ?? 1,
+          durationMonths:
+            pbmsPickNumber(dto, 'durationMonths', 'DurationMonths') ?? 1,
           durationDays:
             pbmsPickNumber(dto, 'durationDays', 'DurationDays') ??
             (pbmsPickNumber(dto, 'durationMonths', 'DurationMonths') ?? 1) * 30,
           price: new Prisma.Decimal(pbmsPickNumber(dto, 'price', 'Price') ?? 0),
-          requireFixedSlot: pbmsPickBool(dto, 'requireFixedSlot', 'RequireFixedSlot') ?? false,
+          requireFixedSlot:
+            pbmsPickBool(dto, 'requireFixedSlot', 'RequireFixedSlot') ?? false,
           allParkings: pbmsPickBool(dto, 'allParkings', 'AllParkings') ?? false,
-          description: pbmsPick(dto, 'description', 'Description').trim() || null,
+          description:
+            pbmsPick(dto, 'description', 'Description').trim() || null,
           status: pbmsPick(dto, 'status', 'Status').trim() || 'Active',
         },
         include: { vehicleType: true },
       });
-      return PbmsResponseDto.ok('Tạo gói thuê bao thành công', this.map(item), 201);
+      return PbmsResponseDto.ok(
+        'Tạo gói thuê bao thành công',
+        this.map(item),
+        201,
+      );
     } catch (error: unknown) {
-      return PbmsResponseDto.fail(`Lỗi tạo gói thuê bao: ${errorMessage(error)}`, 500);
+      return PbmsResponseDto.fromError(error);
     }
   }
 
@@ -78,36 +86,57 @@ export class SubscriptionPackagesService {
     if (isEmptyGuid(id)) {
       return PbmsResponseDto.fail('Dữ liệu cập nhật không hợp lệ');
     }
-    const existing = await this.prisma.subscriptionPackage.findUnique({ where: { id } });
+    const existing = await this.prisma.subscriptionPackage.findUnique({
+      where: { id },
+    });
     if (!existing) {
       return PbmsResponseDto.fail('Không tìm thấy gói thuê bao', 404);
     }
-    const vehicleTypeId = pbmsPickGuid(dto, 'vehicleTypeId', 'VehicleTypeId') || existing.vehicleTypeId;
-    const vehicleType = await this.prisma.vehicleType.findUnique({ where: { id: vehicleTypeId } });
+    const vehicleTypeId =
+      pbmsPickGuid(dto, 'vehicleTypeId', 'VehicleTypeId') ||
+      existing.vehicleTypeId;
+    const vehicleType = await this.prisma.vehicleType.findUnique({
+      where: { id: vehicleTypeId },
+    });
     if (!vehicleType) {
-      return PbmsResponseDto.fail('Loại phương tiện không tồn tại');
+      return PbmsResponseDto.fail('Loại phương tiện không tồn tại', 404);
     }
     try {
       const item = await this.prisma.subscriptionPackage.update({
         where: { id },
         data: {
           vehicleTypeId,
-          packageName: pbmsPick(dto, 'packageName', 'PackageName').trim() || existing.packageName,
-          durationMonths: pbmsPickNumber(dto, 'durationMonths', 'DurationMonths') ?? existing.durationMonths,
+          packageName:
+            pbmsPick(dto, 'packageName', 'PackageName').trim() ||
+            existing.packageName,
+          durationMonths:
+            pbmsPickNumber(dto, 'durationMonths', 'DurationMonths') ??
+            existing.durationMonths,
           durationDays:
             pbmsPickNumber(dto, 'durationDays', 'DurationDays') ??
             existing.durationDays,
-          price: new Prisma.Decimal(pbmsPickNumber(dto, 'price', 'Price') ?? Number(existing.price)),
-          requireFixedSlot: pbmsPickBool(dto, 'requireFixedSlot', 'RequireFixedSlot') ?? existing.requireFixedSlot,
-          allParkings: pbmsPickBool(dto, 'allParkings', 'AllParkings') ?? existing.allParkings,
-          description: pbmsPick(dto, 'description', 'Description').trim() || existing.description,
+          price: new Prisma.Decimal(
+            pbmsPickNumber(dto, 'price', 'Price') ?? Number(existing.price),
+          ),
+          requireFixedSlot:
+            pbmsPickBool(dto, 'requireFixedSlot', 'RequireFixedSlot') ??
+            existing.requireFixedSlot,
+          allParkings:
+            pbmsPickBool(dto, 'allParkings', 'AllParkings') ??
+            existing.allParkings,
+          description:
+            pbmsPick(dto, 'description', 'Description').trim() ||
+            existing.description,
           status: pbmsPick(dto, 'status', 'Status').trim() || existing.status,
         },
         include: { vehicleType: true },
       });
-      return PbmsResponseDto.ok('Cập nhật gói thuê bao thành công', this.map(item));
+      return PbmsResponseDto.ok(
+        'Cập nhật gói thuê bao thành công',
+        this.map(item),
+      );
     } catch (error: unknown) {
-      return PbmsResponseDto.fail(`Lỗi cập nhật gói thuê bao: ${errorMessage(error)}`, 500);
+      return PbmsResponseDto.fromError(error);
     }
   }
 
@@ -115,7 +144,9 @@ export class SubscriptionPackagesService {
     if (isEmptyGuid(id)) {
       return PbmsResponseDto.fail('Vui lòng nhập PackageId');
     }
-    const existing = await this.prisma.subscriptionPackage.findUnique({ where: { id } });
+    const existing = await this.prisma.subscriptionPackage.findUnique({
+      where: { id },
+    });
     if (!existing) {
       return PbmsResponseDto.fail('Không tìm thấy gói thuê bao', 404);
     }
@@ -123,7 +154,7 @@ export class SubscriptionPackagesService {
       await this.prisma.subscriptionPackage.delete({ where: { id } });
       return PbmsResponseDto.ok('Xóa gói thuê bao thành công');
     } catch (error: unknown) {
-      return PbmsResponseDto.fail(`Lỗi xóa gói thuê bao: ${errorMessage(error)}`, 500);
+      return PbmsResponseDto.fromError(error);
     }
   }
 

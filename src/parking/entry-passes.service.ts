@@ -1,3 +1,5 @@
+import { AppError } from '../common/errors';
+import { lockResource } from '../common/transactions';
 import { Injectable } from '@nestjs/common';
 import { PbmsResponseDto } from '../common/dto/pbms-response.dto';
 import {
@@ -23,16 +25,24 @@ export class EntryPassesService {
     if (isEmptyGuid(vehicleId)) {
       return PbmsResponseDto.fail('Vui lòng chọn xe');
     }
-    const vehicle = await this.prisma.vehicle.findFirst({ where: { id: vehicleId, userId } });
+    const vehicle = await this.prisma.vehicle.findFirst({
+      where: { id: vehicleId, userId },
+    });
     if (!vehicle) {
-      return PbmsResponseDto.fail('Không tìm thấy xe hoặc xe không thuộc tài khoản của bạn', 404);
+      return PbmsResponseDto.fail(
+        'Không tìm thấy xe hoặc xe không thuộc tài khoản của bạn',
+        404,
+      );
     }
     const inside = await this.prisma.parkingSession.findFirst({
       where: { licensePlateIn: vehicle.licensePlate, status: 'Active' },
       select: { id: true },
     });
     if (inside) {
-      return PbmsResponseDto.fail('Xe đang ở trong bãi, không cần mã vào bãi', 409);
+      return PbmsResponseDto.fail(
+        'Xe đang ở trong bãi, không cần mã vào bãi',
+        409,
+      );
     }
     const now = new Date();
     // Vé tháng còn hạn: cổng nhận xe theo vé tháng, đăng ký gửi một lần sẽ không được dùng tới.
@@ -46,6 +56,28 @@ export class EntryPassesService {
     const expiresAt = new Date(now.getTime() + ENTRY_PASS_TTL_HOURS * 36e5);
     // Mỗi xe chỉ giữ một mã còn hiệu lực: mã cũ bị huỷ khi tạo mã mới.
     const pass = await this.prisma.$transaction(async (tx) => {
+      await lockResource(tx, 'gate-entry');
+      const busy = await tx.parkingSession.findFirst({
+        where: {
+          licensePlateIn: vehicle.licensePlate,
+          status: { in: ['Active', 'Exception'] },
+        },
+      });
+      if (busy) throw new AppError(409, 'VEHICLE_INSIDE', 'Xe đang trong bãi');
+      const monthly = await tx.monthlySubscription.findFirst({
+        where: {
+          vehicleId,
+          status: 'Active',
+          startDate: { lte: now },
+          endDate: { gt: now },
+        },
+      });
+      if (monthly)
+        throw new AppError(
+          409,
+          'MONTHLY_PASS_ACTIVE',
+          'Xe đã có vé tháng còn hiệu lực',
+        );
       await tx.entryPass.updateMany({
         where: { vehicleId, status: 'Active' },
         data: { status: 'Cancelled' },
@@ -55,7 +87,11 @@ export class EntryPassesService {
         include: includeVehicle,
       });
     });
-    return PbmsResponseDto.ok('Đã tạo mã vào bãi một lần', await mapEntryPass(pass), 201);
+    return PbmsResponseDto.ok(
+      'Đã tạo mã vào bãi một lần',
+      await mapEntryPass(pass),
+      201,
+    );
   }
 
   async getMine(userId: string): Promise<PbmsResponseDto> {

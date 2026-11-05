@@ -15,7 +15,12 @@ import {
   UseInterceptors,
 } from '@nestjs/common';
 import { FileInterceptor } from '@nestjs/platform-express';
-import { ApiBearerAuth, ApiConsumes, ApiOperation, ApiTags } from '@nestjs/swagger';
+import {
+  ApiBearerAuth,
+  ApiConsumes,
+  ApiOperation,
+  ApiTags,
+} from '@nestjs/swagger';
 import type { Request, Response } from 'express';
 import { GetPbmsUserId } from '../auth/common/decorators/get-pbms-user-id.decorator';
 import { Public } from '../auth/common/decorators/public.decorator';
@@ -30,7 +35,10 @@ import {
   paymentExample,
   sessionExample,
 } from '../common/swagger/pbms-example-data';
-import { ApiPbmsBodyExample, ApiPbmsOkResponse } from '../common/swagger/pbms-swagger';
+import {
+  ApiPbmsBodyExample,
+  ApiPbmsOkResponse,
+} from '../common/swagger/pbms-swagger';
 import { FilesService } from '../integrations/payos-files.service';
 import { ParkingOperationsService } from './parking-operations.service';
 import { ParkingSessionsService } from './parking-sessions.service';
@@ -54,13 +62,18 @@ export class ParkingSessionsController {
   @PbmsRoles('customer')
   @ApiOperation({ summary: 'Xem phí tạm tính phiên của tôi' })
   @ApiPbmsOkResponse('Tính phí gửi xe tạm tính thành công', feeExample)
-  myFee(@Param('id', new ParseUUIDPipe()) id: string, @GetPbmsUserId() userId: string): Promise<PbmsResponseDto> {
+  myFee(
+    @Param('id', new ParseUUIDPipe()) id: string,
+    @GetPbmsUserId() userId: string,
+  ): Promise<PbmsResponseDto> {
     return this.operations.getMyFeePreview(id, userId);
   }
 
   @Post('my/:id/prepay')
   @PbmsRoles('customer')
-  @ApiOperation({ summary: 'Thanh toán trước khi ra bãi (Wallet hoặc PayOS), nhận mã ra cổng' })
+  @ApiOperation({
+    summary: 'Thanh toán trước khi ra bãi (Wallet hoặc PayOS), nhận mã ra cổng',
+  })
   @ApiPbmsBodyExample(PbmsBodyDto, { paymentMethod: 'Wallet' })
   prepay(
     @Param('id', new ParseUUIDPipe()) id: string,
@@ -72,8 +85,13 @@ export class ParkingSessionsController {
 
   @Get('my/:id/exit-pass')
   @PbmsRoles('customer')
-  @ApiOperation({ summary: 'Mã ra cổng sau khi thanh toán trước (đồng bộ trạng thái PayOS)' })
-  myExitPass(@Param('id', new ParseUUIDPipe()) id: string, @GetPbmsUserId() userId: string): Promise<PbmsResponseDto> {
+  @ApiOperation({
+    summary: 'Mã ra cổng sau khi thanh toán trước (đồng bộ trạng thái PayOS)',
+  })
+  myExitPass(
+    @Param('id', new ParseUUIDPipe()) id: string,
+    @GetPbmsUserId() userId: string,
+  ): Promise<PbmsResponseDto> {
     return this.operations.getMyExitPass(id, userId);
   }
 
@@ -84,7 +102,10 @@ export class ParkingSessionsController {
     Payment: paymentExample,
     Fee: feeExample,
   })
-  myCheckout(@Param('id', new ParseUUIDPipe()) id: string, @GetPbmsUserId() userId: string): Promise<PbmsResponseDto> {
+  myCheckout(
+    @Param('id', new ParseUUIDPipe()) id: string,
+    @GetPbmsUserId() userId: string,
+  ): Promise<PbmsResponseDto> {
     return this.operations.getMyCheckoutPayment(id, userId);
   }
 
@@ -108,7 +129,9 @@ export class ParkingSessionsController {
   @PbmsRoles('manager', 'staff')
   @ApiOperation({ summary: 'Chi tiết phiên gửi xe' })
   @ApiPbmsOkResponse('Lấy phiên gửi xe thành công', sessionExample)
-  getById(@Param('id', new ParseUUIDPipe()) id: string): Promise<PbmsResponseDto> {
+  getById(
+    @Param('id', new ParseUUIDPipe()) id: string,
+  ): Promise<PbmsResponseDto> {
     return this.sessions.getById(id);
   }
 
@@ -125,7 +148,12 @@ export class ParkingSessionsController {
   })
   @ApiPbmsOkResponse('Tạo phiên gửi xe thành công', sessionExample, 201)
   create(@Body() dto: PbmsBodyDto): Promise<PbmsResponseDto> {
-    return this.sessions.create(dto);
+    return this.operations.checkIn({
+      ...dto,
+      gateId: dto.gateId ?? dto.entryGateId ?? dto.EntryGateId,
+      licensePlate: dto.licensePlateIn ?? dto.LicensePlateIn,
+      customerType: 'Guest',
+    });
   }
 
   @Put()
@@ -147,7 +175,9 @@ export class ParkingSessionsController {
   @PbmsRoles('manager', 'staff')
   @ApiOperation({ summary: 'Xóa phiên gửi xe' })
   @ApiPbmsOkResponse('Xóa phiên gửi xe thành công', null)
-  remove(@Param('id', new ParseUUIDPipe()) id: string): Promise<PbmsResponseDto> {
+  remove(
+    @Param('id', new ParseUUIDPipe()) id: string,
+  ): Promise<PbmsResponseDto> {
     return this.sessions.remove(id);
   }
 }
@@ -165,10 +195,18 @@ export class ParkingOperationsController {
   @Get('availability')
   @ApiOperation({ summary: 'Tình trạng chỗ trống' })
   @ApiPbmsOkResponse('Lấy tình trạng chỗ trống thành công', {
-    floors: [{ floorName: 'Tầng B1', available: 33, total: 120, vehicleTypeName: 'Xe máy' }],
+    floors: [
+      {
+        floorName: 'Tầng B1',
+        available: 33,
+        total: 120,
+        vehicleTypeName: 'Xe máy',
+      },
+    ],
   })
   availability(
-    @Query('vehicleTypeId', new ParseUUIDPipe({ optional: true })) vehicleTypeId?: string,
+    @Query('vehicleTypeId', new ParseUUIDPipe({ optional: true }))
+    vehicleTypeId?: string,
     @Query('floorKeyword') floorKeyword?: string,
   ): Promise<PbmsResponseDto> {
     return this.operations.availability(vehicleTypeId, floorKeyword);
@@ -178,7 +216,9 @@ export class ParkingOperationsController {
   @UseGuards(PbmsRolesGuard)
   @PbmsRoles('staff', 'manager')
   @Post('upload-and-recognize-plate')
-  @UseInterceptors(FileInterceptor('file'))
+  @UseInterceptors(
+    FileInterceptor('file', { limits: { fileSize: 5 * 1024 * 1024 } }),
+  )
   @ApiConsumes('multipart/form-data')
   @ApiOperation({ summary: 'Upload ảnh và nhận diện biển số' })
   async recognizePlate(
@@ -201,7 +241,9 @@ export class ParkingOperationsController {
   @PbmsRoles('staff', 'manager')
   @UseInterceptors(PbmsStatusInterceptor)
   @Post('upload-and-decode-qr')
-  @UseInterceptors(FileInterceptor('file'))
+  @UseInterceptors(
+    FileInterceptor('file', { limits: { fileSize: 5 * 1024 * 1024 } }),
+  )
   @ApiConsumes('multipart/form-data')
   @ApiOperation({ summary: 'Upload ảnh và giải mã QR' })
   @ApiPbmsOkResponse('Giải mã QR thành công', {
@@ -223,7 +265,9 @@ export class ParkingOperationsController {
   @UseGuards(PbmsRolesGuard)
   @PbmsRoles('staff', 'manager')
   @Post('upload-image')
-  @UseInterceptors(FileInterceptor('file'))
+  @UseInterceptors(
+    FileInterceptor('file', { limits: { fileSize: 5 * 1024 * 1024 } }),
+  )
   @ApiConsumes('multipart/form-data')
   @ApiOperation({ summary: 'Upload ảnh check-in/out' })
   async uploadImage(
@@ -300,7 +344,9 @@ export class ParkingOperationsController {
   @ApiPbmsOkResponse('Lấy trạng thái thanh toán checkout thành công', {
     Payment: paymentExample,
   })
-  checkoutPayment(@Param('paymentId', new ParseUUIDPipe()) paymentId: string): Promise<PbmsResponseDto> {
+  checkoutPayment(
+    @Param('paymentId', new ParseUUIDPipe()) paymentId: string,
+  ): Promise<PbmsResponseDto> {
     return this.operations.getCheckoutPayment(paymentId);
   }
 
@@ -311,7 +357,11 @@ export class ParkingOperationsController {
   @Post('check-out/payment/:paymentId/confirm-cash')
   @ApiOperation({ summary: 'Xác nhận checkout tiền mặt' })
   @ApiPbmsOkResponse('Đã nhận tiền mặt và checkout thành công', {
-    Session: { ...sessionExample, status: 'Completed', exitTime: '2026-09-17T11:45:00.000Z' },
+    Session: {
+      ...sessionExample,
+      status: 'Completed',
+      exitTime: '2026-09-17T11:45:00.000Z',
+    },
     Payment: paymentExample,
   })
   confirmCash(
@@ -327,8 +377,12 @@ export class ParkingOperationsController {
   @UseInterceptors(PbmsStatusInterceptor)
   @Post('check-out/payment/:paymentId/cancel')
   @ApiOperation({ summary: 'Hủy checkout' })
-  @ApiPbmsOkResponse('Đã hủy yêu cầu checkout', { Payment: { ...paymentExample, paymentStatus: 'Cancelled' } })
-  cancelCheckout(@Param('paymentId', new ParseUUIDPipe()) paymentId: string): Promise<PbmsResponseDto> {
+  @ApiPbmsOkResponse('Đã hủy yêu cầu checkout', {
+    Payment: { ...paymentExample, paymentStatus: 'Cancelled' },
+  })
+  cancelCheckout(
+    @Param('paymentId', new ParseUUIDPipe()) paymentId: string,
+  ): Promise<PbmsResponseDto> {
     return this.operations.cancelCheckout(paymentId);
   }
 
@@ -339,7 +393,9 @@ export class ParkingOperationsController {
   @Get('fee-preview/:sessionId')
   @ApiOperation({ summary: 'Phí tạm tính theo phiên' })
   @ApiPbmsOkResponse('Tính phí gửi xe tạm tính thành công', feeExample)
-  feePreview(@Param('sessionId', new ParseUUIDPipe()) sessionId: string): Promise<PbmsResponseDto> {
+  feePreview(
+    @Param('sessionId', new ParseUUIDPipe()) sessionId: string,
+  ): Promise<PbmsResponseDto> {
     return this.operations.getFeePreview(sessionId);
   }
 }

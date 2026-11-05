@@ -213,9 +213,10 @@ describe('Lỗi bất ngờ khi lưu sơ đồ', () => {
     const service = new FloorLayoutsService(prisma as unknown as PrismaService);
     const draft = await service.saveDraft(F1, { version: 3, layout: sample() });
     expect(draft.statusCode).toBe(500);
-    expect(draft.message).toContain('Transaction already closed');
+    expect(draft.message).toBe('Đã có sự cố xảy ra. Vui lòng thử lại sau.');
+    expect(draft.message).not.toContain('Transaction already closed');
     const published = await service.publish(F1, { version: 3 });
     expect(published.statusCode).toBe(500);
-    expect(published.message).toContain('Không xuất bản được sơ đồ');
+    expect(published.message).toBe('Đã có sự cố xảy ra. Vui lòng thử lại sau.');
   });
 });

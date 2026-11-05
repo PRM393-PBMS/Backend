@@ -1,10 +1,26 @@
-import { BadRequestException, ConflictException, Injectable, NotFoundException, Optional } from '@nestjs/common';
+import { lockResource } from '../common/transactions';
+import { AppError } from '../common/errors';
+import {
+  BadRequestException,
+  ConflictException,
+  Injectable,
+  NotFoundException,
+  Optional,
+} from '@nestjs/common';
 import { Prisma, WalletBucket } from '@prisma/client';
 import { PrismaService } from '../prisma/prisma.service';
 import { PayosService } from '../integrations/payos-files.service';
 import { PbmsResponseDto } from '../common/dto/pbms-response.dto';
-import { isEmptyGuid, pbmsPick, pbmsPickNumber, toMoney } from '../common/pbms-fields';
-import { NotificationsService, formatVnd } from '../notifications/notifications.service';
+import {
+  isEmptyGuid,
+  pbmsPick,
+  pbmsPickNumber,
+  toMoney,
+} from '../common/pbms-fields';
+import {
+  NotificationsService,
+  formatVnd,
+} from '../notifications/notifications.service';
 import { CreateWalletAdjustmentDto } from './dto/create-wallet-adjustment.dto';
 import { checkPromoCode, grantPromoBonus } from './promo-codes';
 
@@ -31,11 +47,18 @@ export const WalletTxType = {
   Adjustment: 'ADJUSTMENT',
 } as const;
 
-type WalletHistoryFilter = typeof WalletTxType.TopUp | typeof WalletTxType.Debit;
+type WalletHistoryFilter =
+  typeof WalletTxType.TopUp | typeof WalletTxType.Debit;
 /** Nghiệp vụ chi từ ví (reference_type của dòng DEBIT). */
-export type WalletSpendType = 'SubscriptionFee' | 'SubscriptionRenewal' | 'ParkingFee';
+export type WalletSpendType =
+  'SubscriptionFee' | 'SubscriptionRenewal' | 'ParkingFee';
 /** reference_type mà reference_id chính là payments.id. */
-const PAYMENT_REFERENCE_TYPES = new Set(['WalletTopUp', 'SubscriptionFee', 'SubscriptionRenewal', 'ParkingFee']);
+const PAYMENT_REFERENCE_TYPES = new Set([
+  'WalletTopUp',
+  'SubscriptionFee',
+  'SubscriptionRenewal',
+  'ParkingFee',
+]);
 type DbClient = Prisma.TransactionClient | PrismaService;
 
 type WalletBalances = {
@@ -53,7 +76,10 @@ export interface WalletDebitResult {
 }
 
 /** Ngăn BONUS chỉ dùng được khi chưa quá bonusExpiresAt. */
-export function usableBonus(wallet: WalletBalances, now = new Date()): Prisma.Decimal {
+export function usableBonus(
+  wallet: WalletBalances,
+  now = new Date(),
+): Prisma.Decimal {
   if (wallet.bonusExpiresAt && wallet.bonusExpiresAt <= now) {
     return new Prisma.Decimal(0);
   }
@@ -80,7 +106,10 @@ export class WalletsService {
       return PbmsResponseDto.fail('Không tìm thấy người dùng', 404);
     }
     const wallet = await this.ensureWallet(this.prisma, userId);
-    return PbmsResponseDto.ok('Mở ví thành công', this.mapWalletSummary(wallet));
+    return PbmsResponseDto.ok(
+      'Mở ví thành công',
+      this.mapWalletSummary(wallet),
+    );
   }
 
   async getById(userId: string, walletId: string): Promise<PbmsResponseDto> {
@@ -95,19 +124,41 @@ export class WalletsService {
     });
   }
 
-  async listTransactions(userId: string, walletId: string): Promise<PbmsResponseDto> {
-    return this.listHistory(userId, walletId, undefined, 'Lấy lịch sử ví thành công');
+  async listTransactions(
+    userId: string,
+    walletId: string,
+  ): Promise<PbmsResponseDto> {
+    return this.listHistory(
+      userId,
+      walletId,
+      undefined,
+      'Lấy lịch sử ví thành công',
+    );
   }
 
   async listTopUps(userId: string, walletId: string): Promise<PbmsResponseDto> {
-    return this.listHistory(userId, walletId, WalletTxType.TopUp, 'Lấy lịch sử nạp ví thành công');
+    return this.listHistory(
+      userId,
+      walletId,
+      WalletTxType.TopUp,
+      'Lấy lịch sử nạp ví thành công',
+    );
   }
 
   async listSpends(userId: string, walletId: string): Promise<PbmsResponseDto> {
-    return this.listHistory(userId, walletId, WalletTxType.Debit, 'Lấy lịch sử chi ví thành công');
+    return this.listHistory(
+      userId,
+      walletId,
+      WalletTxType.Debit,
+      'Lấy lịch sử chi ví thành công',
+    );
   }
 
-  async topUp(userId: string, walletId: string, dto: object): Promise<PbmsResponseDto> {
+  async topUp(
+    userId: string,
+    walletId: string,
+    dto: object,
+  ): Promise<PbmsResponseDto> {
     const owned = await this.requireOwnedWallet(userId, walletId);
     if (owned.error) {
       return owned.error;
@@ -116,29 +167,53 @@ export class WalletsService {
     if (amount === undefined) {
       return PbmsResponseDto.fail('Vui lòng nhập số tiền nạp');
     }
-    if (!Number.isInteger(amount) || amount < TOP_UP_MIN || amount > TOP_UP_MAX) {
+    if (
+      !Number.isInteger(amount) ||
+      amount < TOP_UP_MIN ||
+      amount > TOP_UP_MAX
+    ) {
       return PbmsResponseDto.fail(
         `Số tiền nạp phải là số nguyên từ ${TOP_UP_MIN} đến ${TOP_UP_MAX} VND`,
       );
     }
     // Mã sai thì báo lý do, không lặng lẽ bỏ qua: khách tưởng được tặng mà không được.
     const promoCode = pbmsPick(dto, 'promoCode', 'PromoCode').trim();
-    const promo = promoCode ? await checkPromoCode(this.prisma, userId, promoCode, amount) : null;
+    const promo = promoCode
+      ? await checkPromoCode(this.prisma, userId, promoCode, amount)
+      : null;
     if (promo?.error !== undefined) {
       return PbmsResponseDto.fail(promo.error);
     }
 
-    const payment = await this.prisma.payment.create({
-      data: {
-        userId,
-        amount: new Prisma.Decimal(amount),
-        paymentMethod: 'PayOS',
-        paymentStatus: 'Pending',
-        paymentType: 'WalletTopUp',
-        paymentTime: new Date(),
-        transactionReference: '',
-        promoCodeId: promo?.promo.id ?? null,
-      },
+    const payment = await this.prisma.$transaction(async (tx) => {
+      await lockResource(tx, 'wallet:' + userId);
+      const existing = await tx.payment.findFirst({
+        where: { userId, paymentType: 'WalletTopUp', paymentStatus: 'Pending' },
+        orderBy: { paymentTime: 'desc' },
+      });
+      if (existing) {
+        if (
+          Number(existing.amount) !== amount ||
+          existing.promoCodeId !== (promo?.promo.id ?? null)
+        )
+          throw new AppError(
+            409,
+            'TOPUP_PENDING',
+            'Đã có yêu cầu nạp ví chờ thanh toán; hãy xử lý yêu cầu đó trước',
+          );
+        return existing;
+      }
+      return tx.payment.create({
+        data: {
+          userId,
+          amount: new Prisma.Decimal(amount),
+          paymentMethod: 'PayOS',
+          paymentStatus: 'Pending',
+          paymentType: 'WalletTopUp',
+          promoCodeId: promo?.promo.id ?? null,
+          paymentTime: new Date(),
+        },
+      });
     });
 
     try {
@@ -157,7 +232,9 @@ export class WalletsService {
           amount,
           promoCode: promo?.promo.code ?? null,
           bonusAmount: promo ? toMoney(promo.promo.bonusAmount) : 0,
-          walletBalance: toMoney(owned.wallet.balance.plus(usableBonus(owned.wallet))),
+          walletBalance: toMoney(
+            owned.wallet.balance.plus(usableBonus(owned.wallet)),
+          ),
           paymentLinkId: link.paymentLinkId,
           paymentUrl: link.paymentUrl,
           orderCode: link.orderCode,
@@ -165,12 +242,7 @@ export class WalletsService {
         201,
       );
     } catch (error: unknown) {
-      await this.prisma.payment.update({
-        where: { id: payment.id },
-        data: { paymentStatus: 'Failed' },
-      });
-      const message = error instanceof Error ? error.message : 'Không tạo được liên kết thanh toán PayOS';
-      return PbmsResponseDto.fail(message, 500);
+      return PbmsResponseDto.fromError(error);
     }
   }
 
@@ -183,8 +255,21 @@ export class WalletsService {
     referenceId: string,
     description: string,
   ): Promise<WalletDebitResult> {
+    if (!amount.isFinite() || !amount.isInteger() || amount.lte(0))
+      throw new AppError(
+        400,
+        'INVALID_AMOUNT',
+        'Số tiền phải là số nguyên dương',
+      );
     const wallet = await this.ensureWallet(tx, userId);
-    return this.debitInTransaction(tx, wallet.id, amount, referenceType, referenceId, description);
+    return this.debitInTransaction(
+      tx,
+      wallet.id,
+      amount,
+      referenceType,
+      referenceId,
+      description,
+    );
   }
 
   /**
@@ -219,7 +304,11 @@ export class WalletsService {
       const deductCash = amount.minus(deductBonus);
       // Chỉ trừ khi số dư chưa bị giao dịch khác đổi kể từ lúc đọc (khoá lạc quan).
       const updated = await tx.wallet.updateMany({
-        where: { id: walletId, balance: wallet.balance, bonusBalance: wallet.bonusBalance },
+        where: {
+          id: walletId,
+          balance: wallet.balance,
+          bonusBalance: wallet.bonusBalance,
+        },
         data: {
           balance: { decrement: deductCash },
           bonusBalance: { decrement: deductBonus },
@@ -230,7 +319,9 @@ export class WalletsService {
       }
       const cashAfter = wallet.balance.minus(deductCash);
       const bonusAfter = wallet.bonusBalance.minus(deductBonus);
-      const paymentId = PAYMENT_REFERENCE_TYPES.has(referenceType) ? referenceId : null;
+      const paymentId = PAYMENT_REFERENCE_TYPES.has(referenceType)
+        ? referenceId
+        : null;
       const rows: Array<[WalletBucket, Prisma.Decimal, Prisma.Decimal]> = [
         [WalletBucket.BONUS, deductBonus, bonusAfter],
         [WalletBucket.CASH, deductCash, cashAfter],
@@ -253,7 +344,9 @@ export class WalletsService {
       }
       return {
         walletId,
-        balanceAfter: cashAfter.plus(usableBonus({ ...wallet, bonusBalance: bonusAfter })),
+        balanceAfter: cashAfter.plus(
+          usableBonus({ ...wallet, bonusBalance: bonusAfter }),
+        ),
         cashDebited: deductCash,
         bonusDebited: deductBonus,
       };
@@ -270,7 +363,11 @@ export class WalletsService {
     referenceType: string,
     referenceId: string,
     description = 'Hoàn tiền về ví',
-  ): Promise<{ walletId: string; cashRefunded: Prisma.Decimal; bonusRefunded: Prisma.Decimal } | null> {
+  ): Promise<{
+    walletId: string;
+    cashRefunded: Prisma.Decimal;
+    bonusRefunded: Prisma.Decimal;
+  } | null> {
     const debits = await tx.walletTransaction.findMany({
       where: { referenceType, referenceId, type: WalletTxType.Debit },
     });
@@ -284,7 +381,11 @@ export class WalletsService {
       where: { referenceType, referenceId, type: WalletTxType.Refund },
     });
     if (refunded) {
-      return { walletId, cashRefunded: new Prisma.Decimal(0), bonusRefunded: new Prisma.Decimal(0) };
+      return {
+        walletId,
+        cashRefunded: new Prisma.Decimal(0),
+        bonusRefunded: new Prisma.Decimal(0),
+      };
     }
     let cashRefunded = new Prisma.Decimal(0);
     let bonusRefunded = new Prisma.Decimal(0);
@@ -293,7 +394,9 @@ export class WalletsService {
       const isBonus = debit.bucket === WalletBucket.BONUS;
       const wallet = await tx.wallet.update({
         where: { id: debit.walletId },
-        data: isBonus ? { bonusBalance: { increment: amount } } : { balance: { increment: amount } },
+        data: isBonus
+          ? { bonusBalance: { increment: amount } }
+          : { balance: { increment: amount } },
         select: { balance: true, bonusBalance: true },
       });
       await tx.walletTransaction.create({
@@ -338,7 +441,13 @@ export class WalletsService {
       await tx.$queryRaw`SELECT id FROM wallets WHERE id = ${walletId}::uuid FOR UPDATE`;
       const wallet = await tx.wallet.findUnique({
         where: { id: walletId },
-        select: { id: true, userId: true, balance: true, bonusBalance: true, bonusExpiresAt: true },
+        select: {
+          id: true,
+          userId: true,
+          balance: true,
+          bonusBalance: true,
+          bonusExpiresAt: true,
+        },
       });
       if (!wallet) {
         return PbmsResponseDto.fail('Không tìm thấy ví', 404);
@@ -375,10 +484,16 @@ export class WalletsService {
     }
     const credited = amount.gt(0);
     await this.notifications?.notify(result.wallet.userId, {
-      title: credited ? 'Ví được cộng tiền khuyến mãi' : 'Điều chỉnh tiền khuyến mãi',
+      title: credited
+        ? 'Ví được cộng tiền khuyến mãi'
+        : 'Điều chỉnh tiền khuyến mãi',
       message: `${credited ? 'Cộng' : 'Thu hồi'} ${formatVnd(toMoney(amount.abs()))} ở ngăn khuyến mãi. Lý do: ${note}`,
       type: 'wallet',
-      metadata: { walletId, adjustmentId: result.log.id, reasonType: dto.reasonType },
+      metadata: {
+        walletId,
+        adjustmentId: result.log.id,
+        reasonType: dto.reasonType,
+      },
     });
     return PbmsResponseDto.ok(
       'Điều chỉnh ví khuyến mãi thành công',
@@ -395,13 +510,22 @@ export class WalletsService {
 
   async creditFromPayment(
     tx: Prisma.TransactionClient,
-    payment: { id: string; userId: string | null; amount: Prisma.Decimal; promoCodeId?: string | null },
+    payment: {
+      id: string;
+      userId: string | null;
+      amount: Prisma.Decimal;
+      promoCodeId?: string | null;
+    },
   ): Promise<void> {
     if (!payment.userId) {
-      throw new Error(`Không thể cộng ví cho thanh toán ${payment.id}: thiếu UserId.`);
+      throw new Error(
+        `Không thể cộng ví cho thanh toán ${payment.id}: thiếu UserId.`,
+      );
     }
     const existing = await tx.walletTransaction.findUnique({
-      where: { paymentId_bucket: { paymentId: payment.id, bucket: WalletBucket.CASH } },
+      where: {
+        paymentId_bucket: { paymentId: payment.id, bucket: WalletBucket.CASH },
+      },
     });
     if (existing) {
       return;
@@ -425,7 +549,15 @@ export class WalletsService {
       },
     });
     if (payment.promoCodeId) {
-      await grantPromoBonus(tx, { id: payment.id, userId: payment.userId, promoCodeId: payment.promoCodeId }, updated);
+      await grantPromoBonus(
+        tx,
+        {
+          id: payment.id,
+          userId: payment.userId,
+          promoCodeId: payment.promoCodeId,
+        },
+        updated,
+      );
     }
   }
 
@@ -440,10 +572,14 @@ export class WalletsService {
     description: string,
   ): Promise<boolean> {
     if (!payment.userId) {
-      throw new Error(`Không thể hoàn tiền cho thanh toán ${payment.id}: thiếu UserId.`);
+      throw new Error(
+        `Không thể hoàn tiền cho thanh toán ${payment.id}: thiếu UserId.`,
+      );
     }
     const existing = await tx.walletTransaction.findUnique({
-      where: { paymentId_bucket: { paymentId: payment.id, bucket: WalletBucket.CASH } },
+      where: {
+        paymentId_bucket: { paymentId: payment.id, bucket: WalletBucket.CASH },
+      },
     });
     if (existing) {
       return false;
@@ -475,11 +611,18 @@ export class WalletsService {
   }> {
     const wallet = await this.prisma.wallet.findUnique({
       where: { userId },
-      select: { id: true, balance: true, bonusBalance: true, bonusExpiresAt: true },
+      select: {
+        id: true,
+        balance: true,
+        bonusBalance: true,
+        bonusExpiresAt: true,
+      },
     });
     return {
       walletId: wallet?.id ?? null,
-      walletBalance: wallet ? toMoney(wallet.balance.plus(usableBonus(wallet))) : 0,
+      walletBalance: wallet
+        ? toMoney(wallet.balance.plus(usableBonus(wallet)))
+        : 0,
     };
   }
 
@@ -493,7 +636,10 @@ export class WalletsService {
     if (owned.error) {
       return owned.error;
     }
-    return PbmsResponseDto.ok(message, await this.loadHistory(owned.wallet.id, type));
+    return PbmsResponseDto.ok(
+      message,
+      await this.loadHistory(owned.wallet.id, type),
+    );
   }
 
   private async requireOwnedWallet(
@@ -511,7 +657,13 @@ export class WalletsService {
     }
     const wallet = await this.prisma.wallet.findUnique({
       where: { id: walletId },
-      select: { id: true, userId: true, balance: true, bonusBalance: true, bonusExpiresAt: true },
+      select: {
+        id: true,
+        userId: true,
+        balance: true,
+        bonusBalance: true,
+        bonusExpiresAt: true,
+      },
     });
     if (!wallet) {
       return { error: PbmsResponseDto.fail('Không tìm thấy ví', 404) };
@@ -532,7 +684,10 @@ export class WalletsService {
         data: { userId, balance: new Prisma.Decimal(0) },
       });
     } catch (error: unknown) {
-      if (error instanceof Prisma.PrismaClientKnownRequestError && error.code === 'P2002') {
+      if (
+        error instanceof Prisma.PrismaClientKnownRequestError &&
+        error.code === 'P2002'
+      ) {
         const again = await db.wallet.findUnique({ where: { userId } });
         if (again) {
           return again;
@@ -569,7 +724,9 @@ export class WalletsService {
     return items.map((item) => this.mapTransaction(item));
   }
 
-  private mapWalletSummary(wallet: WalletBalances & { id: string; userId: string }) {
+  private mapWalletSummary(
+    wallet: WalletBalances & { id: string; userId: string },
+  ) {
     const bonus = usableBonus(wallet);
     return {
       walletId: wallet.id,
@@ -608,9 +765,12 @@ export class WalletsService {
   }) {
     const signedAmount = toMoney(item.amount);
     const isCredit = signedAmount > 0;
-    const packageName = item.payment?.subscription?.package?.packageName ?? null;
-    const licensePlate = item.payment?.subscription?.vehicle?.licensePlate ?? null;
-    const subscriptionId = item.payment?.subscriptionId ?? item.payment?.subscription?.id ?? null;
+    const packageName =
+      item.payment?.subscription?.package?.packageName ?? null;
+    const licensePlate =
+      item.payment?.subscription?.vehicle?.licensePlate ?? null;
+    const subscriptionId =
+      item.payment?.subscriptionId ?? item.payment?.subscription?.id ?? null;
     return {
       walletTransactionId: item.id,
       direction: isCredit ? 'Credit' : 'Debit',
@@ -624,12 +784,21 @@ export class WalletsService {
       createdAt: item.createdAt,
       paymentId: item.paymentId ?? item.payment?.id ?? null,
       subscriptionId,
-      paymentMethod: item.payment?.paymentMethod ?? (item.type === WalletTxType.TopUp ? 'PayOS' : 'Wallet'),
+      paymentMethod:
+        item.payment?.paymentMethod ??
+        (item.type === WalletTxType.TopUp ? 'PayOS' : 'Wallet'),
       paymentType: item.payment?.paymentType ?? item.referenceType,
       orderCode: item.payment?.transactionReference ?? null,
       packageName,
       licensePlate,
-      description: item.description ?? this.legacyDescription(item.type, item.referenceType, packageName, licensePlate),
+      description:
+        item.description ??
+        this.legacyDescription(
+          item.type,
+          item.referenceType,
+          packageName,
+          licensePlate,
+        ),
     };
   }
 

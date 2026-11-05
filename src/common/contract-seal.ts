@@ -1,4 +1,12 @@
-import { createHash, createPrivateKey, createPublicKey, KeyObject, sign, verify } from 'crypto';
+import sharp from 'sharp';
+import {
+  createHash,
+  createPrivateKey,
+  createPublicKey,
+  KeyObject,
+  sign,
+  verify,
+} from 'crypto';
 
 /** Gói vé từ 3 tháng trở lên (3, 6, 9, 12) bắt buộc ký hợp đồng trước khi thanh toán. */
 export const CONTRACT_MIN_MONTHS = 3;
@@ -32,16 +40,26 @@ export function sealPayload(f: SealFields): string {
   ].join('|');
 }
 
-export type SealKey = { privateKey: KeyObject; publicKey: KeyObject; keyId: string };
+export type SealKey = {
+  privateKey: KeyObject;
+  publicKey: KeyObject;
+  keyId: string;
+};
 
 /** Mã khoá = 16 ký tự hex đầu của SHA-256 khoá công khai (SPKI DER). */
 export function keyIdOf(publicKey: KeyObject): string {
-  return sha256Hex(publicKey.export({ type: 'spki', format: 'der' })).slice(0, 16);
+  return sha256Hex(publicKey.export({ type: 'spki', format: 'der' })).slice(
+    0,
+    16,
+  );
 }
 
 export function sealKeyFromPem(pem: string): SealKey {
   const privateKey = createPrivateKey(pem.replace(/\\n/g, '\n'));
-  if (privateKey.asymmetricKeyType !== 'ec') {
+  if (
+    privateKey.asymmetricKeyType !== 'ec' ||
+    privateKey.asymmetricKeyDetails?.namedCurve !== 'prime256v1'
+  ) {
     throw new Error('Khoá ký hợp đồng phải là khoá EC (P-256)');
   }
   const publicKey = createPublicKey(privateKey);
@@ -59,8 +77,15 @@ export function loadSealKey(): SealKey | null {
  * chữ, xuống dòng bị đổi thành dấu cách, hoặc chỉ dán phần base64.
  */
 export function normalizeSealKeyPem(raw: string): string {
-  let v = raw.trim().replace(/^CONTRACT_SIGNING_PRIVATE_KEY\s*=\s*/, '').trim();
-  if (v.length >= 2 && (v[0] === '"' || v[0] === "'") && v[v.length - 1] === v[0]) {
+  let v = raw
+    .trim()
+    .replace(/^CONTRACT_SIGNING_PRIVATE_KEY\s*=\s*/, '')
+    .trim();
+  if (
+    v.length >= 2 &&
+    (v[0] === '"' || v[0] === "'") &&
+    v[v.length - 1] === v[0]
+  ) {
     v = v.slice(1, -1);
   }
   v = v.replace(/\\n/g, '\n').replace(/\r/g, '').trim();
@@ -74,7 +99,9 @@ export function normalizeSealKeyPem(raw: string): string {
 }
 
 /** Đọc khoá, không bao giờ ném lỗi: thiếu khoá hoặc khoá sai thì trả lý do. */
-export function readSealKey(): { key: SealKey; problem: null } | { key: null; problem: 'missing' | 'invalid' } {
+export function readSealKey():
+  | { key: SealKey; problem: null }
+  | { key: null; problem: 'missing' | 'invalid' } {
   const raw = process.env.CONTRACT_SIGNING_PRIVATE_KEY?.trim();
   if (!raw) return { key: null, problem: 'missing' };
   try {
@@ -92,12 +119,23 @@ export function sealKeyProblemMessage(problem: 'missing' | 'invalid'): string {
 }
 
 export function signSeal(payload: string, key: SealKey): string {
-  return sign('sha256', Buffer.from(payload, 'utf8'), key.privateKey).toString('base64');
+  return sign('sha256', Buffer.from(payload, 'utf8'), key.privateKey).toString(
+    'base64',
+  );
 }
 
-export function verifySeal(payload: string, seal: string, publicKey: KeyObject): boolean {
+export function verifySeal(
+  payload: string,
+  seal: string,
+  publicKey: KeyObject,
+): boolean {
   try {
-    return verify('sha256', Buffer.from(payload, 'utf8'), publicKey, Buffer.from(seal, 'base64'));
+    return verify(
+      'sha256',
+      Buffer.from(payload, 'utf8'),
+      publicKey,
+      Buffer.from(seal, 'base64'),
+    );
   } catch {
     return false;
   }
@@ -107,14 +145,27 @@ const PNG_MAGIC = Buffer.from([0x89, 0x50, 0x4e, 0x47, 0x0d, 0x0a, 0x1a, 0x0a]);
 export const SIGNATURE_MAX_BYTES = 200 * 1024;
 
 /** Giải mã ảnh chữ ký PNG (chấp nhận tiền tố data:image/png;base64,). */
-export function decodeSignaturePng(raw: string): Buffer | null {
+export async function decodeSignaturePng(raw: string): Promise<Buffer | null> {
   const base64 = raw.trim().replace(/^data:image\/png;base64,/, '');
-  if (!base64 || !/^[A-Za-z0-9+/]+=*$/.test(base64)) {
+  if (
+    !base64 ||
+    base64.length > Math.ceil(SIGNATURE_MAX_BYTES / 3) * 4 ||
+    !/^[A-Za-z0-9+/]+=*$/.test(base64)
+  ) {
     return null;
   }
   const bytes = Buffer.from(base64, 'base64');
   if (bytes.length < 100 || bytes.length > SIGNATURE_MAX_BYTES) {
     return null;
   }
-  return bytes.subarray(0, 8).equals(PNG_MAGIC) ? bytes : null;
+  if (!bytes.subarray(0, 8).equals(PNG_MAGIC)) return null;
+  try {
+    // Decode pixels as well as metadata: a valid PNG header can hide corrupt data.
+    await sharp(bytes, { limitInputPixels: 4_000_000, failOn: 'warning' })
+      .raw()
+      .toBuffer();
+    return bytes;
+  } catch {
+    return null;
+  }
 }

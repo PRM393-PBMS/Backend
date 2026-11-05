@@ -1,4 +1,10 @@
-import { Body, Controller, HttpCode, Post, UseInterceptors } from '@nestjs/common';
+import {
+  Body,
+  Controller,
+  HttpCode,
+  Post,
+  UseInterceptors,
+} from '@nestjs/common';
 import { ApiBody, ApiOperation, ApiTags } from '@nestjs/swagger';
 import { Public } from '../common/decorators/public.decorator';
 import { PbmsResponseDto } from '../../common/dto/pbms-response.dto';
@@ -9,7 +15,10 @@ import {
   loginResultExample,
   PBMS_REGISTER_EXAMPLE,
 } from '../../common/swagger/pbms-example-data';
-import { ApiPbmsBodyExample, ApiPbmsOkResponse } from '../../common/swagger/pbms-swagger';
+import {
+  ApiPbmsBodyExample,
+  ApiPbmsOkResponse,
+} from '../../common/swagger/pbms-swagger';
 import { PbmsAuthService } from './pbms-auth.service';
 import {
   PbmsLoginDto,
@@ -53,12 +62,27 @@ export class PbmsAuthController {
     return this.pbmsAuthService.sendRegisterOtp(dto);
   }
 
+  @Post('resend-register-otp')
+  @HttpCode(200)
+  @ApiOperation({
+    summary:
+      'Gửi lại OTP đăng ký từ yêu cầu còn hiệu lực, không gửi lại mật khẩu',
+  })
+  resendRegisterOtp(@Body() dto: PbmsRequestOtpDto): Promise<PbmsResponseDto> {
+    return this.pbmsAuthService.resendRegisterOtp(dto);
+  }
+
   @Post('verify-register-otp')
   @HttpCode(200)
   @ApiOperation({ summary: 'Xác thực OTP và tạo user PBMS' })
-  @ApiPbmsBodyExample(PbmsVerifyRegisterOtpDto, { email: PBMS_REGISTER_EXAMPLE.email, otp: '482917' })
+  @ApiPbmsBodyExample(PbmsVerifyRegisterOtpDto, {
+    email: PBMS_REGISTER_EXAMPLE.email,
+    otp: '482917',
+  })
   @ApiPbmsOkResponse('Đăng ký thành công', { userId: ids.userId })
-  verifyRegisterOtp(@Body() dto: PbmsVerifyRegisterOtpDto): Promise<PbmsResponseDto> {
+  verifyRegisterOtp(
+    @Body() dto: PbmsVerifyRegisterOtpDto,
+  ): Promise<PbmsResponseDto> {
     return this.pbmsAuthService.verifyRegisterOtp(dto);
   }
 
@@ -67,7 +91,9 @@ export class PbmsAuthController {
   @ApiOperation({ summary: 'Gửi OTP reset mật khẩu PBMS' })
   @ApiPbmsBodyExample(PbmsRequestOtpDto, { email: PBMS_REGISTER_EXAMPLE.email })
   @ApiPbmsOkResponse('Nếu email tồn tại, OTP đã được gửi', null)
-  requestResetPassword(@Body() dto: PbmsRequestOtpDto): Promise<PbmsResponseDto> {
+  requestResetPassword(
+    @Body() dto: PbmsRequestOtpDto,
+  ): Promise<PbmsResponseDto> {
     return this.pbmsAuthService.requestResetPasswordOtp(dto);
   }
 
@@ -81,14 +107,20 @@ export class PbmsAuthController {
     confirmPassword: PBMS_REGISTER_EXAMPLE.confirmPassword,
   })
   @ApiPbmsOkResponse('Đặt lại mật khẩu thành công', null)
-  verifyResetPassword(@Body() dto: PbmsVerifyResetPasswordOtpDto): Promise<PbmsResponseDto> {
+  verifyResetPassword(
+    @Body() dto: PbmsVerifyResetPasswordOtpDto,
+  ): Promise<PbmsResponseDto> {
     return this.pbmsAuthService.verifyResetPasswordOtp(dto);
   }
 
   @Post('refresh-token')
   @HttpCode(200)
-  @ApiOperation({ summary: 'Cấp access token mới (không rotate refresh token)' })
-  @ApiPbmsOkResponse('Cấp token mới thành công', { accessToken: dummyAccessToken })
+  @ApiOperation({
+    summary: 'Cấp access token mới (không rotate refresh token)',
+  })
+  @ApiPbmsOkResponse('Cấp token mới thành công', {
+    accessToken: dummyAccessToken,
+  })
   refreshToken(@Body() dto: PbmsRefreshTokenDto): Promise<PbmsResponseDto> {
     return this.pbmsAuthService.refreshToken(dto);
   }

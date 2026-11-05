@@ -1,3 +1,5 @@
+import { randomUUID } from 'node:crypto';
+import { requiredSecret } from '../common/config';
 import {
   BadRequestException,
   ConflictException,
@@ -46,7 +48,9 @@ export class AuthService {
     });
 
     if (existingUser) {
-      throw new ConflictException('Địa chỉ email này đã được sử dụng trong hệ thống.');
+      throw new ConflictException(
+        'Địa chỉ email này đã được sử dụng trong hệ thống.',
+      );
     }
 
     // 2. Băm mật khẩu an toàn với bcrypt (12 rounds)
@@ -64,8 +68,17 @@ export class AuthService {
     });
 
     // 4. Sinh cặp Tokens và lưu Hashed Refresh Token vào CSDL
-    const tokens = await this.generateTokens(newUser.id, newUser.email, newUser.role as Role);
-    await this.saveRefreshToken(newUser.id, tokens.refreshToken, deviceInfo, ipAddress);
+    const tokens = await this.generateTokens(
+      newUser.id,
+      newUser.email,
+      newUser.role as Role,
+    );
+    await this.saveRefreshToken(
+      newUser.id,
+      tokens.refreshToken,
+      deviceInfo,
+      ipAddress,
+    );
 
     return {
       accessToken: tokens.accessToken,
@@ -94,23 +107,41 @@ export class AuthService {
     });
 
     if (!user) {
-      throw new UnauthorizedException('Tài khoản hoặc mật khẩu không chính xác.');
+      throw new UnauthorizedException(
+        'Tài khoản hoặc mật khẩu không đúng. Vui lòng kiểm tra lại.',
+      );
     }
 
     // 2. Kiểm tra trạng thái tài khoản
     if (!user.isActive) {
-      throw new ForbiddenException('Tài khoản đã bị tạm khóa hoặc vô hiệu hóa.');
+      throw new ForbiddenException(
+        'Tài khoản đã bị tạm khóa hoặc vô hiệu hóa.',
+      );
     }
 
     // 3. So khớp mật khẩu với chuỗi hash trong CSDL
-    const isPasswordValid = await this.hashingService.compare(dto.password, user.passwordHash);
+    const isPasswordValid = await this.hashingService.compare(
+      dto.password,
+      user.passwordHash,
+    );
     if (!isPasswordValid) {
-      throw new UnauthorizedException('Tài khoản hoặc mật khẩu không chính xác.');
+      throw new UnauthorizedException(
+        'Tài khoản hoặc mật khẩu không đúng. Vui lòng kiểm tra lại.',
+      );
     }
 
     // 4. Sinh cặp Tokens mới và lưu session vào DB
-    const tokens = await this.generateTokens(user.id, user.email, user.role as Role);
-    await this.saveRefreshToken(user.id, tokens.refreshToken, deviceInfo, ipAddress);
+    const tokens = await this.generateTokens(
+      user.id,
+      user.email,
+      user.role as Role,
+    );
+    await this.saveRefreshToken(
+      user.id,
+      tokens.refreshToken,
+      deviceInfo,
+      ipAddress,
+    );
 
     return {
       accessToken: tokens.accessToken,
@@ -153,13 +184,18 @@ export class AuthService {
     });
 
     if (activeSessions.length === 0) {
-      throw new ForbiddenException('Phiên đăng nhập đã hết hạn hoặc bị thu hồi.');
+      throw new ForbiddenException(
+        'Phiên đăng nhập đã hết hạn hoặc bị thu hồi.',
+      );
     }
 
     // 3. So khớp raw token với chuỗi hash trong các session active
     let matchedSession = null;
     for (const session of activeSessions) {
-      const isMatch = await this.hashingService.compare(rawRefreshToken, session.tokenHash);
+      const isMatch = await this.hashingService.compare(
+        rawRefreshToken,
+        session.tokenHash,
+      );
       if (isMatch) {
         matchedSession = session;
         break;
@@ -175,15 +211,34 @@ export class AuthService {
       );
     }
 
-    // 4. Thu hồi ngay Refresh Token cũ (Token Rotation)
-    await this.prisma.refreshToken.update({
-      where: { id: matchedSession.id },
-      data: { isRevoked: true },
+    const tokens = await this.generateTokens(
+      user.id,
+      user.email,
+      user.role as Role,
+    );
+    const tokenHash = await this.hashingService.hash(tokens.refreshToken);
+    await this.prisma.$transaction(async (tx) => {
+      const consumed = await tx.refreshToken.updateMany({
+        where: {
+          id: matchedSession.id,
+          userId,
+          isRevoked: false,
+          expiresAt: { gt: new Date() },
+        },
+        data: { isRevoked: true },
+      });
+      if (consumed.count !== 1)
+        throw new ForbiddenException('Phiên đã được sử dụng hoặc bị thu hồi');
+      await tx.refreshToken.create({
+        data: {
+          userId,
+          tokenHash,
+          deviceInfo: deviceInfo ?? null,
+          ipAddress: ipAddress ?? null,
+          expiresAt: new Date(Date.now() + 7 * 86400000),
+        },
+      });
     });
-
-    // 5. Cấp phát cặp Tokens mới và lưu Hash của Refresh Token mới
-    const tokens = await this.generateTokens(user.id, user.email, user.role as Role);
-    await this.saveRefreshToken(user.id, tokens.refreshToken, deviceInfo, ipAddress);
 
     return {
       accessToken: tokens.accessToken,
@@ -201,20 +256,29 @@ export class AuthService {
   /**
    * Đăng xuất phiên làm việc hiện tại
    */
-  async logout(userId: string, rawRefreshToken?: string): Promise<MessageResponseDto> {
+  async logout(
+    userId: string,
+    rawRefreshToken?: string,
+  ): Promise<MessageResponseDto> {
     if (rawRefreshToken) {
       const activeSessions = await this.prisma.refreshToken.findMany({
         where: { userId, isRevoked: false },
       });
 
       for (const session of activeSessions) {
-        const isMatch = await this.hashingService.compare(rawRefreshToken, session.tokenHash);
+        const isMatch = await this.hashingService.compare(
+          rawRefreshToken,
+          session.tokenHash,
+        );
         if (isMatch) {
           await this.prisma.refreshToken.update({
             where: { id: session.id },
             data: { isRevoked: true },
           });
-          return { message: 'Đăng xuất thành công khỏi phiên hiện tại.', success: true };
+          return {
+            message: 'Đăng xuất thành công khỏi phiên hiện tại.',
+            success: true,
+          };
         }
       }
     }
@@ -250,7 +314,8 @@ export class AuthService {
     });
 
     return {
-      message: 'Đã thu hồi thành công toàn bộ các phiên đăng nhập trên mọi thiết bị.',
+      message:
+        'Đã thu hồi thành công toàn bộ các phiên đăng nhập trên mọi thiết bị.',
       success: true,
     };
   }
@@ -286,7 +351,10 @@ export class AuthService {
   /**
    * Đổi mật khẩu tài khoản và tự động thu hồi toàn bộ session cũ
    */
-  async changePassword(userId: string, dto: ChangePasswordDto): Promise<MessageResponseDto> {
+  async changePassword(
+    userId: string,
+    dto: ChangePasswordDto,
+  ): Promise<MessageResponseDto> {
     const user = await this.prisma.user.findUnique({
       where: { id: userId },
     });
@@ -296,13 +364,18 @@ export class AuthService {
     }
 
     // Kiểm tra mật khẩu hiện tại
-    const isOldPasswordCorrect = await this.hashingService.compare(dto.oldPassword, user.passwordHash);
+    const isOldPasswordCorrect = await this.hashingService.compare(
+      dto.oldPassword,
+      user.passwordHash,
+    );
     if (!isOldPasswordCorrect) {
       throw new BadRequestException('Mật khẩu hiện tại không chính xác.');
     }
 
     if (dto.oldPassword === dto.newPassword) {
-      throw new BadRequestException('Mật khẩu mới không được trùng với mật khẩu cũ.');
+      throw new BadRequestException(
+        'Mật khẩu mới không được trùng với mật khẩu cũ.',
+      );
     }
 
     // Băm mật khẩu mới
@@ -321,7 +394,8 @@ export class AuthService {
     ]);
 
     return {
-      message: 'Đổi mật khẩu thành công. Tất cả các phiên đăng nhập cũ đã được thu hồi an toàn.',
+      message:
+        'Đổi mật khẩu thành công. Tất cả các phiên đăng nhập cũ đã được thu hồi an toàn.',
       success: true,
     };
   }
@@ -331,7 +405,11 @@ export class AuthService {
   /**
    * Ký số sinh cặp JWT Access Token (15m) & Refresh Token (7d)
    */
-  private async generateTokens(userId: string, email: string, role: Role): Promise<Tokens> {
+  private async generateTokens(
+    userId: string,
+    email: string,
+    role: Role,
+  ): Promise<Tokens> {
     const payload: JwtPayload = {
       sub: userId,
       email,
@@ -340,11 +418,13 @@ export class AuthService {
 
     const [accessToken, refreshToken] = await Promise.all([
       this.jwtService.signAsync(payload, {
-        secret: process.env.JWT_ACCESS_SECRET || 'prm393_enterprise_access_secret_key_2026',
+        secret: requiredSecret('JWT_ACCESS_SECRET'),
+        jwtid: randomUUID(),
         expiresIn: this.ACCESS_TOKEN_EXPIRATION,
       }),
       this.jwtService.signAsync(payload, {
-        secret: process.env.JWT_REFRESH_SECRET || 'prm393_enterprise_refresh_secret_key_2026',
+        secret: requiredSecret('JWT_REFRESH_SECRET'),
+        jwtid: randomUUID(),
         expiresIn: `${this.REFRESH_TOKEN_EXPIRATION_DAYS}d`,
       }),
     ]);

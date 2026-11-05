@@ -14,7 +14,10 @@ export class RolesService {
     });
 
     if (roles.length === 0) {
-      return PbmsResponseDto.fail('Không tìm thấy quyền nào trong hệ thống', 404);
+      return PbmsResponseDto.fail(
+        'Không tìm thấy quyền nào trong hệ thống',
+        404,
+      );
     }
 
     return PbmsResponseDto.ok(
@@ -38,10 +41,7 @@ export class RolesService {
       return PbmsResponseDto.fail('Không tìm thấy quyền', 404);
     }
 
-    return PbmsResponseDto.ok(
-      'Lấy thông tin quyền thành công',
-      this.map(role),
-    );
+    return PbmsResponseDto.ok('Lấy thông tin quyền thành công', this.map(role));
   }
 
   async create(dto: object): Promise<PbmsResponseDto> {
@@ -62,11 +62,7 @@ export class RolesService {
         },
       });
 
-      return PbmsResponseDto.ok(
-        'Tạo quyền thành công',
-        this.map(role),
-        201,
-      );
+      return PbmsResponseDto.ok('Tạo quyền thành công', this.map(role), 201);
     } catch (error: unknown) {
       if (
         error instanceof Prisma.PrismaClientKnownRequestError &&
@@ -77,8 +73,7 @@ export class RolesService {
         );
       }
 
-      const message = error instanceof Error ? error.message : 'unknown';
-      return PbmsResponseDto.fail(`Lỗi tạo quyền: ${message}`, 500);
+      return PbmsResponseDto.fromError(error);
     }
   }
 
@@ -113,15 +108,11 @@ export class RolesService {
         where: { id: roleId },
         data: {
           roleName,
-          description:
-            pbmsPick(dto, 'description', 'Description').trim() || '',
+          description: pbmsPick(dto, 'description', 'Description').trim() || '',
         },
       });
 
-      return PbmsResponseDto.ok(
-        'Cập nhật quyền thành công',
-        this.map(updated),
-      );
+      return PbmsResponseDto.ok('Cập nhật quyền thành công', this.map(updated));
     } catch (error: unknown) {
       if (
         error instanceof Prisma.PrismaClientKnownRequestError &&
@@ -132,8 +123,7 @@ export class RolesService {
         );
       }
 
-      const message = error instanceof Error ? error.message : 'unknown';
-      return PbmsResponseDto.fail(`Lỗi cập nhật quyền: ${message}`, 500);
+      return PbmsResponseDto.fromError(error);
     }
   }
 
@@ -211,7 +201,7 @@ export class RolesService {
     });
 
     if (duplicate) {
-      return PbmsResponseDto.fail('Tên quyền đã tồn tại');
+      return PbmsResponseDto.fail('Tên quyền đã tồn tại', 409);
     }
 
     return null;

@@ -10,8 +10,10 @@ import { PaymentsService } from './payments.service';
 describe('Trang kết quả PayOS', () => {
   let service: PaymentsService;
   let findFirst: jest.Mock;
+  let findUniqueOrThrow: jest.Mock;
 
   beforeEach(async () => {
+    findUniqueOrThrow = jest.fn().mockResolvedValue({ paymentStatus: 'Pending' });
     findFirst = jest.fn().mockResolvedValue({
       id: 'pay-1',
       amount: new Prisma.Decimal(50000),
@@ -21,7 +23,7 @@ describe('Trang kết quả PayOS', () => {
     const module: TestingModule = await Test.createTestingModule({
       providers: [
         PaymentsService,
-        { provide: PrismaService, useValue: { payment: { findFirst } } },
+        { provide: PrismaService, useValue: { payment: { findFirst, findUniqueOrThrow } } },
         { provide: WalletsService, useValue: {} },
         { provide: PayosService, useValue: {} },
       ],
@@ -31,6 +33,7 @@ describe('Trang kết quả PayOS', () => {
 
   it('hỏi lại PayOS: đã trả thì hiện thành công kèm loại và số tiền', async () => {
     jest.spyOn(service, 'syncPayosPayment').mockResolvedValue('Success');
+    findUniqueOrThrow.mockResolvedValue({ paymentStatus: 'Success', appliedAt: new Date() });
     const view = await service.resultForOrderCode('1729300000000', false);
     expect(view).toEqual({
       state: 'success',
@@ -49,6 +52,14 @@ describe('Trang kết quả PayOS', () => {
   it('PayOS chưa xác nhận thì báo đang chờ; PayOS lỗi vẫn hiện trang', async () => {
     jest.spyOn(service, 'syncPayosPayment').mockRejectedValue(new Error('timeout'));
     expect((await service.resultForOrderCode('1729300000000', false)).state).toBe('pending');
+  });
+
+  it('đã nhận tiền nhưng chưa cấp quyền hoặc cần đối soát vẫn hiện đang xử lý', async () => {
+    jest.spyOn(service, 'syncPayosPayment').mockResolvedValue('Success');
+    for (const reconciliationReason of [null, 'LATE_DEPOSIT']) {
+      findUniqueOrThrow.mockResolvedValue({ paymentStatus: 'Success', appliedAt: null, reconciliationReason });
+      expect((await service.resultForOrderCode('1729300000000', false)).state).toBe('pending');
+    }
   });
 
   it('mã đơn không hợp lệ thì không truy vấn', async () => {
